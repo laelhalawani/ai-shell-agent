@@ -1,7 +1,7 @@
 import os
 import json
 import argparse
-import logging
+import logger
 from dotenv import load_dotenv
 from .chat_manager import (
     create_or_load_chat,
@@ -22,8 +22,7 @@ from .chat_manager import (
 # Load environment variables from .env if available.
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+from . import logger
 
 # ---------------------------
 # API Key Management
@@ -39,7 +38,7 @@ def set_api_key() -> None:
     """
     api_key = input("Enter OpenAI API key: ").strip()
     if not api_key:
-        logging.warning("No API key entered. Aborting.")
+        logger.warning("No API key entered. Aborting.")
         return
     os.environ["OPENAI_API_KEY"] = api_key
 
@@ -50,9 +49,9 @@ def set_api_key() -> None:
     try:
         with open(".env", "w") as f:
             f.write(f"OPENAI_API_KEY={api_key}\n")
-        logging.info("API key saved successfully to .env")
+        logger.info("API key saved successfully to .env")
     except Exception as e:
-        logging.error(f"Failed to write to .env: {e}")
+        logger.error(f"Failed to write to .env: {e}")
 
 # ---------------------------
 # CLI Command Handling
@@ -155,7 +154,7 @@ def main():
         send_message(args.message)
         return
     else:
-        logging.info("No command provided. Use --help for options.")
+        logger.info("No command provided. Use --help for options.")
         return
 
 if __name__ == "__main__":
