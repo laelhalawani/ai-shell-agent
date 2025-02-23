@@ -1,13 +1,54 @@
 # AI Shell Agent
 
-**AI Shell Agent** is a command-line chat application that lets you interact with OpenAI’s language models directly from your terminal. Unlike libraries meant to be imported into other codebases, AI Shell Agent is built to be used as a standalone CLI tool—designed for a seamless, interactive experience.
+**AI Shell Agent** is a command-line LLM powered tool that can help you perform tasks by writing and executing terminal commands (with human confirmation or edit) and respond to questions, directly from the console.
+It features a very simple CLI, and adjust the LLM prompts based on your detected system.
+Works on Windows, Linux with Bash, and Mac. (Tested on Windows, please contribute:)
 
----
+### Installation
+
+```bash
+pip install ai-shell-agent
+```
+Will automatically install the CLI tool in your current python environment.
+Requires `python=3.11.x`
+You can also classically clone and install from the repo.
+
+### Quickly send messages
+
+```bash
+ai "your message here"
+```
+Will send a message to the AI in the active chat (and create a new chat if there isn't one active)
+
+You will see the AI response or editable commands that the AI wants to run, which you can confirm by pressing Enter.
+
+Output of the command is displayed in the console, and added to the chat messages. 
+Once all the commands are run, the AI will provide it's interpretation of the results or try to run more commands.
+
+If you haven't set your API key yet, you will be prompted.
+
+### Titled chats
+
+```bash
+ai -c "tile of or existing chat"
+ai "your message here"
+```
+Will create a new chat and set it active if it doesn't exist, and , then send a message to active chat.
+
+### Temporary chats
+
+```bash
+ai -t "your first message in a temporary chat"
+```
+Will create a new temporary chat without the title and set it active.
+
+
+
 
 ## Table of Contents
 
-- [Overview](#overview)
 - [Features](#features)
+- [Warning](#warning)
 - [Quickstart Guide](#quickstart-guide)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -17,39 +58,31 @@
 
 ---
 
-## Overview
+## Warning
 
-AI Shell Agent allows you to:
-- Create, load, rename, and delete chat sessions.
-- Manage your OpenAI API key easily.
-- Send and edit messages within chat sessions.
-- Run temporary, in-memory chat sessions.
-- Execute shell commands (with both interactive and direct modes).
-- Run Python code snippets using an integrated REPL tool.
-
-This project is designed exclusively as a command-line tool. Its entire interface is built around terminal commands, interactive prompts, and text-based feedback.
+**Please use at your own risk, AI can still generate wrong and possibly destructive commands. You always are able to view the command before sending, please be mindful, it shouldn't be too bad, but if you see some terrible commands please post a screenshot**
 
 ---
 
 ## Features
 
 - **Chat Session Management:**  
-  Create new chats or load existing ones using a title.
+  Create new chats or load existing ones using a title, have one chat as active, set to receive messages by default
 
 - **API Key Management:**  
-  Set and update your OpenAI API key via a dedicated command.
+  Set and update your OpenAI API key via a dedicated command, you will be prompted to input the key if you have not provided it yet
 
 - **Message Handling:**  
-  Send new messages or edit previous ones within an active session.
+  Send new messages or edit previous ones within an active session with super easy `ai "your message"` command
 
 - **Temporary Sessions:**  
-  Start in-memory sessions for quick, ephemeral conversations.
+  Start temp sessions for quick, ephemeral chats (currently saved as temp chats under uuid names for easier debugging and tracing)
 
 - **Shell Command Execution:**  
-  Execute system commands either directly or after interactive editing.
+  LLM can write your commands, and you can edit them or execute with one press of a button.
 
 - **Python Code Execution:**  
-  Run Python code snippets using an integrated Python REPL tool.
+  Our agent has also ability to run Python REPL, but not much development and testing was directed at this feature, and it might perform subpair.
 
 ---
 
