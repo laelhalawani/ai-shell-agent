@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -12,12 +12,16 @@ authors = [
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
-dependencies = [
-    "python-dotenv==1.0.1",
-    "langchain_openai==0.3.2",
-    "langchain_experimental==0.3.4",
-    "prompt_toolkit==3.0.50",
-]
+dynamic = ["classifiers", "dependencies"]
 
 [project.scripts]
 ai = "shellai.ai:main"
+
+[project.urls]
+"Homepage" = "https://github.com/yourusername/ai-shell-agent"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
