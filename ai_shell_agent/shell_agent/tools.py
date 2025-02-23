@@ -1,9 +1,12 @@
 import subprocess
+from typing import Literal
 from langchain.tools import BaseTool, tool
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain_experimental.tools.python.tool import PythonREPLTool
 from prompt_toolkit import prompt
-from . import logger
+from .. import logger
+import os
+import platform
 
 class WindowsCmdExeTool_HITL(BaseTool):
     name: str = "interactive_windows_shell_tool"
@@ -101,68 +104,73 @@ class WindowsCmdExeTool_Direct(BaseTool):
         return self._run(command)
 
 
-class MessageUserTool(BaseTool):
-    name: str = "message_user_tool"
-    description: str = (
-        "Use this tool to send a message to the user after you've run the necessary commands."
-        "Args:"
-        "message (str): The message to send to the user."
-        "Returns:"
-        "str: The message sent to the user."
-    )
 
-    def _run(self, message: str) -> str:
+class TagTechTool(BaseTool):
+    name: str = "tag_tech_query"
+    description: str = "Use this tool to tag the user message as technical question or query. "
+
+    def _run(self, message: str) -> Literal["tech_query"]:
+        logger.debug(f"Tagging message as technical query.")
         """
-        Sends a message to the user.
+        Forward the user to tech support for further assistance.
         
         Args:
-            message (str): The message to send to the user.
+            message (str): The message to forward to tech support.
         
         Returns:
-            str: The message sent to the user.
+            str: The message to forward to tech support.
         """
-        logger.info(f"AI: {message}")
-        return message
+        return f"Forwarding to tech support: {message}"
 
     async def _arun(self, message: str) -> str:
         """
-        Asynchronous implementation of sending a message to the user.
+        Asynchronous implementation of forwarding the user to tech support.
         
         Args:
-            message (str): The message to send to the user.
+            message (str): The message to forward to tech support.
         
         Returns:
-            str: The message sent to the user.
+            str: The message to forward to tech support.
         """
         return self._run(message)
+
+class CheckSystemTool(BaseTool):
+    name: str = "check_system"
+    description: str = "Use this tool to retrieve system brand and version."
+    
+    def _run(self) -> str:
+        """
+        Retrieves the system brand and version.
+        
+        Returns:
+            str: The system brand and version.
+        """
+        return f"{platform.system()} {platform.version()}"
+    
+    async def _arun(self) -> str:
+        """
+        Asynchronous implementation of retrieving the system brand and version.
+        
+        Returns:
+            str: The system brand and version.
+        """
+        return self._run()
+    
 
 # Initialize the built-in Python REPL tool
 python_repl_tool = PythonREPLTool()
 interactive_windows_shell_tool = WindowsCmdExeTool_HITL()
 direct_windows_shell_tool = WindowsCmdExeTool_Direct()
-message_user_tool = MessageUserTool()
+tag_tech_tool = TagTechTool()
 
-@tool
-def run_python_code(code: str) -> str:
-    """
-    Executes a Python code snippet using the built-in Python REPL tool.
-    
-    Parameters:
-      code (str): The Python code to execute.
-      
-    Returns:
-      str: The output produced by executing the Python code.
-    """
-    logger.info(f"Python REPL tool called with code:\n{code}")
-    result = python_repl_tool.run({"code": code})
-    logger.info(f"Python code output: {result}")
-    return result
-
-tools = [
+tech_tools = [
     interactive_windows_shell_tool,
-    run_python_code,
-    message_user_tool
-    
+    python_repl_tool,
 ]
+tech_tools_functions = [convert_to_openai_function(t) for t in tech_tools]
 
-tools_functions = [convert_to_openai_function(t) for t in tools]
+router_tools = [
+    tag_tech_tool,
+]
+router_tools_functions = [convert_to_openai_function(t) for t in router_tools]
+    
