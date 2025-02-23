@@ -1,0 +1,5 @@
+python-dotenv
+langchain_openai
+langchain_experimental
+prompt_toolkit
+pytest

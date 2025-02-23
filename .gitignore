@@ -1,0 +1,3 @@
+# Exclude environment files and caches
+.env
+__pycache__/
