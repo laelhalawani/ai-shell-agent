@@ -21,7 +21,3 @@ ai = "shellai.ai:main"
 "Homepage" = "https://github.com/yourusername/ai-shell-agent"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
