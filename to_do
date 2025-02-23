@@ -1,0 +1,2 @@
+handle when answer from assistant fails or tools fail (there can't be a tool cal message last)
+implement token count and summarizing or other ways of keeping the conversation within bounds

@@ -22,9 +22,8 @@ class InteractiveWindowsShellTool(BaseTool):
         Returns:
             str: The output from executing the edited command.
         """
-        logging.info(f"Shell tool called with command: {command}")
-        edited_command = prompt("Edit the command: ", default=command)
-        logging.info(f"Executing command: {edited_command}")
+        edited_command = prompt("Confirm or edit AI CMD command: \n", default=command)
+        logging.debug(f"Executing command: {edited_command}")
         
         try:
             result = subprocess.run(
@@ -35,7 +34,7 @@ class InteractiveWindowsShellTool(BaseTool):
                 check=True
             )
             output = result.stdout
-            logging.info(f"Command output: {output}")
+            logging.debug(f"Command output: {output}")
             return output
         except subprocess.CalledProcessError as e:
             error = f"Error: {e.stderr}"
@@ -79,7 +78,7 @@ class DirectWindowsShellTool(BaseTool):
                 check=True
             )
             output = result.stdout
-            logging.info(f"Command output: {output}")
+            logging.debug(f"Command output: {output}")
             return output
         except subprocess.CalledProcessError as e:
             error = f"Error: {e.stderr}"

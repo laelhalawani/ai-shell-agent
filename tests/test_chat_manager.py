@@ -40,7 +40,7 @@ def test_create_and_list_chat(temp_chat_env):
     assert os.path.exists(chat_file)
     
     # Listing chats should include our new chat
-    chats = chat_manager.list_chats()
+    chats = chat_manager.get_chat_titles_list()
     assert title in chats
 
 def test_rename_chat(temp_chat_env):
@@ -50,7 +50,7 @@ def test_rename_chat(temp_chat_env):
     _ = chat_manager.create_or_load_chat(old_title)
     renamed = chat_manager.rename_chat(old_title, new_title)
     assert renamed is True
-    chats = chat_manager.list_chats()
+    chats = chat_manager.get_chat_titles_list()
     assert new_title in chats
     assert old_title not in chats
 
@@ -61,7 +61,7 @@ def test_delete_chat(temp_chat_env):
     assert os.path.exists(chat_file)
     deleted = chat_manager.delete_chat(title)
     assert deleted is True
-    chats = chat_manager.list_chats()
+    chats = chat_manager.get_chat_titles_list()
     assert title not in chats
     # File should no longer exist
     assert not os.path.exists(chat_file)

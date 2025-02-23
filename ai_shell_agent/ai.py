@@ -5,7 +5,7 @@ import logging
 from dotenv import load_dotenv
 from .chat_manager import (
     create_or_load_chat,
-    list_chats,
+    get_chat_titles_list,
     rename_chat,
     delete_chat,
     load_session,
@@ -97,89 +97,62 @@ def main():
     # Handle direct command execution
     if args.cmd:
         output = cmd(args.cmd)
-        logging.info("Command output:")
-        logging.info(output)
         return
 
     # Chat session management
     if args.chat:
         chat_file = create_or_load_chat(args.chat)
         save_session(chat_file)
-        logging.info(f"Chat session '{args.chat}' is now active.")
         return
 
     if args.load_chat:
         chat_file = create_or_load_chat(args.load_chat)
         save_session(chat_file)
-        logging.info(f"Chat session '{args.load_chat}' loaded and is now active.")
         return
 
     if args.list_chats:
-        chats = list_chats()
-        logging.info("Available chats:")
-        for title in chats:
-            logging.info(f" - {title}")
+        get_chat_titles_list()
         return
 
     if args.rename_chat:
         old_title, new_title = args.rename_chat
-        if rename_chat(old_title, new_title):
-            logging.info(f"Chat '{old_title}' renamed to '{new_title}'.")
-        else:
-            logging.error("Rename operation failed.")
+        rename_chat(old_title, new_title)
         return
 
     if args.delete_chat:
-        if delete_chat(args.delete_chat):
-            logging.info(f"Chat '{args.delete_chat}' deleted.")
-        else:
-            logging.error("Delete operation failed.")
+        delete_chat(args.delete_chat)
         return
 
     # System prompt management
     if args.default_system_prompt:
         set_default_system_prompt(args.default_system_prompt)
-        logging.info("Default system prompt updated.")
         return
 
     if args.system_prompt:
         update_system_prompt(args.system_prompt)
-        logging.info("Active chat session system prompt updated.")
         return
 
     # Messaging commands
     if args.send_message:
-        response = send_message(args.send_message)
-        logging.info("Response:")
-        logging.info(response)
+        send_message(args.send_message)
         return
 
     if args.temp_chat:
-        response = start_temp_chat(args.temp_chat)
-        logging.info("Temporary chat response:")
-        logging.info(response)
+        start_temp_chat(args.temp_chat)
         return
 
     if args.edit:
         index, new_message = args.edit
-        if edit_message(int(index), new_message):
-            logging.info("Message edited successfully.")
-        else:
-            logging.error("Editing message failed.")
+        edit_message(int(index), new_message)
         return
 
     if args.temp_flush:
         flush_temp_chats()
-        logging.info("All temp chat sessions removed.")
         return
-
     # Fallback: if a message is provided without other commands, send it to current chat
     if args.message:
         # Use send_message which handles chat history properly
-        response = send_message(args.message)
-        if response:  # Only show response if there is one (no tool calls)
-            logging.info("Response:")
-            logging.info(response)
+        send_message(args.message)
         return
     else:
         logging.info("No command provided. Use --help for options.")

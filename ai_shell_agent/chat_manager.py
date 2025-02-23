@@ -12,7 +12,7 @@ from langchain_core.messages import (
     ToolMessage,
     BaseMessage
 )
-from .tools import tools_functions, direct_windows_shell_tool
+from .tools import tools_functions, direct_windows_shell_tool, tools
 from .prompts import default_system_prompt
 
 CHAT_DIR = os.path.join("chats")
@@ -103,12 +103,14 @@ def create_or_load_chat(title: str) -> str:
     chat_map = _read_json(CHAT_MAP_FILE)
     if (title in chat_map):
         chat_id = chat_map[title]
+        logging.debug(f"Loading existing chat session: {title}")
     else:
         chat_id = str(uuid.uuid4())
         chat_map[title] = chat_id
         _write_json(CHAT_MAP_FILE, chat_map)
     chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
     if not os.path.exists(chat_file):
+        logging.info(f"Creating new chat session: {title}")
         # New chat: add default system prompt
         config = _read_json(CONFIG_FILE)
         if "default_system_prompt" not in config:
@@ -120,10 +122,13 @@ def create_or_load_chat(title: str) -> str:
     set_current_chat(chat_file)
     return chat_file
 
-def list_chats() -> list:
+def get_chat_titles_list() -> list:
     """Returns a list of all chat session titles."""
     chat_map = _read_json(CHAT_MAP_FILE)
-    return list(chat_map.keys())
+    chats = list(chat_map.keys())
+    chats_str = "\n - ".join(chats)
+    logging.info(f"Chats: \n{chats_str}")
+    return chats
 
 def rename_chat(old_title: str, new_title: str) -> bool:
     """
@@ -140,7 +145,9 @@ def rename_chat(old_title: str, new_title: str) -> bool:
     if old_title in chat_map:
         chat_map[new_title] = chat_map.pop(old_title)
         _write_json(CHAT_MAP_FILE, chat_map)
+        logging.info(f"Chat session renamed: {old_title} -> {new_title}")
         return True
+    logging.error(f"Chat session not found: {old_title}")
     return False
 
 def delete_chat(title: str) -> bool:
@@ -160,7 +167,9 @@ def delete_chat(title: str) -> bool:
         chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
         if os.path.exists(chat_file):
             os.remove(chat_file)
+            logging.info(f"Chat session deleted: {title}")
         return True
+    logging.error(f"Chat session not found: {title}")
     return False
 
 def save_session(chat_file: str) -> None:
@@ -189,12 +198,16 @@ def _handle_tool_calls(messages: list[BaseMessage], ai_message: AIMessage) -> li
     """Handle tool calls from AI response and append tool messages to conversation."""
     if not ai_message.tool_calls:
         return messages
-        
+    logging.debug(f"Tool function[0] type: {type(tools[0])}")
+    logging.debug(f"Tool function[1] type: {type(tools[1])}")
+    logging.debug(f"Tool function[0]: {tools[0]}")
+    logging.debug(f"Tool function[1]: {tools[1]}")
     tools_dict = {
-        "interactive_windows_shell_tool": tools_functions[0],
-        "run_python_code": tools_functions[1]
+        "interactive_windows_shell_tool": tools[0],
+        "run_python_code": tools[1]
     }
-    
+    logging.info(f"AI wants to run commands...")
+    llm = ChatOpenAI(model=MODEL, temperature=TEMPERATURE).bind_tools(tools_functions)
     for tool_call in ai_message.tool_calls:
         tool_name = None
         try:
@@ -204,12 +217,19 @@ def _handle_tool_calls(messages: list[BaseMessage], ai_message: AIMessage) -> li
                 continue
                 
             tool = tools_dict[tool_name]
+            logging.debug(f"Tool function: {tool}")
+            logging.debug(f"Tool function type: {type(tool)}")
+
+            
             tool_response = tool.invoke(tool_call)
-            messages.append(tool_response)
             logging.debug(f"Tool response added: {tool_response.content}")
+            messages.append(tool_response)
+
         except Exception as e:
             logging.error(f"Error executing tool {tool_name}: {e}")
-            
+        response = llm.invoke(messages)
+        logging.info(f"AI: {response.content}")
+        messages.append(response)
     return messages
 
 
@@ -235,7 +255,7 @@ def send_message(message: str) -> str:
     current_messages = _read_messages(chat_file) or []
     
     # Ensure system prompt exists at the start
-    if not isinstance(current_messages[0], SystemMessage):
+    if len(current_messages) == 0 or not isinstance(current_messages[0], SystemMessage):
         config = _read_json(CONFIG_FILE)
         default_prompt = config.get("default_system_prompt", default_system_prompt)
         current_messages.insert(0, SystemMessage(content=default_prompt))
