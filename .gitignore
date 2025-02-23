@@ -3,3 +3,19 @@
 __pycache__/
 .pytest_cache/
 .vscode/
+
+# Python build files
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Distribution packages
+*.tar.gz
+*.zip
+*.whl
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+

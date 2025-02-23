@@ -2,7 +2,7 @@ import os
 import json
 import argparse
 from dotenv import load_dotenv
-from chat_manager import (
+from .chat_manager import (
     create_or_load_chat,
     list_chats,
     rename_chat,
@@ -151,6 +151,9 @@ def main():
         print(f"Message received: {args.message}")
     else:
         print("No command provided. Use --help for options.")
+
+    # Post-installation message
+    print("ShellAI installed successfully. Use 'ai --help' for usage information.")
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shellai"
+version = "0.1.0"
+description = "A command-line AI chat application"
+authors = [
+    { name = "Lael Al-Halawani", email = "laelhalawani@gmail.com" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv==1.0.1",
+    "langchain_openai==0.3.2",
+    "langchain_experimental==0.3.4",
+    "prompt_toolkit==3.0.50",
+]
+
+[project.scripts]
+ai = "shellai.ai:main"
