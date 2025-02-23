@@ -100,47 +100,11 @@ class WindowsCmdExeTool_Direct(BaseTool):
         """
         return self._run(command)
 
-
-class MessageUserTool(BaseTool):
-    name: str = "message_user_tool"
-    description: str = (
-        "Use this tool to send a message to the user after you've run the necessary commands."
-        "Args:"
-        "message (str): The message to send to the user."
-        "Returns:"
-        "str: The message sent to the user."
-    )
-
-    def _run(self, message: str) -> str:
-        """
-        Sends a message to the user.
-        
-        Args:
-            message (str): The message to send to the user.
-        
-        Returns:
-            str: The message sent to the user.
-        """
-        logger.info(f"AI: {message}")
-        return message
-
-    async def _arun(self, message: str) -> str:
-        """
-        Asynchronous implementation of sending a message to the user.
-        
-        Args:
-            message (str): The message to send to the user.
-        
-        Returns:
-            str: The message sent to the user.
-        """
-        return self._run(message)
-
 # Initialize the built-in Python REPL tool
 python_repl_tool = PythonREPLTool()
 interactive_windows_shell_tool = WindowsCmdExeTool_HITL()
 direct_windows_shell_tool = WindowsCmdExeTool_Direct()
-message_user_tool = MessageUserTool()
+
 
 @tool
 def run_python_code(code: str) -> str:
@@ -161,7 +125,6 @@ def run_python_code(code: str) -> str:
 tools = [
     interactive_windows_shell_tool,
     run_python_code,
-    message_user_tool
     
 ]
 

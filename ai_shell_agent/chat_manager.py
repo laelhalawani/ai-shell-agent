@@ -11,6 +11,7 @@ from langchain_core.messages import (
     ToolMessage,
     BaseMessage
 )
+from langchain_core.messages.utils import convert_to_openai_messages
 from .tools import tools_functions, direct_windows_shell_tool, tools
 from .prompts import default_system_prompt
 from . import logger
@@ -56,6 +57,8 @@ def _read_messages(file_path: str) -> list[BaseMessage]:
                         messages.append(HumanMessage(**msg))
                     elif msg["type"] == "ai":
                         messages.append(AIMessage(**msg))
+                    elif msg["type"] == "tool":  # Added branch for tool messages
+                        messages.append(ToolMessage(**msg))
                 logger.debug(f"Read messages: {messages}")
                 return messages
             except json.JSONDecodeError:
@@ -106,7 +109,7 @@ def create_or_load_chat(title: str) -> str:
     """
     chat_map = _read_json(CHAT_MAP_FILE)
     logger.debug(f"Chat map: {chat_map}")
-    if title in chat_map:
+    if (title in chat_map):
         chat_id = chat_map[title]
         logger.debug(f"Loading existing chat session: {title}")
     else:
@@ -204,15 +207,13 @@ def load_session() -> str:
 # ---------------------------
 # Messaging Functions
 # ---------------------------
-def _handle_tool_calls(messages: list[BaseMessage], ai_message: AIMessage) -> list[BaseMessage]:
+def _handle_tool_calls(ai_message: AIMessage) -> list[BaseMessage]:
     """Handle tool calls from AI response and append tool messages to conversation."""
     logger.debug(f"AI message tool calls: {ai_message.tool_calls}")
     if not ai_message.tool_calls:
-        return messages
-    logger.debug(f"Tool function[0] type: {type(tools[0])}")
-    logger.debug(f"Tool function[1] type: {type(tools[1])}")
-    logger.debug(f"Tool function[0]: {tools[0]}")
-    logger.debug(f"Tool function[1]: {tools[1]}")
+        return []
+    messages = []
+
     tools_dict = {
         "interactive_windows_shell_tool": tools[0],
         "run_python_code": tools[1]
@@ -223,26 +224,22 @@ def _handle_tool_calls(messages: list[BaseMessage], ai_message: AIMessage) -> li
         tool_name = None
         try:
             tool_name = tool_call["name"]
-            logger.debug(f"Tool call name: {tool_name}")
             tool_call_id = tool_call["id"]
-            logger.debug(f"Tool call id: {tool_call_id}")
             if tool_name not in tools_dict:
                 logger.error(f"Unknown tool: {tool_name}")
                 continue
                 
             tool = tools_dict[tool_name]
-            logger.debug(f"Tool function: {tool}")
-            logger.debug(f"Tool function type: {type(tool)}")
-
             tool_response: ToolMessage = tool.invoke(tool_call)
             tool_response.tool_call_id = tool_call_id
-            logger.debug(f"Tool response added: {tool_response.content}")
             messages.append(tool_response)
 
         except Exception as e:
             logger.error(f"Error executing tool {tool_name}: {e}")
+            # Append an error message to the conversation
+            error_message = AIMessage(content=f"Error executing tool {tool_name}: {e}")
+            messages.append(error_message)
     return messages
-
 
 def send_message(message: str) -> str:
     """
@@ -278,27 +275,27 @@ def send_message(message: str) -> str:
     human_message = HumanMessage(content=message)
     current_messages.append(human_message)
     logger.debug(f"Appended human message: {human_message}")
-    
     # Log human message with correct index
     human_count = sum(1 for msg in current_messages if isinstance(msg, HumanMessage))
     logger.info(f"User[{human_count}]: {message}")
     
     # Get AI response with complete history
     llm = ChatOpenAI(model=MODEL, temperature=TEMPERATURE).bind_tools(tools_functions)
-    logger.debug(f"AI: {llm}")
 
     ai_response: AIMessage = None
     # Process response
     while True:
-        ai_response = llm.invoke(current_messages)
+        logger.debug(f"Current messages: {current_messages}")
+        ai_response = llm.invoke(convert_to_openai_messages(current_messages))
         logger.debug(f"AI response: {ai_response}")
         current_messages.append(ai_response)
-        if len(ai_response.tool_calls or []) > 0:
-            current_messages = _handle_tool_calls(current_messages, ai_response)
+        
+        if ai_response.tool_calls and len(ai_response.tool_calls) > 0:
+            tool_messages = _handle_tool_calls(ai_response)
+            current_messages.extend(tool_messages)
         else:
-            warning = AIMessage(content="WARNING: Note To Self: Please use only the available tools, replying directly won't work.")
-            current_messages.append(warning)
-    # Save complete updated conversation
+            logger.info(f"AI: {ai_response.content}")
+            break
     _write_messages(chat_file, current_messages)
     return ai_response.content
 
@@ -322,18 +319,18 @@ def start_temp_chat(message: str) -> str:
     chat_file = create_or_load_chat(console_session_id)
     logger.debug(f"Chat file: {chat_file}")
     
-    messages = _read_messages(chat_file)
-    logger.debug(f"Messages: {messages}")
-    if not any(isinstance(msg, SystemMessage) for msg in messages):
+    current_messages = _read_messages(chat_file)
+    logger.debug(f"Messages: {current_messages}")
+    if not any(isinstance(msg, SystemMessage) for msg in current_messages):
         config = _read_json(CONFIG_FILE)
         logger.debug(f"Config: {config}")
         default_prompt = config.get("default_system_prompt", default_system_prompt)
-        messages.insert(0, SystemMessage(content=default_prompt))
+        current_messages.insert(0, SystemMessage(content=default_prompt))
     
-    human_message_count = sum(1 for msg in messages if isinstance(msg, HumanMessage))
+    human_message_count = sum(1 for msg in current_messages if isinstance(msg, HumanMessage))
     human_index = human_message_count + 1
     
-    messages.append(HumanMessage(content=message))
+    current_messages.append(HumanMessage(content=message))
     logger.info(f"User[{human_index}]: {message}")
     
     llm = ChatOpenAI(model=MODEL, temperature=0.7).bind_tools(tools_functions)
@@ -341,19 +338,19 @@ def start_temp_chat(message: str) -> str:
     
     # Loop to process tool calls until no tool calls are returned
     while True:
-        ai_response = llm.invoke(messages)
+        ai_response: AIMessage = llm.invoke(convert_to_openai_messages(current_messages))
         logger.debug(f"AI response: {ai_response}")
-        messages.append(ai_response)
+        current_messages.append(ai_response)
         if ai_response.tool_calls and len(ai_response.tool_calls) > 0:
-            messages = _handle_tool_calls(messages, ai_response)
+            tool_messages = _handle_tool_calls(ai_response)
+            current_messages.extend(tool_messages)
         else:
             logger.info(f"AI: {ai_response.content}")
-            final_response = ai_response.content
             break
     
     set_current_chat(chat_file)
-    _write_messages(chat_file, messages)
-    return final_response
+    _write_messages(chat_file, current_messages)
+    return ai_response.content
 
 def edit_message(index: int, new_message: str) -> bool:
     """
