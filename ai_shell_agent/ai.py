@@ -1,7 +1,6 @@
 import os
 import json
 import argparse
-import logger
 from dotenv import load_dotenv
 from .chat_manager import (
     create_or_load_chat,
