@@ -36,6 +36,11 @@ def set_api_key() -> None:
         print("No API key entered. Aborting.")
         return
     os.environ["OPENAI_API_KEY"] = api_key
+
+    if not os.path.exists(".env"):
+        with open(".env", "w") as f:
+            f.write("")
+
     try:
         with open(".env", "w") as f:
             f.write(f"OPENAI_API_KEY={api_key}\n")
