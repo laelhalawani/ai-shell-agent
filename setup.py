@@ -15,7 +15,7 @@ setup(
     author='Lael Al-Halawani',
     author_email='laelhalawani@gmail.com',
     license='MIT',
-    long_description=open('README.md').read(),
+    long_description=open(os.path.join(os.path.dirname(__file__), 'README.md')).read(),
     long_description_content_type='text/markdown',
     url='https://github.com/yourusername/ai-shell-agent',
     packages=find_packages(),
