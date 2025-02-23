@@ -1,3 +1,5 @@
 # Exclude environment files and caches
 .env
 __pycache__/
+.pytest_cache/
+.vscode/

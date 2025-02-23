@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 
 # Import functions from chat_manager
-import shellai.chat_manager as chat_manager
+import ..shellai.chat_manager as chat_manager
 
 @pytest.fixture(scope="function")
 def temp_chat_env(tmp_path):

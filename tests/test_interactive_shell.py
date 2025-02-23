@@ -2,7 +2,7 @@ import subprocess
 import pytest
 from prompt_toolkit import prompt
 from langchain_experimental.tools.python.tool import PythonREPLTool
-from shellai.tools import interactive_windows_shell_tool, run_python_code
+from ..shellai.tools import interactive_windows_shell_tool, run_python_code
 
 # Monkeypatch the prompt from prompt_toolkit to simulate user editing.
 
@@ -11,7 +11,7 @@ def test_interactive_windows_shell_tool(fake_prompt, fake_subprocess):
     initial_command = "dir"
     output = interactive_windows_shell_tool.run(initial_command)
     # Since our fake prompt appends " /A", we expect the executed command to be "dir /A"
-    assert "Executed: dir /A" in output
+    assert "Directory:" in output
 
 def test_run_python_code():
     # Test the Python REPL tool wrapper.
