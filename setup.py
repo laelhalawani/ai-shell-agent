@@ -4,10 +4,9 @@ from setuptools.command.install import install
 
 class CustomInstallCommand(install):
     def run(self):
+        print("Installing ai-shell-agent...")
         install.run(self)
-        # Copy .env.example to .env if .env does not exist
-        if not os.path.exists('.env'):
-            self.copy_file('.env.example', '.env')
+        print("ai-shell-agent installed successfully, run ai --help for usage information.")
 
 setup(
     name='ai-shell-agent',
