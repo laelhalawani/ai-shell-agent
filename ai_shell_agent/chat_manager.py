@@ -207,11 +207,12 @@ def _handle_tool_calls(messages: list[BaseMessage], ai_message: AIMessage) -> li
         "run_python_code": tools[1]
     }
     logging.info(f"AI wants to run commands...")
-    llm = ChatOpenAI(model=MODEL, temperature=TEMPERATURE).bind_tools(tools_functions)
+
     for tool_call in ai_message.tool_calls:
         tool_name = None
         try:
             tool_name = tool_call["name"]
+            tool_call_id = tool_call["id"]
             if tool_name not in tools_dict:
                 logging.error(f"Unknown tool: {tool_name}")
                 continue
@@ -221,15 +222,13 @@ def _handle_tool_calls(messages: list[BaseMessage], ai_message: AIMessage) -> li
             logging.debug(f"Tool function type: {type(tool)}")
 
             
-            tool_response = tool.invoke(tool_call)
+            tool_response:ToolMessage = tool.invoke(tool_call)
+            tool_response.tool_call_id = tool_call_id
             logging.debug(f"Tool response added: {tool_response.content}")
             messages.append(tool_response)
 
         except Exception as e:
             logging.error(f"Error executing tool {tool_name}: {e}")
-        response = llm.invoke(messages)
-        logging.info(f"AI: {response.content}")
-        messages.append(response)
     return messages
 
 
@@ -270,22 +269,21 @@ def send_message(message: str) -> str:
     
     # Get AI response with complete history
     llm = ChatOpenAI(model=MODEL, temperature=TEMPERATURE).bind_tools(tools_functions)
-    ai_response:AIMessage = llm.invoke(current_messages)
-    
-    # Append AI response
-    current_messages.append(ai_response)
-    
+
+    ai_response:AIMessage = None
     # Process response
-    if len(ai_response.tool_calls) > 0:
-        current_messages = _handle_tool_calls(current_messages, ai_response)
-        response = ""
-    else:
-        response = ai_response.content
-        logging.info(f"AI: {response}")
+    while True:
+        ai_response:AIMessage = llm.invoke(current_messages)
+        current_messages.append(ai_response)
+        if len(ai_response.tool_calls or []) > 0:
+            current_messages = _handle_tool_calls(current_messages, ai_response)
+        else:
+            logging.info(f"AI: {ai_response.content}")
+            break
     
     # Save complete updated conversation
     _write_messages(chat_file, current_messages)
-    return response
+    return ai_response
 
 def start_temp_chat(message: str) -> str:
     """

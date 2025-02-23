@@ -34,7 +34,7 @@ class InteractiveWindowsShellTool(BaseTool):
                 check=True
             )
             output = result.stdout
-            logging.debug(f"Command output: {output}")
+            logging.info(f"{output}")
             return output
         except subprocess.CalledProcessError as e:
             error = f"Error: {e.stderr}"
