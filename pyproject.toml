@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "shellai"
+name = "ai-shell-agent"
 version = "0.1.0"
 description = "A command-line AI chat application"
 authors = [

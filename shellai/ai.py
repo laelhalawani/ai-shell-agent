@@ -153,7 +153,7 @@ def main():
         print("No command provided. Use --help for options.")
 
     # Post-installation message
-    print("ShellAI installed successfully. Use 'ai --help' for usage information.")
+    print("ai-shell-agent installed successfully. Use 'ai --help' for usage information.")
 
 if __name__ == "__main__":
     main()
