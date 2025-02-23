@@ -5,10 +5,10 @@ from langchain_experimental.tools.python.tool import PythonREPLTool
 from prompt_toolkit import prompt
 from . import logger
 
-class WindowsCmdExeTool_HITL(BaseTool):
+class ConsoleTool_HITL(BaseTool):
     name: str = "interactive_windows_shell_tool"
     description: str = (
-        "Use this tool to run CMD.exe commands and view the output."
+        "Use this tool to run console commands and view the output."
         "Args:"
         "command (str): The initial shell command proposed by the agent."
         "Returns:"
@@ -25,7 +25,7 @@ class WindowsCmdExeTool_HITL(BaseTool):
         Returns:
             str: The output from executing the edited command.
         """
-        edited_command = prompt("(Accept or Edit) CMD> \n", default=command)
+        edited_command = prompt("(Accept or Edit) > \n", default=command)
         logger.debug(f"Executing command: {edited_command}")
         
         try:
@@ -57,9 +57,9 @@ class WindowsCmdExeTool_HITL(BaseTool):
         return self._run(command)
 
 
-class WindowsCmdExeTool_Direct(BaseTool):
+class ConsoleTool_Direct(BaseTool):
     name: str = "direct_windows_shell_tool"
-    description: str = "Executes a shell command directly without user confirmation."
+    description: str = "Executes a console command directly without user confirmation."
 
     def _run(self, command: str) -> str:
         """
@@ -71,7 +71,7 @@ class WindowsCmdExeTool_Direct(BaseTool):
         Returns:
             str: The output from executing the command.
         """
-        logger.info(f"CMD.exe> {command}")
+        logger.debug(f"> {command}")
         try:
             result = subprocess.run(
                 command,
@@ -81,7 +81,7 @@ class WindowsCmdExeTool_Direct(BaseTool):
                 check=True
             )
             output = result.stdout
-            logger.debug(f"Command output: {output}")
+            logger.info(f"{output}")
             return output
         except subprocess.CalledProcessError as e:
             error = f"Error: {e.stderr}"
@@ -102,29 +102,12 @@ class WindowsCmdExeTool_Direct(BaseTool):
 
 # Initialize the built-in Python REPL tool
 python_repl_tool = PythonREPLTool()
-interactive_windows_shell_tool = WindowsCmdExeTool_HITL()
-direct_windows_shell_tool = WindowsCmdExeTool_Direct()
-
-
-@tool
-def run_python_code(code: str) -> str:
-    """
-    Executes a Python code snippet using the built-in Python REPL tool.
-    
-    Parameters:
-      code (str): The Python code to execute.
-      
-    Returns:
-      str: The output produced by executing the Python code.
-    """
-    logger.info(f"Python REPL tool called with code:\n{code}")
-    result = python_repl_tool.run({"code": code})
-    logger.info(f"Python code output: {result}")
-    return result
+interactive_windows_shell_tool = ConsoleTool_HITL()
+direct_windows_shell_tool = ConsoleTool_Direct()
 
 tools = [
     interactive_windows_shell_tool,
-    run_python_code,
+    python_repl_tool,
     
 ]
 

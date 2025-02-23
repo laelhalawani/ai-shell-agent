@@ -1,49 +1,69 @@
 # AI Shell Agent
 
-**AI Shell Agent** is a command-line LLM powered tool that can help you perform tasks by writing and executing terminal commands (with human confirmation or edit) and respond to questions, directly from the console.
-It features a very simple CLI, and adjust the LLM prompts based on your detected system.
-Works on Windows, Linux with Bash, and Mac. (Tested on Windows, please contribute:)
+**AI Shell Agent** is a command-line LLM-powered tool that can help you perform tasks by writing and executing terminal commands (with human confirmation or edit) and responding to questions, directly from the console.  
+It features a very simple CLI and adjusts the LLM prompts based on your detected system.  
+Works on Windows, Linux with Bash, and Mac. (Tested on Windows, please contribute!)
 
 ### Installation
 
 ```bash
 pip install ai-shell-agent
 ```
-Will automatically install the CLI tool in your current python environment.
-Requires `python=3.11.x`
-You can also classically clone and install from the repo.
+This will automatically install the CLI tool in your current Python environment.  
+Requires `python=3.11.x`.  
+You can also clone and install from the repository.
 
 ### Quickly send messages
 
 ```bash
 ai "your message here"
 ```
-Will send a message to the AI in the active chat (and create a new chat if there isn't one active)
+This will send a message to the AI in the active chat (and create a new chat if there isn't one active).  
 
-You will see the AI response or editable commands that the AI wants to run, which you can confirm by pressing Enter.
+You will see the AI response or editable commands that the AI wants to run, which you can confirm by pressing Enter.  
 
-Output of the command is displayed in the console, and added to the chat messages. 
-Once all the commands are run, the AI will provide it's interpretation of the results or try to run more commands.
+Output of the command is displayed in the console and added to the chat messages.  
+Once all the commands are run, the AI will provide its interpretation of the results or try to run more commands.
 
 If you haven't set your API key yet, you will be prompted.
+
+### Execute command yourself and ask about the outputs
+
+```bash
+ai -x "dir"
+```
+This will execute the command and add the output to the AI logs, as it can't see the whole console.
+
+```bash
+ai "tell me about these files"
+```
+Will present both the command output and the question to the AI.  
+
+You can run multiple commands in a row and then ask your question too.  
+Or even run a few commands yourself and then ask the AI to finish up.
 
 ### Titled chats
 
 ```bash
-ai -c "tile of or existing chat"
+ai -c "title of new or existing chat"
 ai "your message here"
 ```
-Will create a new chat and set it active if it doesn't exist, and , then send a message to active chat.
+Will create a new chat and set it active if it doesn't exist, then send a message to the active chat.
 
 ### Temporary chats
 
 ```bash
-ai -t "your first message in a temporary chat"
+ai -tc "your first message in a temporary chat"
 ```
-Will create a new temporary chat without the title and set it active.
+Will create a new temporary chat without a title and set it active.
 
-
-
+### Edit last message
+```bash
+ai -e "updated last message"
+```
+Will update the last message and send the updated chat to the llm to reply.
+You can also specify the user message id you want to update. It's displayed after each message you send, and when you list messages with `ai -lsm`
+---
 
 ## Table of Contents
 
@@ -60,29 +80,29 @@ Will create a new temporary chat without the title and set it active.
 
 ## Warning
 
-**Please use at your own risk, AI can still generate wrong and possibly destructive commands. You always are able to view the command before sending, please be mindful, it shouldn't be too bad, but if you see some terrible commands please post a screenshot**
+**Please use at your own risk. AI can still generate wrong and possibly destructive commands. You always can view the command before sending—please be mindful. If you see any dangerous commands, please post a screenshot.**
 
 ---
 
 ## Features
 
 - **Chat Session Management:**  
-  Create new chats or load existing ones using a title, have one chat as active, set to receive messages by default
+  Create new chats or load existing ones using a title, have one active chat session set to receive messages by default.
 
 - **API Key Management:**  
-  Set and update your OpenAI API key via a dedicated command, you will be prompted to input the key if you have not provided it yet
+  Set and update your OpenAI API key via a dedicated command. You will be prompted to input the key if you have not provided it yet.
 
 - **Message Handling:**  
-  Send new messages or edit previous ones within an active session with super easy `ai "your message"` command
+  Send new messages or edit previous ones within an active session with the simple `ai "your message"` command.
 
 - **Temporary Sessions:**  
-  Start temp sessions for quick, ephemeral chats (currently saved as temp chats under uuid names for easier debugging and tracing)
+  Start temporary sessions for quick, ephemeral chats (currently saved as temp chats under UUID names for easier debugging and tracing).
 
 - **Shell Command Execution:**  
-  LLM can write your commands, and you can edit them or execute with one press of a button.
+  The LLM can write your commands, and you can edit them or execute them with one press of a button.
 
 - **Python Code Execution:**  
-  Our agent has also ability to run Python REPL, but not much development and testing was directed at this feature, and it might perform subpair.
+  The agent also has the ability to run Python REPL, though this feature hasn't undergone extensive development or testing.
 
 ---
 
@@ -104,14 +124,23 @@ After entering the key, it will be saved in a `.env` file located in the project
 If you need to update or set a new API key at any time, use the following command:
 
 ```bash
-ai --set-api-key
+ai -k
 ```
 
-This command will prompt you to enter the new API key and update the `.env` file accordingly.
+Shorthand:  
+```bash
+ai --set-api-key
+```
 
 ### Starting a Chat Session
 
 Create a new chat session with a title:
+
+```bash
+ai -c "My Chat Session"
+```
+
+Shorthand:  
 ```bash
 ai --chat "My Chat Session"
 ```
@@ -119,6 +148,7 @@ ai --chat "My Chat Session"
 ### Sending a Message
 
 To send a message to the active chat session:
+
 ```bash
 ai "what is the time right now?"
 ```
@@ -126,15 +156,27 @@ ai "what is the time right now?"
 ### Executing Shell Commands
 
 Run a shell command directly:
+
 ```bash
-ai --cmd "dir"   # (or the equivalent command for your OS)
+ai -x "dir"
 ```
 
-By automatically detecting your operating system (via Python’s `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal. This ensures the suggested commands follow the conventions of your environment.
+Shorthand:  
+```bash
+ai --execute "dir"
+```
+
+By automatically detecting your operating system (via Python’s `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal.
 
 ### Temporary Chat Sessions
 
-Start a temporary session (in-memory):
+Start a temporary session (untitled, currently saved to file but untitled):
+
+```bash
+ai -tc "Initial temporary message"
+```
+
+Shorthand:  
 ```bash
 ai --temp-chat "Initial temporary message"
 ```
@@ -143,19 +185,56 @@ ai --temp-chat "Initial temporary message"
 
 - **List Sessions:**
   ```bash
+  ai -lsc
+  ```
+  Shorthand:  
+  ```bash
   ai --list-chats
   ```
+
 - **Load an Existing Session:**
+  ```bash
+  ai -lc "My Chat Session"
+  ```
+  Shorthand:  
   ```bash
   ai --load-chat "My Chat Session"
   ```
+
 - **Rename a Session:**
+  ```bash
+  ai -rnc "Old Title" "New Title"
+  ```
+  Shorthand:  
   ```bash
   ai --rename-chat "Old Title" "New Title"
   ```
+
 - **Delete a Session:**
   ```bash
+  ai -delc "Chat Title"
+  ```
+  Shorthand:  
+  ```bash
   ai --delete-chat "Chat Title"
+  ```
+
+- **List messages:**
+  ```bash
+  ai -lsm
+  ```
+  Shorthand:  
+  ```bash
+  ai --list-messages
+  ```
+
+- **Show the current chat title:**
+  ```bash
+  ai -ct
+  ```
+  Shorthand:  
+  ```bash
+  ai --current-chat-title
   ```
 
 ---
@@ -190,11 +269,19 @@ pip install ai-shell-agent
 ### API Key Management
 - **Set or Update API Key:**
   ```bash
+  ai -k
+  ```
+  Shorthand:  
+  ```bash
   ai --set-api-key
   ```
 
 ### Chat Session Management
 - **Create or Load a Chat Session:**
+  ```bash
+  ai -c "Session Title"
+  ```
+  Shorthand:  
   ```bash
   ai --chat "Session Title"
   ```
@@ -202,9 +289,18 @@ pip install ai-shell-agent
 ### Messaging
 - **Send a Message:**
   ```bash
+  ai -m "Your message"
+  ```
+  Shorthand:  
+  ```bash
   ai --send-message "Your message"
   ```
+
 - **Edit a Message at a Given Index:**
+  ```bash
+  ai -e 1 "Updated message"
+  ```
+  Shorthand:  
   ```bash
   ai --edit 1 "Updated message"
   ```
@@ -218,47 +314,18 @@ pip install ai-shell-agent
 ### Shell Command Execution
 - **Direct Execution (without confirmation):**
   ```bash
-  ai --cmd "your shell command"
+  ai -x "your shell command"
   ```
-
-### Python Code Execution
-- **Run Python Code:**
+  Shorthand:  
   ```bash
-  ai --run-python "print('Hello, World!')"
+  ai --execute "your shell command"
   ```
 
 ---
 
 ## Development & Contributing
 
-### Setting Up the Development Environment
-1. **Fork and Clone the Repository:**
-    ```bash
-    git clone https://github.com/yourusername/ai-shell-agent.git
-    cd ai-shell-agent
-    ```
-2. **Set Up a Virtual Environment:**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate   # Windows: venv\Scripts\activate
-    ```
-3. **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-4. **Run Tests:**
-    ```bash
-    pytest
-    ```
-
----
-
-## Acknowledgements
-
-We would like to thank the following:
-- [OpenAI](https://openai.com) for providing the API.
-- [Python](https://www.python.org) for being an awesome programming language.
-- All contributors who have provided feedback, bug reports, and improvements to the AI Shell Agent project.
+Follow the same steps as described earlier.
 
 ---
 

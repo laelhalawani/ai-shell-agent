@@ -15,7 +15,9 @@ from .chat_manager import (
     set_default_system_prompt,
     update_system_prompt,
     flush_temp_chats,
-    cmd
+    execute,
+    list_messages,
+    current_chat_title
 )
 
 # Load environment variables from .env if available.
@@ -64,10 +66,10 @@ def main():
     
     # Chat management options
     parser.add_argument("-c", "--chat", help="Create or load a chat session with the specified title")
-    parser.add_argument("--load-chat", help="Load an existing chat session with the specified title")
-    parser.add_argument("--list-chats", action="store_true", help="List all available chat sessions")
-    parser.add_argument("--rename-chat", nargs=2, metavar=("OLD_TITLE", "NEW_TITLE"), help="Rename a chat session")
-    parser.add_argument("--delete-chat", help="Delete a chat session with the specified title")
+    parser.add_argument("-lc", "--load-chat", help="Load an existing chat session with the specified title")
+    parser.add_argument("-lsc", "--list-chats", action="store_true", help="List all available chat sessions")
+    parser.add_argument("-rnc", "--rename-chat", nargs=2, metavar=("OLD_TITLE", "NEW_TITLE"), help="Rename a chat session")
+    parser.add_argument("-delc", "--delete-chat", help="Delete a chat session with the specified title")
     
     # System prompt management
     parser.add_argument("--default-system-prompt", help="Set the default system prompt for new chats")
@@ -75,12 +77,17 @@ def main():
     
     # Messaging commands
     parser.add_argument("-m", "--send-message", help="Send a message to the active chat session")
-    parser.add_argument("-t", "--temp-chat", help="Start a temporary (in-memory) chat session with the initial message")
-    parser.add_argument("--edit", nargs=2, metavar=("INDEX", "NEW_MESSAGE"), help="Edit a previous message at the given index")
+    parser.add_argument("-tc", "--temp-chat", help="Start a temporary (in-memory) chat session with the initial message")
+    parser.add_argument("-e", "--edit", nargs="+", metavar=("INDEX", "NEW_MESSAGE"), help="Edit a previous message at the given index")
     parser.add_argument("--temp-flush", action="store_true", help="Removes all temp chat sessions")
     
     # Add direct command execution
-    parser.add_argument("--cmd", help="Execute a shell command preserving its context for AI")
+    parser.add_argument("-x", "--execute", help="Execute a shell command preserving its context for AI")
+    
+    # Print the chat history
+    parser.add_argument("-lsm", "--list-messages", action="store_true", help="Print the chat history")
+    
+    parser.add_argument("-ct", "--current-chat-title", action="store_true", help="Print the current chat title")
     
     # Fallback: echo a simple message.
     parser.add_argument("message", nargs="?", help="Send a message (if no other options are provided)")
@@ -93,14 +100,18 @@ def main():
         return
 
     # Handle direct command execution
-    if args.cmd:
-        output = cmd(args.cmd)
+    if args.execute:
+        output = execute(args.execute)
         return
 
     # Chat session management
     if args.chat:
         chat_file = create_or_load_chat(args.chat)
         save_session(chat_file)
+        return
+    
+    if args.current_chat_title:
+        current_chat_title()
         return
 
     if args.load_chat:
@@ -140,12 +151,26 @@ def main():
         return
 
     if args.edit:
-        index, new_message = args.edit
-        edit_message(int(index), new_message)
+        if len(args.edit) == 1:
+            new_message = args.edit[0]
+            edit_message(None, new_message)
+        elif len(args.edit) == 2:
+            index, new_message = args.edit
+            if index.lower() == "last":
+                edit_message(None, new_message)
+            else:
+                edit_message(int(index), new_message)
+        else:
+            logger.error("Invalid number of arguments for --edit")
         return
 
     if args.temp_flush:
         flush_temp_chats()
+        return
+    
+    # Print chat history
+    if args.list_messages:
+        list_messages()
         return
     # Fallback: if a message is provided without other commands, send it to current chat
     if args.message:

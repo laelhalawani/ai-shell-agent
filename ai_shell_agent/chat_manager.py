@@ -1,6 +1,7 @@
 # File: ai_shell_agent/chat_manager.py
 import os
 import json
+from typing import Optional
 import uuid
 
 from langchain_openai import ChatOpenAI
@@ -277,7 +278,7 @@ def send_message(message: str) -> str:
     logger.debug(f"Appended human message: {human_message}")
     # Log human message with correct index
     human_count = sum(1 for msg in current_messages if isinstance(msg, HumanMessage))
-    logger.info(f"User[{human_count}]: {message}")
+    logger.info(f"id:{human_count-1}")
     
     # Get AI response with complete history
     llm = ChatOpenAI(model=MODEL, temperature=TEMPERATURE).bind_tools(tools_functions)
@@ -331,7 +332,7 @@ def start_temp_chat(message: str) -> str:
     human_index = human_message_count + 1
     
     current_messages.append(HumanMessage(content=message))
-    logger.info(f"User[{human_index}]: {message}")
+    logger.debug(f"User[{human_index}]: {message}")
     
     llm = ChatOpenAI(model=MODEL, temperature=0.7).bind_tools(tools_functions)
     logger.debug(f"LLM: {llm}")
@@ -352,12 +353,13 @@ def start_temp_chat(message: str) -> str:
     _write_messages(chat_file, current_messages)
     return ai_response.content
 
-def edit_message(index: int, new_message: str) -> bool:
+def edit_message(index: Optional[int], new_message: str) -> bool:
     """
     Edits a previous message at the given index and truncates subsequent messages.
+    If no index is provided, edits the last human message.
     
     Parameters:
-      index (int): The index of the message to edit.
+      index (int, optional): The index of the message to edit. If None, edits the last human message.
       new_message (str): The new content for the message.
       
     Returns:
@@ -370,15 +372,25 @@ def edit_message(index: int, new_message: str) -> bool:
         
     messages = _read_messages(chat_file)
     logger.debug(f"Messages: {messages}")
+    
+    if index is None:
+        # Find the last human message
+        for i in reversed(range(len(messages))):
+            if isinstance(messages[i], HumanMessage):
+                index = i
+                break
+        if index is None:
+            return False
+    
     if index < 0 or index >= len(messages):
         return False
         
-    # Preserve message type while updating content
-    message_type = type(messages[index])
-    messages[index] = message_type(content=new_message)
-    messages = messages[:index + 1]
+    # truncate messages removing the edited message and all subsequent messages
+    messages = messages[:index]
     logger.debug(f"Edited messages: {messages}")
     _write_messages(chat_file, messages)
+    # Send the new message via send_message to trigger complete processing
+    send_message(new_message)
     return True
 
 def flush_temp_chats() -> None:
@@ -429,7 +441,7 @@ def update_system_prompt(prompt_text: str) -> None:
     messages.insert(0, SystemMessage(content=prompt_text))
     _write_messages(chat_file, messages)
 
-def cmd(command: str) -> str:
+def execute(command: str) -> str:
     """
     Executes a shell command directly and adds both command and output 
     to chat history as a HumanMessage. Creates a temporary chat if no chat is active.
@@ -444,6 +456,7 @@ def cmd(command: str) -> str:
     chat_file = get_current_chat()
     logger.debug(f"Chat file: {chat_file}")
     if not chat_file:
+        logger.info("No active chat session. Starting temporary chat...")
         console_session_id = _get_console_session_id()
         chat_file = create_or_load_chat(console_session_id)
     
@@ -470,3 +483,59 @@ def cmd(command: str) -> str:
     # Save complete updated conversation
     _write_messages(chat_file, current_messages)
     return output
+
+def list_messages(chat_title:Optional[str]=None):
+    """
+    Prints the chat history for the given chat title.
+    
+    Parameters:
+      chat_title (str, optional): The title of the chat session
+        to print. If not provided, the current chat is used.
+        
+    """
+    if not chat_title:
+        chat_file = get_current_chat()
+        if not chat_file:
+            logger.error("No active chat session to list messages from.")
+            return
+        # Find corresponding title from chat_map
+        chat_map = _read_json(CHAT_MAP_FILE)
+        for t, cid in chat_map.items():
+            if os.path.join(CHAT_DIR, f"{cid}.json") == chat_file:
+                chat_title = t
+                break
+
+    chat_map = _read_json(CHAT_MAP_FILE)
+    logger.debug(f"Chat map: {chat_map}")
+    chat_id = chat_map.get(chat_title, None)
+    if not chat_id:
+        logger.error(f"Chat session not found: {chat_title}")
+        return
+    chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
+    current_messages = _read_messages(chat_file)
+    logger.debug(f"Chat messages: {current_messages}")
+    user_messages = 0
+    for i, msg in enumerate(current_messages):
+        if isinstance(msg, SystemMessage):
+            logger.debug(f"System: {msg.content}")
+        elif isinstance(msg, HumanMessage):
+            logger.info(f"User[{user_messages}]: {msg.content}")
+            user_messages += 1
+        elif isinstance(msg, AIMessage):
+            logger.info(f"AI: {msg.content}")
+        elif isinstance(msg, ToolMessage):
+            logger.info(f"Tool: {msg.content}")
+            
+def current_chat_title():
+    """
+    Prints the title of the current chat session.
+    """
+    chat_file = get_current_chat()
+    if not chat_file:
+        logger.info("No active chat session, you can use the -lsc flag to list all available chat sessions and -lc to load a chat session.")
+        return
+    chat_map = _read_json(CHAT_MAP_FILE)
+    for title, chat_id in chat_map.items():
+        if os.path.join(CHAT_DIR, f"{chat_id}.json") == chat_file:
+            logger.info(f"Current chat: {title}")
+            return

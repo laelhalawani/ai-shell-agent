@@ -5,4 +5,6 @@ when interrupted during running tool calls, it's liekly that there will be AI me
 
 implement nicer colored printouts
 
-add link to api keys when prompting for it
+add link to api keys when prompting for it\
+
+make sure edit edits last human message if number not provied
