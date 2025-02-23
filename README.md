@@ -62,8 +62,8 @@ Will create a new temporary chat without a title and set it active.
 ```bash
 ai -e "updated last message"
 ```
-Will update the last message and send the updated chat to the llm to reply.
-You can also specify the user message id you want to update. It's displayed after each message you send, and when you list messages with `ai -lsm`
+Will update the last message and send the updated chat to the llm to reply. You can also specify the user message id you want to update. It's displayed after each message you send, and when you list messages with `ai -lsm`.
+
 ---
 
 ## Table of Contents
