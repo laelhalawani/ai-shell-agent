@@ -15,7 +15,7 @@ requires-python = ">=3.11"
 dynamic = ["classifiers", "dependencies"]
 
 [project.scripts]
-ai = "shellai.ai:main"
+ai = "ai_shell_agent.ai:main"
 
 [project.urls]
 "Homepage" = "https://github.com/yourusername/ai-shell-agent"

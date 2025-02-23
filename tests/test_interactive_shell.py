@@ -2,7 +2,7 @@ import subprocess
 import pytest
 from prompt_toolkit import prompt
 from langchain_experimental.tools.python.tool import PythonREPLTool
-from shellai.tools import interactive_windows_shell_tool, run_python_code
+from ai_shell_agent.tools import interactive_windows_shell_tool, run_python_code
 
 # Monkeypatch the prompt from prompt_toolkit to simulate user editing.
 

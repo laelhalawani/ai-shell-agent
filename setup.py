@@ -31,7 +31,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'ai=shellai.ai:main',
+            'ai=ai_shell_agent.ai:main',
         ],
     },
 )
