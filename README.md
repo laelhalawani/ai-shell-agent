@@ -58,6 +58,7 @@ ai -tc "your first message in a temporary chat"
 Will create a new temporary chat without a title and set it active.
 
 ### Edit last message
+
 ```bash
 ai -e "updated last message"
 ```
