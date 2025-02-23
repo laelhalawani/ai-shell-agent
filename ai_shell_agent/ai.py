@@ -32,37 +32,49 @@ def get_api_key() -> str:
     """Retrieve the OpenAI API key from the environment."""
     return os.getenv("OPENAI_API_KEY")
 
-def set_api_key() -> None:
+def set_api_key(api_key: str = None) -> None:
     """
     Prompt the user for an OpenAI API key and save it to the .env file.
     Aborts if no key is entered.
     """
-    api_key = input("Enter OpenAI API key: ").strip()
+    if not api_key:
+        api_key = input("Enter OpenAI API key: ").strip()
     if not api_key:
         logger.warning("No API key entered. Aborting.")
         return
     os.environ["OPENAI_API_KEY"] = api_key
 
-    if not os.path.exists(".env"):
-        with open(".env", "w") as f:
+    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    if not os.path.exists(env_path):
+        with open(env_path, "w") as f:
             f.write("")
 
     try:
-        with open(".env", "w") as f:
+        with open(env_path, "w") as f:
             f.write(f"OPENAI_API_KEY={api_key}\n")
         logger.info("API key saved successfully to .env")
     except Exception as e:
         logger.error(f"Failed to write to .env: {e}")
 
+def ensure_api_key() -> None:
+    """
+    Ensure that the OpenAI API key is set. If not, prompt the user to enter it.
+    """
+    if not get_api_key():
+        logger.warning("OpenAI API key not found. Please enter your API key.")
+        set_api_key()
+
 # ---------------------------
 # CLI Command Handling
 # ---------------------------
 def main():
+    load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+    ensure_api_key()
     parser = argparse.ArgumentParser(
         description="AI Command-Line Chat Application"
     )
     # API Key Management
-    parser.add_argument("-k", "--set-api-key", action="store_true", help="Set or update the OpenAI API key")
+    parser.add_argument("-k", "--set-api-key", nargs="?", const=True, help="Set or update the OpenAI API key")
     
     # Chat management options
     parser.add_argument("-c", "--chat", help="Create or load a chat session with the specified title")
@@ -96,7 +108,10 @@ def main():
 
     # Handle API key management
     if args.set_api_key:
-        set_api_key()
+        if isinstance(args.set_api_key, str):
+            set_api_key(args.set_api_key)
+        else:
+            set_api_key()
         return
 
     # Handle direct command execution
