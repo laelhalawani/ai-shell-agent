@@ -2,6 +2,51 @@ import os
 import json
 import argparse
 from dotenv import load_dotenv
+
+# Load environment variables from .env if available.
+load_dotenv()
+
+from . import logger
+
+# Ensure the API key is set before any other operations
+def get_api_key() -> str:
+    """Retrieve the OpenAI API key from the environment."""
+    return os.getenv("OPENAI_API_KEY")
+
+def set_api_key(api_key: str = None) -> None:
+    """
+    Prompt the user for an OpenAI API key and save it to the .env file.
+    Aborts if no key is entered.
+    """
+    if not api_key:
+        api_key = input("Enter OpenAI API key: ").strip()
+    if not api_key:
+        logger.warning("No API key entered. Aborting.")
+        return
+    os.environ["OPENAI_API_KEY"] = api_key
+
+    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    if not os.path.exists(env_path):
+        with open(env_path, "w") as f:
+            f.write("")
+
+    try:
+        with open(env_path, "w") as f:
+            f.write(f"OPENAI_API_KEY={api_key}\n")
+        logger.info("API key saved successfully to .env")
+    except Exception as e:
+        logger.error(f"Failed to write to .env: {e}")
+
+def ensure_api_key() -> None:
+    """
+    Ensure that the OpenAI API key is set. If not, prompt the user to enter it.
+    """
+    if not get_api_key():
+        logger.warning("OpenAI API key not found. Please enter your API key.")
+        set_api_key()
+
+ensure_api_key()
+
 from .chat_manager import (
     create_or_load_chat,
     get_chat_titles_list,
@@ -19,11 +64,6 @@ from .chat_manager import (
     list_messages,
     current_chat_title
 )
-
-# Load environment variables from .env if available.
-load_dotenv()
-
-from . import logger
 
 # ---------------------------
 # API Key Management
