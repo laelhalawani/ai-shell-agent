@@ -252,7 +252,7 @@ pip install ai-shell-agent
 
 1. **Clone the repository:**
     ```bash
-    git clone https://github.com/yourusername/ai-shell-agent.git
+    git clone https://github.com/laelhalawani/ai-shell-agent.git
     ```
 2. **Navigate to the project directory:**
     ```bash
