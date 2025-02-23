@@ -1,157 +1,234 @@
-# ai-shell-agent
+# AI Shell Agent
 
-A command-line AI chat application that allows you to interact with OpenAI's language models directly from your terminal. And help you running terminal commands and python code on it's own (it inputs it for you and you can still make your edits)
+**AI Shell Agent** is a command-line chat application that lets you interact with OpenAI’s language models directly from your terminal. Unlike libraries meant to be imported into other codebases, AI Shell Agent is built to be used as a standalone CLI tool—designed for a seamless, interactive experience.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Quickstart Guide](#quickstart-guide)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Development & Contributing](#development--contributing)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
+
+---
+
+## Overview
+
+AI Shell Agent allows you to:
+- Create, load, rename, and delete chat sessions.
+- Manage your OpenAI API key easily.
+- Send and edit messages within chat sessions.
+- Run temporary, in-memory chat sessions.
+- Execute shell commands (with both interactive and direct modes).
+- Run Python code snippets using an integrated REPL tool.
+
+This project is designed exclusively as a command-line tool. Its entire interface is built around terminal commands, interactive prompts, and text-based feedback.
+
+---
 
 ## Features
 
-- Manage chat sessions
-- Set and update system prompts
-- Send and edit messages
-- Temporary in-memory chat sessions
-- API key management
+- **Chat Session Management:**  
+  Create new chats or load existing ones using a title.
 
-## Installation
+- **API Key Management:**  
+  Set and update your OpenAI API key via a dedicated command.
 
-You can install the package from PyPI:
+- **Message Handling:**  
+  Send new messages or edit previous ones within an active session.
+
+- **Temporary Sessions:**  
+  Start in-memory sessions for quick, ephemeral conversations.
+
+- **Shell Command Execution:**  
+  Execute system commands either directly or after interactive editing.
+
+- **Python Code Execution:**  
+  Run Python code snippets using an integrated Python REPL tool.
+
+---
+
+## Quickstart Guide
+
+### Setting Up the API Key
+
+Upon launching AI Shell Agent for the first time, if no API key is detected, the application will prompt you to enter it:
 
 ```bash
-pip install ai-shell-agent
+$ ai
+No OpenAI API key found. Please enter your OpenAI API key:
 ```
 
-Alternatively, you can install it from the source:
+After entering the key, it will be saved in a `.env` file located in the project's installation directory. This ensures that your API key is securely stored and automatically loaded in future sessions.
 
-```bash
-git clone https://github.com/yourusername/ai-shell-agent.git
-cd ai-shell-agent
-pip install .
-```
+### Managing the API Key
 
-## Usage
-
-### Setting the API Key
-
-Before using the application, you need to set your OpenAI API key:
+If you need to update or set a new API key at any time, use the following command:
 
 ```bash
 ai --set-api-key
 ```
-If you don't set it up you will be prompted when trying to use other functionality.
 
-### Quick conversation in session
+This command will prompt you to enter the new API key and update the `.env` file accordingly.
 
-To quickly initialize in-memory conversation, type
+### Starting a Chat Session
 
-```bash
-ai "your message here"
-```
-
-### Creating or Loading a Chat Session
-
-To create or load a chat session with a specified title:
-
+Create a new chat session with a title:
 ```bash
 ai --chat "My Chat Session"
-```
-
-### Listing Available Chat Sessions
-
-To list all available chat sessions:
-
-```bash
-ai --list-chats
-```
-
-### Renaming a Chat Session
-
-To rename an existing chat session:
-
-```bash
-ai --rename-chat "Old Title" "New Title"
-```
-
-### Deleting a Chat Session
-
-To delete a chat session:
-
-```bash
-ai --delete-chat "Chat Title"
-```
-
-### Setting the Default System Prompt
-
-To set the default system prompt for new chats:
-
-```bash
-ai --default-system-prompt "Your default system prompt"
-```
-
-### Updating the System Prompt for the Active Chat Session
-
-To update the system prompt for the active chat session:
-
-```bash
-ai --system-prompt "Your new system prompt"
 ```
 
 ### Sending a Message
 
 To send a message to the active chat session:
-
 ```bash
-ai --send-message "Your message"
+ai "what is the time right now?"
 ```
 
-### Starting a Temporary Chat Session
+### Executing Shell Commands
 
-To start a temporary (in-memory) chat session with an initial message:
-
+Run a shell command directly:
 ```bash
-ai --temp-chat "Initial message"
+ai --cmd "dir"   # (or the equivalent command for your OS)
 ```
 
-### Editing a Previous Message
+By automatically detecting your operating system (via Python’s `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal. This ensures the suggested commands follow the conventions of your environment.
 
-To edit a previous message at a given index:
+### Temporary Chat Sessions
 
+Start a temporary session (in-memory):
 ```bash
-ai --edit 1 "New message"
+ai --temp-chat "Initial temporary message"
 ```
 
-## Development
+### Listing and Managing Sessions
 
-To contribute to the project, follow these steps:
+- **List Sessions:**
+  ```bash
+  ai --list-chats
+  ```
+- **Load an Existing Session:**
+  ```bash
+  ai --load-chat "My Chat Session"
+  ```
+- **Rename a Session:**
+  ```bash
+  ai --rename-chat "Old Title" "New Title"
+  ```
+- **Delete a Session:**
+  ```bash
+  ai --delete-chat "Chat Title"
+  ```
 
-1. Fork the repository.
-2. Clone your forked repository:
+---
 
+## Installation
+
+### Installing from PyPI
+
+```bash
+pip install ai-shell-agent
+```
+
+### Installing from Source
+
+1. **Clone the repository:**
     ```bash
     git clone https://github.com/yourusername/ai-shell-agent.git
     ```
-
-3. Create a virtual environment and activate it:
-
+2. **Navigate to the project directory:**
     ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+    cd ai-shell-agent
+    ```
+3. **Install the package:**
+    ```bash
+    pip install .
     ```
 
-4. Install the dependencies:
+---
 
+## Usage
+
+### API Key Management
+- **Set or Update API Key:**
+  ```bash
+  ai --set-api-key
+  ```
+
+### Chat Session Management
+- **Create or Load a Chat Session:**
+  ```bash
+  ai --chat "Session Title"
+  ```
+
+### Messaging
+- **Send a Message:**
+  ```bash
+  ai --send-message "Your message"
+  ```
+- **Edit a Message at a Given Index:**
+  ```bash
+  ai --edit 1 "Updated message"
+  ```
+
+### System Prompt Management
+- **Set Default System Prompt:**
+  ```bash
+  ai --default-system-prompt "Your default system prompt"
+  ```
+
+### Shell Command Execution
+- **Direct Execution (without confirmation):**
+  ```bash
+  ai --cmd "your shell command"
+  ```
+
+### Python Code Execution
+- **Run Python Code:**
+  ```bash
+  ai --run-python "print('Hello, World!')"
+  ```
+
+---
+
+## Development & Contributing
+
+### Setting Up the Development Environment
+1. **Fork and Clone the Repository:**
+    ```bash
+    git clone https://github.com/yourusername/ai-shell-agent.git
+    cd ai-shell-agent
+    ```
+2. **Set Up a Virtual Environment:**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate   # Windows: venv\Scripts\activate
+    ```
+3. **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
-
-5. Run the tests:
-
+4. **Run Tests:**
     ```bash
     pytest
     ```
 
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+---
 
 ## Acknowledgements
 
+We would like to thank the following:
 - [OpenAI](https://openai.com) for providing the API.
 - [Python](https://www.python.org) for being an awesome programming language.
+- All contributors who have provided feedback, bug reports, and improvements to the AI Shell Agent project.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](../LICENSE) file for details.

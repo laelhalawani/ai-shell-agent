@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Shell Agent</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .wrapper {
+            display: flex;
+            flex: 1;
+        }
+        .sidebar {
+            width: 20%;
+            background: #333;
+            color: #fff;
+            padding: 20px;
+            box-sizing: border-box;
+            height: 100vh;
+            position: fixed;
+        }
+        .sidebar h2 {
+            margin-top: 0;
+        }
+        .sidebar a {
+            color: #fff;
+            text-decoration: none;
+            display: block;
+            padding: 10px 0;
+        }
+        .container {
+            width: 80%;
+            margin-left: 20%;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .content {
+            background: #fff;
+            margin-top: 20px;
+            box-sizing: border-box;
+        }
+        .content h1, .content h2, .content h3 {
+            color: #333;
+        }
+        .content pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border: 1px solid #ddd;
+            overflow-x: auto;
+        }
+        .content code {
+            background: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+        footer {
+            background: #333;
+            color: #fff;
+            text-align: center;
+            padding: 10px 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="sidebar">
+            <h2>Contents</h2>
+            <a href="#overview">Overview</a>
+            <a href="#features">Features</a>
+            <a href="#quickstart-guide">Quickstart Guide</a>
+            <a href="#installation">Installation</a>
+            <a href="#usage">Usage</a>
+            <a href="#development-contributing">Development & Contributing</a>
+            <a href="#acknowledgements">Acknowledgements</a>
+            <a href="#license">License</a>
+        </div>
+
+        <div class="container">
+            <div class="content">
+                <h2 id="overview">Overview</h2>
+                <p>AI Shell Agent allows you to:</p>
+                <ul>
+                    <li>Create, load, rename, and delete chat sessions.</li>
+                    <li>Manage your OpenAI API key easily.</li>
+                    <li>Send and edit messages within chat sessions.</li>
+                    <li>Run temporary, in-memory chat sessions.</li>
+                    <li>Execute shell commands (with both interactive and direct modes).</li>
+                    <li>Run Python code snippets using an integrated REPL tool.</li>
+                </ul>
+                <p>This project is designed exclusively as a command-line tool. Its entire interface is built around terminal commands, interactive prompts, and text-based feedback.</p>
+
+                <h2 id="features">Features</h2>
+                <ul>
+                    <li><strong>Chat Session Management:</strong> Create new chats or load existing ones using a title.</li>
+                    <li><strong>API Key Management:</strong> Set and update your OpenAI API key via a dedicated command.</li>
+                    <li><strong>Message Handling:</strong> Send new messages or edit previous ones within an active session.</li>
+                    <li><strong>Temporary Sessions:</strong> Start in-memory sessions for quick, ephemeral conversations.</li>
+                    <li><strong>Shell Command Execution:</strong> Execute system commands either directly or after interactive editing.</li>
+                    <li><strong>Python Code Execution:</strong> Run Python code snippets using an integrated Python REPL tool.</li>
+                </ul>
+
+                <h2 id="quickstart-guide">Quickstart Guide</h2>
+                <h3>Setting Up the API Key</h3>
+                <p>Upon launching AI Shell Agent for the first time, if no API key is detected, the application will prompt you to enter it:</p>
+                <pre><code>$ ai
+No OpenAI API key found. Please enter your OpenAI API key:</code></pre>
+                <p>After entering the key, it will be saved in a <code>.env</code> file located in the project's installation directory. This ensures that your API key is securely stored and automatically loaded in future sessions.</p>
+
+                <h3>Managing the API Key</h3>
+                <p>If you need to update or set a new API key at any time, use the following command:</p>
+                <pre><code>ai --set-api-key</code></pre>
+                <p>This command will prompt you to enter the new API key and update the <code>.env</code> file accordingly.</p>
+
+                <h3>Starting a Chat Session</h3>
+                <p>Create a new chat session with a title:</p>
+                <pre><code>ai -c "test titled chat"</code></pre>
+                <p>This command creates a new chat session with the title "test titled chat". Titled chats are useful for working on a project through multiple sessions, as they can be easily loaded manually later.</p>
+
+                <h3>Sending a Message</h3>
+                <p>To send a message to the active chat session:</p>
+                <pre><code>ai "what is the time right now?"</code></pre>
+                <p>This sends the message "what is the time right now?" to the active chat session. The AI will respond accordingly.</p>
+
+                <h3>Executing Shell Commands</h3>
+                <p>Run a shell command directly:</p>
+                <pre><code>ai "what is the time right now?"
+(Accept or Edit) CMD>
+echo %time%</code></pre>
+                <p>When the AI wants to use a tool, you will have a chance to confirm or edit the command before executing. This tool automatically detects the OS and prompts the chat to use the correct commands and provide correct examples behind the scenes.</p>
+                <p>AI Shell Agent automatically detects your operating system (via Python’s <code>platform</code> library) and customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal.</p>
+
+                <h3>Temporary Chat Sessions</h3>
+                <p>Start a temporary session (in-memory):</p>
+                <pre><code>ai -t "I'm sending you a message in a new temporary chat :)"</code></pre>
+                <p>Temporary sessions are for quick, ephemeral conversations on a temporary subject. They are not saved and are useful for short interactions.</p>
+
+                <h3>Listing and Managing Sessions</h3>
+                <ul>
+                    <li><strong>List Sessions:</strong>
+                        <pre><code>ai --list-chats</code></pre>
+                        <p>This lists all the chat sessions you have created.</p>
+                    </li>
+                    <li><strong>Load an Existing Session:</strong>
+                        <pre><code>ai --load-chat "test titled chat"</code></pre>
+                        <p>This loads the chat session with the title "test titled chat".</p>
+                    </li>
+                    <li><strong>Rename a Session:</strong>
+                        <pre><code>ai --rename-chat "Old Title" "New Title"</code></pre>
+                    </li>
+                    <li><strong>Delete a Session:</strong>
+                        <pre><code>ai --delete-chat "Chat Title"</code></pre>
+                    </li>
+                </ul>
+
+                <h2 id="installation">Installation</h2>
+                <h3>Installing from PyPI</h3>
+                <pre><code>pip install ai-shell-agent</code></pre>
+
+                <h3>Installing from Source</h3>
+                <ol>
+                    <li><strong>Clone the repository:</strong>
+                        <pre><code>git clone https://github.com/yourusername/ai-shell-agent.git</code></pre>
+                    </li>
+                    <li><strong>Navigate to the project directory:</strong>
+                        <pre><code>cd ai-shell-agent</code></pre>
+                    </li>
+                    <li><strong>Install the package:</strong>
+                        <pre><code>pip install .</code></pre>
+                    </li>
+                </ol>
+
+                <h2 id="usage">Usage</h2>
+                <h3>API Key Management</h3>
+                <p><strong>Set or Update API Key:</strong></p>
+                <pre><code>ai --set-api-key</code></pre>
+
+                <h3>Chat Session Management</h3>
+                <p><strong>Create or Load a Chat Session:</strong></p>
+                <pre><code>ai --chat "Session Title"</code></pre>
+
+                <h3>Messaging</h3>
+                <p><strong>Send a Message:</strong></p>
+                <pre><code>ai --send-message "Your message"</code></pre>
+                <p><strong>Edit a Message at a Given Index:</strong></p>
+                <pre><code>ai --edit 1 "Updated message"</code></pre>
+
+                <h3>System Prompt Management</h3>
+                <p><strong>Set Default System Prompt:</strong></p>
+                <pre><code>ai --default-system-prompt "Your default system prompt"</code></pre>
+
+                <h3>Shell Command Execution</h3>
+                <p><strong>Direct Execution (without confirmation):</strong></p>
+                <pre><code>ai --cmd "your shell command"</code></pre>
+
+                <h3>Python Code Execution</h3>
+                <p><strong>Run Python Code:</strong></p>
+                <pre><code>ai --run-python "print('Hello, World!')"</code></pre>
+
+                <h2 id="development-contributing">Development & Contributing</h2>
+                <h3>Setting Up the Development Environment</h3>
+                <ol>
+                    <li><strong>Fork and Clone the Repository:</strong>
+                        <pre><code>git clone https://github.com/yourusername/ai-shell-agent.git
+cd ai-shell-agent</code></pre>
+                    </li>
+                    <li><strong>Set Up a Virtual Environment:</strong>
+                        <pre><code>python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate</code></pre>
+                    </li>
+                    <li><strong>Install Dependencies:</strong>
+                        <pre><code>pip install -r requirements.txt</code></pre>
+                    </li>
+                    <li><strong>Run Tests:</strong>
+                        <pre><code>pytest</code></pre>
+                    </li>
+                </ol>
+
+                <h2 id="acknowledgements">Acknowledgements</h2>
+                <p>We would like to thank the following:</p>
+                <ul>
+                    <li><a href="https://openai.com">OpenAI</a> for providing the API.</li>
+                    <li><a href="https://www.python.org">Python</a> for being an awesome programming language.</li>
+                    <li>All contributors who have provided feedback, bug reports, and improvements to the AI Shell Agent project.</li>
+                </ul>
+
+                <h2 id="license">License</h2>
+                <p>This project is licensed under the MIT License. See the <a href="../LICENSE">LICENSE</a> file for details.</p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>AI Shell Agent &copy; 2023</p>
+    </footer>
+</body>
+</html>
