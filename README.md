@@ -137,7 +137,7 @@ https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
 Upon launching AI Shell Agent for the first time, if no API key is detected, the application will prompt you to enter it:
 
 ```bash
-$ ai
+$ ai "Hi"
 No OpenAI API key found. Please enter your OpenAI API key:
 ```
 
