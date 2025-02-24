@@ -77,7 +77,7 @@ Will update the last message and send the updated chat to the llm to reply. You 
 
 https://github.com/user-attachments/assets/02eb3824-933c-4d97-b4ac-23d240a62085
 
-### Multistep execution and debuging
+### Multistep execution and debugging
 
 When you ask AI to do something for you it will try to run commands, observe results and act. This is typical ReACT agent behaviour. 
 It can fix errors and debug until it gets the task done.
@@ -153,7 +153,7 @@ ai -k
 
 Shorthand:  
 ```bash
-ai --set-api-key
+ai -k
 ```
 
 ### Starting a Chat Session
@@ -166,7 +166,7 @@ ai -c "My Chat Session"
 
 Shorthand:  
 ```bash
-ai --chat "My Chat Session"
+ai -c "My Chat Session"
 ```
 
 ### Sending a Message
@@ -187,7 +187,7 @@ ai -x "dir"
 
 Shorthand:  
 ```bash
-ai --execute "dir"
+ai -x "dir"
 ```
 
 By automatically detecting your operating system (via Python’s `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal.
@@ -202,7 +202,7 @@ ai -tc "Initial temporary message"
 
 Shorthand:  
 ```bash
-ai --temp-chat "Initial temporary message"
+ai -tc "Initial temporary message"
 ```
 
 ### Listing and Managing Sessions
@@ -213,7 +213,7 @@ ai --temp-chat "Initial temporary message"
   ```
   Shorthand:  
   ```bash
-  ai --list-chats
+  ai -lsc
   ```
 
 - **Load an Existing Session:**
@@ -222,7 +222,7 @@ ai --temp-chat "Initial temporary message"
   ```
   Shorthand:  
   ```bash
-  ai --load-chat "My Chat Session"
+  ai -lc "My Chat Session"
   ```
 
 - **Rename a Session:**
@@ -231,7 +231,7 @@ ai --temp-chat "Initial temporary message"
   ```
   Shorthand:  
   ```bash
-  ai --rename-chat "Old Title" "New Title"
+  ai -rnc "Old Title" "New Title"
   ```
 
 - **Delete a Session:**
@@ -240,7 +240,7 @@ ai --temp-chat "Initial temporary message"
   ```
   Shorthand:  
   ```bash
-  ai --delete-chat "Chat Title"
+  ai -delc "Chat Title"
   ```
 
 - **List messages:**
@@ -249,7 +249,7 @@ ai --temp-chat "Initial temporary message"
   ```
   Shorthand:  
   ```bash
-  ai --list-messages
+  ai -lsm
   ```
 
 - **Show the current chat title:**
@@ -258,7 +258,7 @@ ai --temp-chat "Initial temporary message"
   ```
   Shorthand:  
   ```bash
-  ai --current-chat-title
+  ai -ct
   ```
 
 ---
@@ -297,7 +297,7 @@ pip install ai-shell-agent
   ```
   Shorthand:  
   ```bash
-  ai --set-api-key
+  ai -k
   ```
 
 ### Chat Session Management
@@ -307,7 +307,7 @@ pip install ai-shell-agent
   ```
   Shorthand:  
   ```bash
-  ai --chat "Session Title"
+  ai -c "Session Title"
   ```
 
 ### Messaging
@@ -317,7 +317,7 @@ pip install ai-shell-agent
   ```
   Shorthand:  
   ```bash
-  ai --send-message "Your message"
+  ai -m "Your message"
   ```
 
 - **Edit a Message at a Given Index:**
@@ -326,7 +326,7 @@ pip install ai-shell-agent
   ```
   Shorthand:  
   ```bash
-  ai --edit 1 "Updated message"
+  ai -e 1 "Updated message"
   ```
 
 ### System Prompt Management
@@ -342,7 +342,7 @@ pip install ai-shell-agent
   ```
   Shorthand:  
   ```bash
-  ai --execute "your shell command"
+  ai -x "your shell command"
   ```
 
 ---
