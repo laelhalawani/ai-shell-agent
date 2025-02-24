@@ -20,6 +20,12 @@ ai "your message here"
 ```
 This will send a message to the AI in the active chat (and create a new chat if there isn't one active).  
 
+
+
+https://github.com/user-attachments/assets/6df08410-37e5-4e21-b99c-4133c15192cc
+
+
+
 You will see the AI response or editable commands that the AI wants to run, which you can confirm by pressing Enter.  
 
 Output of the command is displayed in the console and added to the chat messages.  
@@ -28,6 +34,10 @@ Once all the commands are run, the AI will provide its interpretation of the res
 If you haven't set your API key yet, you will be prompted.
 
 ### Execute command yourself and ask about the outputs
+
+
+https://github.com/user-attachments/assets/982fcf59-7b9c-4e04-93f9-041fbc819ccb
+
 
 ```bash
 ai -x "dir"
@@ -63,6 +73,19 @@ Will create a new temporary chat without a title and set it active.
 ai -e "updated last message"
 ```
 Will update the last message and send the updated chat to the llm to reply. You can also specify the user message id you want to update. It's displayed after each message you send, and when you list messages with `ai -lsm`.
+
+
+https://github.com/user-attachments/assets/02eb3824-933c-4d97-b4ac-23d240a62085
+
+### Multistep execution and debuging
+
+When you ask AI to do something for you it will try to run commands, observe results and act. This is typical ReACT agent behaviour. 
+It can fix errors and debug until it gets the task done.
+
+
+https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
+
+
 
 ---
 
