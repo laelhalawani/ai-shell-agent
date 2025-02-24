@@ -13,6 +13,8 @@ This will automatically install the CLI tool in your current Python environment.
 Requires `python=3.11.x`.  
 You can also clone and install from the repository.
 
+Please make sure your python scripts are added to path correctly. 
+
 ### Quickly send messages
 
 ```bash
