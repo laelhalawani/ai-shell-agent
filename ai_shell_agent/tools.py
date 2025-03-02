@@ -6,11 +6,11 @@ from prompt_toolkit import prompt
 from . import logger
 
 class ConsoleTool_HITL(BaseTool):
-    name: str = "interactive_windows_shell_tool"
+    name: str = "interactive_windows_cmd_tool"
     description: str = (
-        "Use this tool to run console commands and view the output."
+        "Use this tool to run CMD.exe commands and view the output."
         "Args:"
-        "command (str): The initial shell command proposed by the agent."
+        "command (str): The initial cmd command proposed by the agent."
         "Returns:"
         "str: The output from executing the edited command."
     )
@@ -58,12 +58,12 @@ class ConsoleTool_HITL(BaseTool):
 
 
 class ConsoleTool_Direct(BaseTool):
-    name: str = "direct_windows_shell_tool"
+    name: str = "direct_cmd_shell_tool"
     description: str = "Executes a console command directly without user confirmation."
 
     def _run(self, command: str) -> str:
         """
-        Runs the shell command directly without user confirmation.
+        Runs the CMD command directly without user confirmation.
         
         Args:
             command (str): The shell command to execute.
