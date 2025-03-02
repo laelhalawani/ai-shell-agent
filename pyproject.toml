@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-shell-agent"
-version = "0.1.5"
+version = "0.1.6"
 description = "A command-line AI chat application that helps perform tasks by writing and executing terminal commands with user supervision and by answering questions."
 authors = [
     { name = "Lael Al-Halawani", email = "laelhalawani@gmail.com" }

@@ -1,8 +1,6 @@
 
 implement message trimming token count and summarizing or other ways of keeping the conversation within bounds
 
-when interrupted during running tool calls, it's liekly that there will be AI message with tool calls, not followed by enough ToolMessages, add logic that will clear out the extra tool calls from the last AI message before calling the AI again, to avoid errors
-
 implement nicer colored printouts
 
 add link to api keys when prompting for it\
