@@ -8,3 +8,6 @@ implement nicer colored printouts
 add link to api keys when prompting for it\
 
 make sure edit edits last human message if number not provied
+
+v2
+make sure any errors other than internet or access related are forwraded back to ai via try catch

@@ -219,37 +219,35 @@ def load_session() -> str:
 # Messaging Functions
 # ---------------------------
 def _handle_tool_calls(ai_message: AIMessage) -> list[BaseMessage]:
-    """Handle tool calls from AI response and append tool messages to conversation."""
+    """
+    Handle tool calls from AI response and append tool messages to conversation.
+    It first ensures validity of the tool calls and then invokes the tools or raises an error.
+    """
     logger.debug(f"AI message tool calls: {ai_message.tool_calls}")
     if not ai_message.tool_calls:
         return []
     messages = []
 
     tools_dict = {
-        "interactive_windows_shell_tool": tools[0],
+        "interactive_windows_cmd_tool": tools[0],
         "run_python_code": tools[1]
     }
     logger.info(f"AI wants to run commands...")
-
+    for tool_call in ai_message.tool_calls:
+        if tool_call["name"] not in tools_dict:
+            logger.error(f"Unknown tool: {tool_call['name']}")
+            raise ValueError(f"Unknown tool: {tool_call['name']}")
     for tool_call in ai_message.tool_calls:
         tool_name = None
         try:
             tool_name = tool_call["name"]
             tool_call_id = tool_call["id"]
-            if tool_name not in tools_dict:
-                logger.error(f"Unknown tool: {tool_name}")
-                continue
-                
             tool = tools_dict[tool_name]
             tool_response: ToolMessage = tool.invoke(tool_call)
             tool_response.tool_call_id = tool_call_id
             messages.append(tool_response)
-
         except Exception as e:
-            logger.error(f"Error executing tool {tool_name}: {e}")
-            # Append an error message to the conversation
-            error_message = AIMessage(content=f"Error executing tool {tool_name}: {e}")
-            messages.append(error_message)
+            raise Exception(f"Error running tool '{tool_name}': {e}")
     return messages
 
 def _prune_unmatched_tool_calls(messages: list[BaseMessage]) -> list[BaseMessage]:
@@ -314,7 +312,6 @@ def send_message(message: str) -> str:
     # Load existing messages and ensure they exist
     current_messages = _read_messages(chat_file) or []
     logger.debug(f"Current messages: {current_messages}")
-    current_messages = _prune_unmatched_tool_calls(current_messages)
     # Ensure system prompt exists at the start
     if len(current_messages) == 0 or not isinstance(current_messages[0], SystemMessage):
         config = _read_json(CONFIG_FILE)
@@ -337,12 +334,31 @@ def send_message(message: str) -> str:
     # Process response
     while True:
         logger.debug(f"Current messages: {current_messages}")
+        current_messages = _prune_unmatched_tool_calls(current_messages)
+        
         ai_response = llm.invoke(convert_to_openai_messages(current_messages))
         logger.debug(f"AI response: {ai_response}")
         current_messages.append(ai_response)
         
         if ai_response.tool_calls and len(ai_response.tool_calls) > 0:
-            tool_messages = _handle_tool_calls(ai_response)
+            try:
+                tool_messages = _handle_tool_calls(ai_response)
+            except ValueError as e:
+                if "Unknown tool" in str(e):
+                    current_messages = _prune_unmatched_tool_calls(current_messages)
+                    error_message = AIMessage(content=f"Error: {e}")
+                    tool_messages = [error_message]
+                    #this can cause potential infinite loop with costs
+                    #i'm going to hand over to user for now, until depth of recursion is implemented
+                    user = input(f"{e}\nYou can press Enter to let it retry or type 'exit' to break for now.\n\
+                        You will be able to return to this converation execpt for the latest messages.\n User: ")
+                    if user == "exit":
+                        break
+                    else:
+                        pass
+                else:
+                    logger.error(f"Error handling tool calls: {e}")
+                    raise e
             current_messages.extend(tool_messages)
         else:
             logger.info(f"AI: {ai_response.content}")
@@ -393,7 +409,24 @@ def start_temp_chat(message: str) -> str:
         logger.debug(f"AI response: {ai_response}")
         current_messages.append(ai_response)
         if ai_response.tool_calls and len(ai_response.tool_calls) > 0:
-            tool_messages = _handle_tool_calls(ai_response)
+            try:
+                tool_messages = _handle_tool_calls(ai_response)
+            except ValueError as e:
+                if "Unknown tool" in str(e):
+                    current_messages = _prune_unmatched_tool_calls(current_messages)
+                    error_message = AIMessage(content=f"Error: {e}")
+                    tool_messages = [error_message]
+                    #this can cause potential infinite loop with costs
+                    #i'm going to hand over to user for now, until depth of recursion is implemented
+                    user = input(f"{e}\nYou can press Enter to let it retry or type 'exit' to break for now.\n\
+                        You will be able to return to this converation execpt for the latest messages.\n User: ")
+                    if user == "exit":
+                        break
+                    else:
+                        pass
+                else:
+                    logger.error(f"Error handling tool calls: {e}")
+                    raise e
             current_messages.extend(tool_messages)
         else:
             logger.info(f"AI: {ai_response.content}")
