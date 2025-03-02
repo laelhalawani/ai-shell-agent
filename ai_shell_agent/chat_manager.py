@@ -17,10 +17,20 @@ from .tools import tools_functions, direct_windows_shell_tool, tools
 from .prompts import default_system_prompt
 from . import logger
 
-CHAT_DIR = os.path.join("chats")
+# Use installation directory for storing configuration and chat data
+def get_data_dir():
+    """Return the directory where configuration and chat data should be stored."""
+    # Use the package directory as the base
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_dir = os.path.join(base_dir, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+# Define file paths relative to data directory
+CHAT_DIR = os.path.join(get_data_dir(), "chats")
 CHAT_MAP_FILE = os.path.join(CHAT_DIR, "chat_map.json")
-SESSION_FILE = "session.json"
-CONFIG_FILE = "config.json"
+SESSION_FILE = os.path.join(get_data_dir(), "session.json")
+CONFIG_FILE = os.path.join(get_data_dir(), "config.json")
 MODEL = "gpt-4o-mini"
 TEMPERATURE = 0
 
@@ -242,6 +252,46 @@ def _handle_tool_calls(ai_message: AIMessage) -> list[BaseMessage]:
             messages.append(error_message)
     return messages
 
+def _prune_unmatched_tool_calls(messages: list[BaseMessage]) -> list[BaseMessage]:
+    # Find the index of the last AIMessage
+    last_ai_index = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], AIMessage):
+            last_ai_index = i
+            break
+    if last_ai_index == -1:
+        return messages  # No AIMessage found
+
+    # Collect subsequent ToolMessages
+    tool_messages = []
+    for j in range(last_ai_index + 1, len(messages)):
+        if isinstance(messages[j], ToolMessage):
+            tool_messages.append(messages[j])
+        else:
+            break
+
+    last_ai_message = messages[last_ai_index]
+    if not getattr(last_ai_message, "tool_calls", None):
+        return messages  # No tool calls to prune
+
+    # Keep tool calls only if matching ToolMessages are found
+    pruned_tool_calls = []
+    for call in last_ai_message.tool_calls:
+        if any(t.tool_call_id == call.get("id") for t in tool_messages):
+            pruned_tool_calls.append(call)
+        else:
+            logger.warning(f"Tool call {call.get('id')} has no matching ToolMessage, pruning...")
+
+    # Replace the AI message with a pruned version
+    pruned_ai_message = AIMessage(
+        content=last_ai_message.content,
+        tool_calls=pruned_tool_calls
+    )
+    messages[last_ai_index] = pruned_ai_message
+    return messages
+
+    
+
 def send_message(message: str) -> str:
     """
     Handles message sending in two scenarios:
@@ -264,7 +314,7 @@ def send_message(message: str) -> str:
     # Load existing messages and ensure they exist
     current_messages = _read_messages(chat_file) or []
     logger.debug(f"Current messages: {current_messages}")
-    
+    current_messages = _prune_unmatched_tool_calls(current_messages)
     # Ensure system prompt exists at the start
     if len(current_messages) == 0 or not isinstance(current_messages[0], SystemMessage):
         config = _read_json(CONFIG_FILE)

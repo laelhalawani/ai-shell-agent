@@ -3,8 +3,14 @@ import json
 import argparse
 from dotenv import load_dotenv
 
-# Load environment variables from .env if available.
-load_dotenv()
+# Get installation directory
+def get_install_dir():
+    """Return the installation directory of the package."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Load environment variables from .env in the installation directory
+env_path = os.path.join(get_install_dir(), '.env')
+load_dotenv(env_path)
 
 from . import logger
 
@@ -25,10 +31,7 @@ def set_api_key(api_key: str = None) -> None:
         return
     os.environ["OPENAI_API_KEY"] = api_key
 
-    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-    if not os.path.exists(env_path):
-        with open(env_path, "w") as f:
-            f.write("")
+    env_path = os.path.join(get_install_dir(), '.env')
 
     try:
         with open(env_path, "w") as f:
@@ -84,10 +87,7 @@ def set_api_key(api_key: str = None) -> None:
         return
     os.environ["OPENAI_API_KEY"] = api_key
 
-    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-    if not os.path.exists(env_path):
-        with open(env_path, "w") as f:
-            f.write("")
+    env_path = os.path.join(get_install_dir(), '.env')
 
     try:
         with open(env_path, "w") as f:
@@ -108,7 +108,9 @@ def ensure_api_key() -> None:
 # CLI Command Handling
 # ---------------------------
 def main():
-    load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+    # Load environment variables from the installation directory
+    env_path = os.path.join(get_install_dir(), '.env')
+    load_dotenv(env_path)
     ensure_api_key()
     parser = argparse.ArgumentParser(
         description="AI Command-Line Chat Application"
