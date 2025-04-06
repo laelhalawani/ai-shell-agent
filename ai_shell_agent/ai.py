@@ -13,42 +13,33 @@ env_path = os.path.join(get_install_dir(), '.env')
 load_dotenv(env_path)
 
 from . import logger
+from .config_manager import (
+    get_current_model, 
+    set_model, 
+    prompt_for_model_selection, 
+    ensure_api_key_for_current_model,
+    get_api_key_for_model,
+    set_api_key_for_model,
+    get_model_provider,
+    check_if_first_run
+)
+
+# First time setup to ensure model is selected before API key
+def first_time_setup():
+    """
+    Initialize the application on first run by prompting for model selection.
+    """
+    if check_if_first_run():
+        logger.info("Welcome to AI Shell Agent! Please select a model to use.")
+        selected_model = prompt_for_model_selection()
+        set_model(selected_model)
 
 # Ensure the API key is set before any other operations
-def get_api_key() -> str:
-    """Retrieve the OpenAI API key from the environment."""
-    return os.getenv("OPENAI_API_KEY")
-
-def set_api_key(api_key: str = None) -> None:
-    """
-    Prompt the user for an OpenAI API key and save it to the .env file.
-    Aborts if no key is entered.
-    """
-    if not api_key:
-        api_key = input("Enter OpenAI API key: ").strip()
-    if not api_key:
-        logger.warning("No API key entered. Aborting.")
-        return
-    os.environ["OPENAI_API_KEY"] = api_key
-
-    env_path = os.path.join(get_install_dir(), '.env')
-
-    try:
-        with open(env_path, "w") as f:
-            f.write(f"OPENAI_API_KEY={api_key}\n")
-        logger.info("API key saved successfully to .env")
-    except Exception as e:
-        logger.error(f"Failed to write to .env: {e}")
-
 def ensure_api_key() -> None:
     """
-    Ensure that the OpenAI API key is set. If not, prompt the user to enter it.
+    Ensure that the appropriate API key is set for the selected model.
     """
-    if not get_api_key():
-        logger.warning("OpenAI API key not found. Please enter your API key.")
-        set_api_key()
-
-ensure_api_key()
+    ensure_api_key_for_current_model()
 
 from .chat_manager import (
     create_or_load_chat,
@@ -69,54 +60,23 @@ from .chat_manager import (
 )
 
 # ---------------------------
-# API Key Management
-# ---------------------------
-def get_api_key() -> str:
-    """Retrieve the OpenAI API key from the environment."""
-    return os.getenv("OPENAI_API_KEY")
-
-def set_api_key(api_key: str = None) -> None:
-    """
-    Prompt the user for an OpenAI API key and save it to the .env file.
-    Aborts if no key is entered.
-    """
-    if not api_key:
-        api_key = input("Enter OpenAI API key: ").strip()
-    if not api_key:
-        logger.warning("No API key entered. Aborting.")
-        return
-    os.environ["OPENAI_API_KEY"] = api_key
-
-    env_path = os.path.join(get_install_dir(), '.env')
-
-    try:
-        with open(env_path, "w") as f:
-            f.write(f"OPENAI_API_KEY={api_key}\n")
-        logger.info("API key saved successfully to .env")
-    except Exception as e:
-        logger.error(f"Failed to write to .env: {e}")
-
-def ensure_api_key() -> None:
-    """
-    Ensure that the OpenAI API key is set. If not, prompt the user to enter it.
-    """
-    if not get_api_key():
-        logger.warning("OpenAI API key not found. Please enter your API key.")
-        set_api_key()
-
-# ---------------------------
 # CLI Command Handling
 # ---------------------------
 def main():
     # Load environment variables from the installation directory
     env_path = os.path.join(get_install_dir(), '.env')
     load_dotenv(env_path)
-    ensure_api_key()
+    
+    # Parse arguments first before any prompting
     parser = argparse.ArgumentParser(
         description="AI Command-Line Chat Application"
     )
     # API Key Management
-    parser.add_argument("-k", "--set-api-key", nargs="?", const=True, help="Set or update the OpenAI API key")
+    parser.add_argument("-k", "--set-api-key", nargs="?", const=True, help="Set or update the API key for the current model")
+    
+    # Model selection
+    parser.add_argument("-llm", "--model", help="Set the LLM model to use")
+    parser.add_argument("--select-model", action="store_true", help="Interactively select an LLM model")
     
     # Chat management options
     parser.add_argument("-c", "--chat", help="Create or load a chat session with the specified title")
@@ -148,14 +108,34 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle API key management
-    if args.set_api_key:
-        if isinstance(args.set_api_key, str):
-            set_api_key(args.set_api_key)
-        else:
-            set_api_key()
+    # Model selection commands need to run before API key checks
+    if args.model:
+        set_model(args.model)
+        ensure_api_key()
+        return
+    
+    if args.select_model:
+        selected_model = prompt_for_model_selection()
+        if selected_model:
+            set_model(selected_model)
+            ensure_api_key()
         return
 
+    # Run first-time setup ONLY if no model selection arguments were provided
+    first_time_setup()
+    
+    # Handle API key management
+    if args.set_api_key:
+        current_model = get_current_model()
+        if isinstance(args.set_api_key, str):
+            set_api_key_for_model(current_model, args.set_api_key)
+        else:
+            set_api_key_for_model(current_model)
+        return
+
+    # Check API key before executing any command
+    ensure_api_key()
+    
     # Handle direct command execution
     if args.execute:
         output = execute(args.execute)

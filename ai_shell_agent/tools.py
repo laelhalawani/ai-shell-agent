@@ -100,6 +100,9 @@ class ConsoleTool_Direct(BaseTool):
         """
         return self._run(command)
 
+
+
+
 # Initialize the built-in Python REPL tool
 python_repl_tool = PythonREPLTool()
 interactive_windows_shell_tool = ConsoleTool_HITL()

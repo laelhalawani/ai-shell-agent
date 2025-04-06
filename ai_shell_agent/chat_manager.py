@@ -5,6 +5,7 @@ from typing import Optional
 import uuid
 
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import (
     HumanMessage, 
     AIMessage, 
@@ -15,6 +16,7 @@ from langchain_core.messages import (
 from langchain_core.messages.utils import convert_to_openai_messages
 from .tools import tools_functions, direct_windows_shell_tool, tools
 from .prompts import default_system_prompt
+from .config_manager import get_current_model, get_model_provider
 from . import logger
 
 # Use installation directory for storing configuration and chat data
@@ -31,8 +33,6 @@ CHAT_DIR = os.path.join(get_data_dir(), "chats")
 CHAT_MAP_FILE = os.path.join(CHAT_DIR, "chat_map.json")
 SESSION_FILE = os.path.join(get_data_dir(), "session.json")
 CONFIG_FILE = os.path.join(get_data_dir(), "config.json")
-MODEL = "gpt-4o-mini"
-TEMPERATURE = 0
 
 # Ensure the chats directory exists.
 os.makedirs(CHAT_DIR, exist_ok=True)
@@ -82,6 +82,17 @@ def _write_messages(file_path: str, messages: list[BaseMessage]) -> None:
     logger.debug(f"Writing messages: {messages_data}")
     with open(file_path, "w") as f:
         json.dump(messages_data, f, indent=4)
+
+# Initialize the LLM based on current model configuration
+def _get_llm():
+    """Get the LLM instance based on the current model configuration."""
+    model_name = get_current_model()
+    provider = get_model_provider(model_name)
+    
+    if provider == "openai":
+        return ChatOpenAI(model=model_name).bind_tools(tools_functions)
+    else:  # Google
+        return ChatGoogleGenerativeAI(model=model_name).bind_tools(tools_functions)
 
 # ---------------------------
 # Chat Session Management
@@ -288,8 +299,6 @@ def _prune_unmatched_tool_calls(messages: list[BaseMessage]) -> list[BaseMessage
     messages[last_ai_index] = pruned_ai_message
     return messages
 
-    
-
 def send_message(message: str) -> str:
     """
     Handles message sending in two scenarios:
@@ -328,7 +337,7 @@ def send_message(message: str) -> str:
     logger.info(f"id:{human_count-1}")
     
     # Get AI response with complete history
-    llm = ChatOpenAI(model=MODEL, temperature=TEMPERATURE).bind_tools(tools_functions)
+    llm = _get_llm()
 
     ai_response: AIMessage = None
     # Process response
@@ -400,7 +409,7 @@ def start_temp_chat(message: str) -> str:
     current_messages.append(HumanMessage(content=message))
     logger.debug(f"User[{human_index}]: {message}")
     
-    llm = ChatOpenAI(model=MODEL, temperature=0.7).bind_tools(tools_functions)
+    llm = _get_llm()
     logger.debug(f"LLM: {llm}")
     
     # Loop to process tool calls until no tool calls are returned

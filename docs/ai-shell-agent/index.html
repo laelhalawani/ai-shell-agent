@@ -137,8 +137,9 @@ ai "your message here"</code></pre>
                 <!-- Features Section -->
                 <h2 id="features">Features</h2>
                 <ul>
+                    <li><strong>Multiple LLM Providers:</strong> Choose between OpenAI and Google AI models with simple model selection commands.</li>
                     <li><strong>Chat Session Management:</strong> Create new chats or load existing ones using a title, with one active chat session set to receive messages by default.</li>
-                    <li><strong>API Key Management:</strong> Set and update your OpenAI API key via a dedicated command. You will be prompted to input the key if it isn’t provided.</li>
+                    <li><strong>API Key Management:</strong> Set and update your API keys (OpenAI or Google) via dedicated commands. You will be prompted to input the appropriate key if it isn't provided.</li>
                     <li><strong>Message Handling:</strong> Send new messages or edit previous ones within an active session using the simple <code>ai "your message"</code> command.</li>
                     <li><strong>Temporary Sessions:</strong> Start temporary sessions for quick, ephemeral chats (saved as temp chats under UUID names for easier debugging and tracing).</li>
                     <li><strong>Shell Command Execution:</strong> The LLM can write your commands, which you can edit or execute with one press of a button.</li>
@@ -147,11 +148,32 @@ ai "your message here"</code></pre>
                 
                 <!-- Quickstart Guide Section -->
                 <h2 id="quickstart-guide">Quickstart Guide</h2>
+                
+                <h3>Selecting a Model</h3>
+                <p>On first run, AI Shell Agent will prompt you to select your preferred model:</p>
+                <pre><code>Available models:
+OpenAI:
+- gpt-4o-mini (aliases: 4o-mini) <- Current Model
+- gpt-4o (aliases: 4o)
+- o3-mini
+Google:
+- gemini-1.5-pro
+- gemini-2.5-pro
+
+Please input the model you want to use, or leave empty to keep using the current model gpt-4o-mini.
+> </code></pre>
+                <p>You can also change the model at any time using the command:</p>
+                <pre><code>ai --model "model-name"</code></pre>
+                <p>Or select interactively:</p>
+                <pre><code>ai --select-model</code></pre>
+                
                 <h3>Setting Up the API Key</h3>
-                <p>Upon launching AI Shell Agent for the first time, if no API key is detected, the application will prompt you to enter it:</p>
+                <p>After selecting a model, AI Shell Agent will prompt you for the appropriate API key (OpenAI or Google, depending on your model choice):</p>
                 <pre><code>$ ai
-No OpenAI API key found. Please enter your OpenAI API key:</code></pre>
-                <p>After entering the key, it will be saved in a <code>.env</code> file located in the project’s installation directory, ensuring that your API key is securely stored and automatically loaded in future sessions.</p>
+No OpenAI API key found. Please enter your API key.
+You can get it from: https://platform.openai.com/api-keys
+Enter OpenAI API key:</code></pre>
+                <p>After entering the key, it will be saved in a <code>.env</code> file located in the project's installation directory, ensuring that your API key is securely stored and automatically loaded in future sessions.</p>
                 
                 <h3>Managing the API Key</h3>
                 <pre><code>ai -k</code></pre>
@@ -234,10 +256,24 @@ No OpenAI API key found. Please enter your OpenAI API key:</code></pre>
                 
                 <!-- Usage Section -->
                 <h2 id="usage">Usage</h2>
+                
+                <h3>Model Selection</h3>
+                <pre><code>ai --model "gpt-4o"</code></pre>
+                <p>Shorthand:</p>
+                <pre><code>ai -llm "gpt-4o"</code></pre>
+                <p>Select model interactively:</p>
+                <pre><code>ai --select-model</code></pre>
+                <p>Supported model aliases include:</p>
+                <ul>
+                    <li><strong>OpenAI:</strong> gpt-4o (4o), gpt-4o-mini (4o-mini), o3-mini</li>
+                    <li><strong>Google:</strong> gemini-1.5-pro, gemini-2.5-pro</li>
+                </ul>
+                
                 <h3>API Key Management</h3>
                 <pre><code>ai -k</code></pre>
                 <p>Shorthand:</p>
                 <pre><code>ai --set-api-key</code></pre>
+                <p>This will prompt for the appropriate API key based on your selected model.</p>
                 
                 <h3>Chat Session Management</h3>
                 <pre><code>ai -c "Session Title"</code></pre>

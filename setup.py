@@ -10,8 +10,8 @@ class CustomInstallCommand(install):
 
 setup(
     name='ai-shell-agent',
-    version='0.1.6',
-    description='A command-line AI chat application that helps perform tasks by writing and executing terminal commands with user supervision and by answering questions.',
+    version='0.1.7',
+    description='AI agent in your Terminal / CMD / Console - an AI application that helps perform tasks by writing and executing terminal commands with user supervision and by answering questions.',
     author='Lael Al-Halawani',
     author_email='laelhalawani@gmail.com',
     license='MIT',
@@ -23,6 +23,7 @@ setup(
     install_requires=[
         'python-dotenv==1.0.1',
         'langchain_openai==0.3.2',
+        'langchain_google_genai==2.1.2',
         'langchain_experimental==0.3.4',
         'prompt_toolkit==3.0.50',
     ],
