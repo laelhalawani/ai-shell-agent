@@ -1,5 +1,6 @@
 python-dotenv==1.0.1
 langchain_openai==0.3.2
+langchain_google_genai==2.1.2
 langchain_experimental==0.3.4
 prompt_toolkit==3.0.50
 pytest
