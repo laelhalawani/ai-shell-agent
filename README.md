@@ -4,8 +4,6 @@
 It features a very simple CLI and adjusts the LLM prompts based on your detected system.  
 Works on Windows, Linux with Bash, and Mac. (Tested on Windows, please contribute!)
 
-Now supports both OpenAI and Google AI models!
-
 ### Installation
 
 ```bash
@@ -17,132 +15,125 @@ You can also clone and install from the repository.
 
 Please make sure your python scripts are added to path correctly. 
 
-### Select an AI Model
+### Quick Examples
 
-On first run, you'll be prompted to select a model. You can also change it anytime with:
-
-```bash
-ai --model "gpt-4o"  # Use any supported model
-```
-
-Or select interactively:
-
-```bash
-ai --select-model
-```
-
-Supported models include:
-- **OpenAI:** gpt-4o, gpt-4o-mini, o3-mini 
-- **Google:** gemini-1.5-pro, gemini-2.5-pro
-
-You can use aliases like "4o" for "gpt-4o" or "4o-mini" for "gpt-4o-mini".
-
-### Quickly send messages
-
+#### Send a message to AI
 ```bash
 ai "your message here"
 ```
-This will send a message to the AI in the active chat (and create a new chat if there isn't one active).  
+The AI will respond and may suggest commands that can help with your request.
+
+#### Execute command yourself and add to context
+```bash
+ai -x "dir"
+ai "tell me about these files"
+```
+This will execute the command and add the output to the AI logs, then you can ask about it.
+
+#### Create a new chat for a different task
+```bash
+ai -c "Project Deployment"
+ai "help me deploy my Flask app to Heroku"
+```
+This creates a dedicated chat for your task, keeping the conversation focused.
+
+#### Start a temporary chat
+```bash
+ai -tc "how do I check disk space in Windows?"
+```
+Creates a quick chat session for one-off questions.
+
+#### Edit your last message
+```bash
+ai -e "updated question with more details"
+```
+Lets you refine your last message if you forgot important details.
 
 https://github.com/user-attachments/assets/6df08410-37e5-4e21-b99c-4133c15192cc
 
-You will see the AI response or editable commands that the AI wants to run, which you can confirm by pressing Enter.  
+### First-Time Setup
 
-Output of the command is displayed in the console and added to the chat messages.  
-Once all the commands are run, the AI will provide its interpretation of the results or try to run more commands.
+When you first use AI Shell Agent, you'll be prompted to:
 
-If you haven't set your API key yet, you will be prompted.
+1. **Select an AI Model**:
+   ```
+   Available models:
+   OpenAI:
+   - gpt-4o-mini (aliases: 4o-mini) <- Current Model
+   - gpt-4o (aliases: 4o)
+   - o3-mini
+   Google:
+   - gemini-1.5-pro
+   - gemini-2.5-pro
+   
+   Please input the model you want to use, or leave empty to keep using the current model gpt-4o-mini.
+   > 
+   ```
 
-### Execute command yourself and ask about the outputs
+2. **Enter the appropriate API key**:
+   After selecting a model, you'll be prompted for the corresponding API key (OpenAI or Google).
+   The key will be saved to a local `.env` file for future sessions.
 
-https://github.com/user-attachments/assets/982fcf59-7b9c-4e04-93f9-041fbc819ccb
-
+You can later change your model or API key using:
 ```bash
-ai -x "dir"
+ai --select-model  # Interactive model selection
+ai --model "gpt-4o"  # Directly set model
+ai -k  # Update your API key
 ```
-This will execute the command and add the output to the AI logs, as it can't see the whole console.
 
-```bash
-ai "tell me about these files"
-```
-Will present both the command output and the question to the AI.  
+### Main Features
 
-You can run multiple commands in a row and then ask your question too.  
-Or even run a few commands yourself and then ask the AI to finish up.
-
-### Titled chats
-
-```bash
-ai -c "title of new or existing chat"
-ai "your message here"
-```
-Will create a new chat and set it active if it doesn't exist, then send a message to the active chat.
-
-### Temporary chats
-
-```bash
-ai -tc "your first message in a temporary chat"
-```
-Will create a new temporary chat without a title and set it active.
-
-### Edit last message
-
-```bash
-ai -e "updated last message"
-```
-Will update the last message and send the updated chat to the llm to reply. You can also specify the user message id you want to update. It's displayed after each message you send, and when you list messages with `ai -lsm`.
-
-https://github.com/user-attachments/assets/02eb3824-933c-4d97-b4ac-23d240a62085
-
-### Multistep execution and debugging
-
-When you ask AI to do something for you it will try to run commands, observe results and act. This is typical ReACT agent behaviour. 
-It can fix errors and debug until it gets the task done.
+- **AI Writes and Executes Commands**: The AI will suggest commands to accomplish your tasks, which you can review, edit, or approve.
+  
+- **Multiple AI Model Support**: Choose between OpenAI models (gpt-4o, gpt-4o-mini, o3-mini) and Google AI models (gemini-1.5-pro, gemini-2.5-pro).
+  
+- **System Detection**: Automatically detects your OS and tailors commands to work with Windows CMD, Linux bash, or macOS Terminal.
+  
+- **Chat Management System**: Create, rename, list, and delete chat sessions to organize different tasks or projects.
+  
+- **Python Code Execution**: Run and evaluate Python code snippets (experimental feature).
 
 https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
-
----
-
-## Table of Contents
-
-- [Features](#features)
-- [Warning](#warning)
-- [Quickstart Guide](#quickstart-guide)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Development & Contributing](#development--contributing)
-- [Acknowledgements](#acknowledgements)
-- [License](#license)
-
----
 
 ## Warning
 
 **Please use at your own risk. AI can still generate wrong and possibly destructive commands. You always can view the command before sending—please be mindful. If you see any dangerous commands, please post a screenshot.**
 
+## Table of Contents
+
+- [Features](#features)
+- [Quickstart Guide](#quickstart-guide)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Development & Contributing](#development--contributing)
+- [License](#license)
+
 ---
 
 ## Features
 
-- **Multiple AI Model Support:**
+- **AI Command Generation and Execution**:  
+  The LLM suggests and executes terminal commands to accomplish your tasks, with your review and approval.
+
+- **Multiple AI Model Support**:
   Choose between OpenAI and Google AI models with simple model selection commands.
 
-- **Chat Session Management:**  
+- **System-Aware Prompting**:
+  Automatically detects your operating system and optimizes commands for Windows, Linux, or macOS.
+
+- **Chat Session Management**:  
   Create new chats or load existing ones using a title, have one active chat session set to receive messages by default.
 
-- **API Key Management:**  
+- **API Key Management**:  
   Set and update your API keys (OpenAI or Google) via a dedicated command. You will be prompted to input the key if you have not provided it yet.
 
-- **Message Handling:**  
+- **Message Handling**:  
   Send new messages or edit previous ones within an active session with the simple `ai "your message"` command.
 
-- **Temporary Sessions:**  
+- **Temporary Sessions**:  
   Start temporary sessions for quick, ephemeral chats (currently saved as temp chats under UUID names for easier debugging and tracing).
 
-- **Shell Command Execution:**  
-  The LLM can write your commands, and you can edit them or execute them with one press of a button.
-
-- **Python Code Execution:**  
+- **Python Code Execution**:  
   The agent also has the ability to run Python REPL, though this feature hasn't undergone extensive development or testing.
 
 ---
