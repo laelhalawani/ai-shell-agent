@@ -342,7 +342,7 @@ pip install ai-shell-agent
 ### API Key Management
 - **Set or Update API Key:**
   ```bash
-  ai -k
+  ai --set-api-key
   ```
   Shorthand:  
   ```bash
@@ -353,30 +353,111 @@ pip install ai-shell-agent
 ### Chat Session Management
 - **Create or Load a Chat Session:**
   ```bash
-  ai -c "Session Title"
+  ai --chat "Session Title"
   ```
   Shorthand:  
   ```bash
   ai -c "Session Title"
+  ```
+
+- **Load an Existing Chat Session:**
+  ```bash
+  ai --load-chat "Session Title"
+  ```
+  Shorthand:
+  ```bash
+  ai -lc "Session Title"
+  ```
+
+- **List All Chat Sessions:**
+  ```bash
+  ai --list-chats
+  ```
+  Shorthand:
+  ```bash
+  ai -lsc
+  ```
+
+- **Rename a Chat Session:**
+  ```bash
+  ai --rename-chat "Old Title" "New Title"
+  ```
+  Shorthand:
+  ```bash
+  ai -rnc "Old Title" "New Title"
+  ```
+
+- **Delete a Chat Session:**
+  ```bash
+  ai --delete-chat "Chat Title"
+  ```
+  Shorthand:
+  ```bash
+  ai -delc "Chat Title"
+  ```
+
+- **Show Current Chat Title:**
+  ```bash
+  ai --current-chat-title
+  ```
+  Shorthand:
+  ```bash
+  ai -ct
   ```
 
 ### Messaging
 - **Send a Message:**
   ```bash
-  ai -m "Your message"
+  ai --send-message "Your message"
   ```
   Shorthand:  
   ```bash
   ai -m "Your message"
+  ```
+  Or simply:
+  ```bash
+  ai "Your message"
   ```
 
-- **Edit a Message at a Given Index:**
+- **Start a Temporary Chat:**
   ```bash
-  ai -e 1 "Updated message"
+  ai --temp-chat "Initial message"
+  ```
+  Shorthand:
+  ```bash
+  ai -tc "Initial message"
+  ```
+
+- **Edit Last Message:**
+  ```bash
+  ai --edit "Updated message"
+  ```
+  Shorthand:
+  ```bash
+  ai -e "Updated message"
+  ```
+
+- **Edit a Message at a Specific Index:**
+  ```bash
+  ai --edit 1 "Updated message"
   ```
   Shorthand:  
   ```bash
   ai -e 1 "Updated message"
+  ```
+
+- **List All Messages in Current Chat:**
+  ```bash
+  ai --list-messages
+  ```
+  Shorthand:
+  ```bash
+  ai -lsm
+  ```
+
+- **Clear All Temporary Chats:**
+  ```bash
+  ai --temp-flush
   ```
 
 ### System Prompt Management
@@ -385,10 +466,15 @@ pip install ai-shell-agent
   ai --default-system-prompt "Your default system prompt"
   ```
 
-### Shell Command Execution
-- **Direct Execution (without confirmation):**
+- **Update System Prompt for Active Chat:**
   ```bash
-  ai -x "your shell command"
+  ai --system-prompt "New system prompt for this chat"
+  ```
+
+### Shell Command Execution
+- **Execute Shell Command (with context preservation):**
+  ```bash
+  ai --execute "your shell command"
   ```
   Shorthand:  
   ```bash

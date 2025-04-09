@@ -177,39 +177,118 @@ ai -k  # Update your API key</code></pre>
                 <h2 id="detailed-usage">Detailed Usage</h2>
                 
                 <h3>Model Selection</h3>
-                <p>You can change the model at any time using the command:</p>
-                <pre><code>ai --model "model-name"</code></pre>
-                <p>Or select interactively:</p>
-                <pre><code>ai --select-model</code></pre>
+                <ul>
+                    <li><strong>Set Model:</strong> 
+                        <pre><code>ai --model "gpt-4o"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -llm "gpt-4o"</code></pre>
+                    </li>
+                    <li><strong>Interactive Model Selection:</strong>
+                        <pre><code>ai --select-model</code></pre>
+                    </li>
+                </ul>
                 <p>Supported model aliases include:</p>
                 <ul>
                     <li><strong>OpenAI:</strong> gpt-4o (4o), gpt-4o-mini (4o-mini), o3-mini</li>
                     <li><strong>Google:</strong> gemini-1.5-pro, gemini-2.5-pro</li>
                 </ul>
                 
-                <h3>Setting Up the API Key</h3>
-                <p>If you need to update your API key:</p>
-                <pre><code>ai -k</code></pre>
+                <h3>API Key Management</h3>
+                <ul>
+                    <li><strong>Set or Update API Key:</strong>
+                        <pre><code>ai --set-api-key</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -k</code></pre>
+                    </li>
+                </ul>
                 <p>After entering the key, it will be saved in a <code>.env</code> file located in the project's installation directory, ensuring that your API key is securely stored and automatically loaded in future sessions.</p>
                 
                 <h3>Chat Session Management</h3>
-                <pre><code>ai -c "My Chat Session"</code></pre>
-                <p>Shorthand:</p>
-                <pre><code>ai --chat "My Chat Session"</code></pre>
+                <ul>
+                    <li><strong>Create or Load a Chat Session:</strong>
+                        <pre><code>ai --chat "Session Title"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -c "Session Title"</code></pre>
+                    </li>
+                    <li><strong>Load an Existing Chat Session:</strong>
+                        <pre><code>ai --load-chat "Session Title"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -lc "Session Title"</code></pre>
+                    </li>
+                    <li><strong>List All Chat Sessions:</strong>
+                        <pre><code>ai --list-chats</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -lsc</code></pre>
+                    </li>
+                    <li><strong>Rename a Chat Session:</strong>
+                        <pre><code>ai --rename-chat "Old Title" "New Title"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -rnc "Old Title" "New Title"</code></pre>
+                    </li>
+                    <li><strong>Delete a Chat Session:</strong>
+                        <pre><code>ai --delete-chat "Chat Title"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -delc "Chat Title"</code></pre>
+                    </li>
+                    <li><strong>Show Current Chat Title:</strong>
+                        <pre><code>ai --current-chat-title</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -ct</code></pre>
+                    </li>
+                </ul>
                 
-                <h3>Sending a Message</h3>
-                <pre><code>ai "what is the time right now?"</code></pre>
+                <h3>Messaging</h3>
+                <ul>
+                    <li><strong>Send a Message:</strong>
+                        <pre><code>ai --send-message "Your message"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -m "Your message"</code></pre>
+                        <p>Or simply:</p>
+                        <pre><code>ai "Your message"</code></pre>
+                    </li>
+                    <li><strong>Start a Temporary Chat:</strong>
+                        <pre><code>ai --temp-chat "Initial message"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -tc "Initial message"</code></pre>
+                    </li>
+                    <li><strong>Edit Last Message:</strong>
+                        <pre><code>ai --edit "Updated message"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -e "Updated message"</code></pre>
+                    </li>
+                    <li><strong>Edit a Message at a Specific Index:</strong>
+                        <pre><code>ai --edit 1 "Updated message"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -e 1 "Updated message"</code></pre>
+                    </li>
+                    <li><strong>List All Messages in Current Chat:</strong>
+                        <pre><code>ai --list-messages</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -lsm</code></pre>
+                    </li>
+                    <li><strong>Clear All Temporary Chats:</strong>
+                        <pre><code>ai --temp-flush</code></pre>
+                    </li>
+                </ul>
                 
-                <h3>Executing Shell Commands</h3>
-                <pre><code>ai -x "dir"</code></pre>
-                <p>Shorthand:</p>
-                <pre><code>ai --execute "dir"</code></pre>
-                <p>AI Shell Agent automatically detects your operating system (via Python's <code>platform</code> library) and customizes its console suggestions accordingly.</p>
+                <h3>System Prompt Management</h3>
+                <ul>
+                    <li><strong>Set Default System Prompt:</strong>
+                        <pre><code>ai --default-system-prompt "Your default system prompt"</code></pre>
+                    </li>
+                    <li><strong>Update System Prompt for Active Chat:</strong>
+                        <pre><code>ai --system-prompt "New system prompt for this chat"</code></pre>
+                    </li>
+                </ul>
                 
-                <h3>Temporary Chat Sessions</h3>
-                <pre><code>ai -tc "Initial temporary message"</code></pre>
-                <p>Shorthand:</p>
-                <pre><code>ai --temp-chat "Initial temporary message"</code></pre>
+                <h3>Shell Command Execution</h3>
+                <ul>
+                    <li><strong>Execute Shell Command (with context preservation):</strong>
+                        <pre><code>ai --execute "your shell command"</code></pre>
+                        <p>Shorthand:</p>
+                        <pre><code>ai -x "your shell command"</code></pre>
+                    </li>
+                </ul>
                 
                 <!-- Development & Contributing Section -->
                 <h2 id="development-contributing">Development & Contributing</h2>
