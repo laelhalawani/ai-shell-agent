@@ -198,6 +198,18 @@ def delete_chat(title: str) -> bool:
         chat_id = chat_map.pop(title)
         _write_json(CHAT_MAP_FILE, chat_map)
         chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
+        
+        # Clean up associated Aider session if it exists
+        try:
+            aider_session_file = os.path.join(get_data_dir(), "aider_sessions", f"{chat_id}.json")
+            if os.path.exists(aider_session_file):
+                os.remove(aider_session_file)
+                logger.debug(f"Removed Aider session for deleted chat: {title}")
+        except ImportError:
+            pass  # Aider integration not available
+        except Exception as e:
+            logger.warning(f"Failed to clean up Aider session for chat {title}: {e}")
+        
         if os.path.exists(chat_file):
             os.remove(chat_file)
             logger.info(f"Chat session deleted: {title}")

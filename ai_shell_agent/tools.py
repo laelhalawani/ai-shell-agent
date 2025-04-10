@@ -101,7 +101,14 @@ class ConsoleTool_Direct(BaseTool):
         return self._run(command)
 
 
-
+# --- Import Aider Tools ---
+try:
+    from .tools.aider_tools import aider_tools
+    logger.info("Aider tools loaded successfully.")
+except ImportError:
+    logger.warning("Aider tools could not be imported. Code editing features will be disabled.")
+    aider_tools = []
+# --- End Import Aider Tools ---
 
 # Initialize the built-in Python REPL tool
 python_repl_tool = PythonREPLTool()
@@ -111,7 +118,6 @@ direct_windows_shell_tool = ConsoleTool_Direct()
 tools = [
     interactive_windows_shell_tool,
     python_repl_tool,
-    
-]
+] + aider_tools  # Add aider_tools here
 
 tools_functions = [convert_to_openai_function(t) for t in tools]
