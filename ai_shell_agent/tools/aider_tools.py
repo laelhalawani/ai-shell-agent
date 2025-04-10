@@ -9,11 +9,11 @@ except ImportError:
     AIDER_AVAILABLE = False
 
 # --- Helper Function for Disabled Tools ---
-def create_disabled_tool(name: str, description: str, args_schema: Optional[Type[BaseModel]] = None) -> Type[BaseTool]:
+def create_disabled_tool(tool_name: str, tool_description: str, tool_args_schema: Optional[Type[BaseModel]] = None) -> Type[BaseTool]:
     class DisabledTool(BaseTool):
-        name: str = name
-        description: str = description
-        args_schema: Optional[Type[BaseModel]] = args_schema
+        name: str = tool_name
+        description: str = tool_description
+        args_schema: Optional[Type[BaseModel]] = tool_args_schema
 
         def _run(self, *args, **kwargs) -> str:
             return "Aider integration is not available. Please install aider-chat."
