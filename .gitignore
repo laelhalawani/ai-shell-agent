@@ -19,8 +19,14 @@ dist/
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Chat data
 chats/
 session.json
 config.json
+
+# Aider files
+.aider*
+.aider.chat.history.md
+.aider.tags.cache.json
 
 to_do.md

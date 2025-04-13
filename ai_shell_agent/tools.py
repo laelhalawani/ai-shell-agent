@@ -5,6 +5,9 @@ from langchain_experimental.tools.python.tool import PythonREPLTool
 from prompt_toolkit import prompt
 from . import logger
 
+# --- Import the aider_tools list instead of individual imports ---
+from .aider_integration import aider_tools
+
 class ConsoleTool_HITL(BaseTool):
     name: str = "interactive_windows_cmd_tool"
     description: str = (
@@ -100,7 +103,17 @@ class ConsoleTool_Direct(BaseTool):
         """
         return self._run(command)
 
-
+def run_python_code(code: str) -> str:
+    """
+    Wrapper around PythonREPLTool for convenience.
+    
+    Args:
+        code (str): The Python code to execute.
+    
+    Returns:
+        str: The output from executing the Python code.
+    """
+    return python_repl_tool.invoke({"command": code})
 
 
 # Initialize the built-in Python REPL tool
@@ -108,10 +121,11 @@ python_repl_tool = PythonREPLTool()
 interactive_windows_shell_tool = ConsoleTool_HITL()
 direct_windows_shell_tool = ConsoleTool_Direct()
 
+# List of all available tools
 tools = [
     interactive_windows_shell_tool,
     python_repl_tool,
-    
-]
+    # Add other non-Aider tools here if you have them
+] + aider_tools  # Add all the Aider tools
 
 tools_functions = [convert_to_openai_function(t) for t in tools]

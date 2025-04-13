@@ -93,6 +93,8 @@ ai -k  # Update your API key
   
 - **Python Code Execution**: Run and evaluate Python code snippets (experimental feature).
 
+- **AI-Powered Code Editing**: Make natural language code changes to your files using the integrated code editing capabilities. Add files to the session and describe the changes you want to make.
+
 https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
 
 ## Warning
@@ -105,6 +107,7 @@ https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
 - [Quickstart Guide](#quickstart-guide)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Code Editing](#code-editing)
 - [Development & Contributing](#development--contributing)
 - [License](#license)
 
@@ -135,6 +138,9 @@ https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
 
 - **Python Code Execution**:  
   The agent also has the ability to run Python REPL, though this feature hasn't undergone extensive development or testing.
+
+- **AI-Powered Code Editing**:  
+  Make natural language code changes to your files using the integrated code editing capabilities. Add files to the session and describe the changes you want to make.
 
 ---
 
@@ -225,6 +231,40 @@ ai -x "dir"
 ```
 
 By automatically detecting your operating system (via Python’s `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal.
+
+### Code Editing
+
+AI Shell Agent integrates code editing capabilities that allow you to make changes to your files using natural language instructions:
+
+#### Initialize the Code Editor
+```bash
+ai "start a code editing session"
+```
+
+#### Add Files to Edit
+```bash
+ai "add file.py to the editor"
+```
+
+#### Edit Code with Natural Language
+```bash
+ai "add a function that calculates the factorial of a number"
+```
+
+#### List Files in the Editor
+```bash
+ai "list the files in the editor"
+```
+
+#### Remove Files from the Editor
+```bash
+ai "remove file.py from the editor"
+```
+
+#### View Changes
+```bash
+ai "show me the changes made to the files"
+```
 
 ### Temporary Chat Sessions
 

@@ -1,8 +1,9 @@
 # File: ai_shell_agent/chat_manager.py
 import os
 import json
-from typing import Optional
 import uuid
+import traceback  # Add traceback for detailed error reporting
+from typing import Optional, Dict, Any, Tuple, List
 
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -14,7 +15,9 @@ from langchain_core.messages import (
     BaseMessage
 )
 from langchain_core.messages.utils import convert_to_openai_messages
-from .tools import tools_functions, direct_windows_shell_tool, tools
+from langchain_core.utils.function_calling import convert_to_openai_function
+from .tools import tools as all_base_tools, direct_windows_shell_tool  # Import the specific tool we need
+from .aider_integration import get_active_coder_state, aider_tools, start_code_editor_tool, SIGNAL_PROMPT_NEEDED
 from .prompts import default_system_prompt
 from .config_manager import get_current_model, get_model_provider
 from . import logger
@@ -54,40 +57,210 @@ def _get_console_session_id() -> str:
     """Returns an identifier for a temporary console session."""
     return f"temp_{os.getpid()}"
 
-def _read_messages(file_path: str) -> list[BaseMessage]:
-    """Read and deserialize messages from JSON file."""
+def _read_chat_data(file_path: str) -> Tuple[List[BaseMessage], Dict[str, Any]]:
+    """Read and deserialize agent messages and the full aider_state from JSON file."""
+    agent_messages = []
+    aider_state = {}
     if os.path.exists(file_path):
-        with open(file_path, "r") as f:
+        try:
+            with open(file_path, "r", encoding='utf-8') as f:  # Specify encoding
+                data = json.load(f)
+
+            # Load agent's messages (unchanged logic)
+            messages_data = data.get("messages", [])
+            for msg_data in messages_data:
+                msg_type = msg_data.get("type")
+                # Ensure 'type' exists before accessing 'model_dump' or specific classes
+                if msg_type:
+                    try:
+                        # Dynamically find the message class based on 'type'
+                        # Assumes message types match class names like HumanMessage, AIMessage, etc.
+                        # Ensure necessary classes are imported at the top of the file
+                        message_class_name = msg_type.capitalize() + "Message"
+                        # Handle potential variations like 'ai' -> 'AIMessage'
+                        if msg_type == "ai": message_class_name = "AIMessage"
+                        if msg_type == "human": message_class_name = "HumanMessage"
+                        if msg_type == "system": message_class_name = "SystemMessage"
+                        if msg_type == "tool": message_class_name = "ToolMessage"
+
+                        # Get the class object (assuming it's imported)
+                        message_class = globals().get(message_class_name)
+
+                        if message_class and issubclass(message_class, BaseMessage):
+                            # Recreate the message object
+                            # We need to handle 'additional_kwargs' which might not be a direct parameter
+                            # Extract standard parameters first
+                            standard_params = {k: v for k, v in msg_data.items() if k in message_class.__fields__}
+                            # Put remaining items into additional_kwargs if the class supports it
+                            if 'additional_kwargs' in message_class.__fields__:
+                                 standard_params['additional_kwargs'] = {k: v for k, v in msg_data.items() if k not in message_class.__fields__}
+                                 # Remove the explicit 'type' if it's not part of the model fields but was in the dump
+                                 if 'type' in standard_params['additional_kwargs'] and 'type' not in message_class.__fields__:
+                                     del standard_params['additional_kwargs']['type']
+
+
+                            agent_messages.append(message_class(**standard_params))
+                        else:
+                            logger.warning(f"Could not find or validate message class for type: {msg_type}")
+                    except Exception as e:
+                         logger.error(f"Error deserializing message: {msg_data}. Error: {e}")
+                else:
+                    logger.warning(f"Message data missing 'type' field: {msg_data}")
+
+
+            # Load the entire aider_state dictionary
+            aider_state = data.get("aider_state", {})
+            # Ensure aider_done_messages is present and a list
+            if "aider_done_messages" not in aider_state:
+                aider_state["aider_done_messages"] = []
+            elif not isinstance(aider_state.get("aider_done_messages"), list):
+                logger.warning(f"aider_done_messages in state (file: {file_path}) is not a list, resetting.")
+                aider_state["aider_done_messages"] = []
+
+            logger.debug(f"Read {len(agent_messages)} agent messages from {file_path}")
+            logger.debug(f"Read aider_state keys: {list(aider_state.keys())} from {file_path}")
+            logger.debug(f"Read {len(aider_state.get('aider_done_messages', []))} aider messages from state in {file_path}")
+
+        except json.JSONDecodeError:
+            logger.error(f"Failed to decode JSON from {file_path}")
+            return [], {} # Return empty on decode error
+        except Exception as e:
+            logger.error(f"Error reading chat data from {file_path}: {e}\n{traceback.format_exc()}")
+            return [], {} # Return empty on other errors
+
+    # Ensure aider_state always contains aider_done_messages list, even if file didn't exist or was empty/corrupt
+    if "aider_done_messages" not in aider_state:
+        aider_state["aider_done_messages"] = []
+
+    return agent_messages, aider_state
+
+def _write_chat_data(file_path: str, messages: List[BaseMessage], aider_state: Dict[str, Any]) -> None:
+    """Write agent messages and the full aider_state to JSON file."""
+    try:
+        # Serialize agent messages
+        messages_data = []
+        for msg in messages:
             try:
-                messages_data = json.load(f)
-                messages = []
-                for msg in messages_data:
-                    if msg["type"] == "system":
-                        messages.append(SystemMessage(**msg))
-                    elif msg["type"] == "human":
-                        messages.append(HumanMessage(**msg))
-                    elif msg["type"] == "ai":
-                        messages.append(AIMessage(**msg))
-                    elif msg["type"] == "tool":  # Added branch for tool messages
-                        messages.append(ToolMessage(**msg))
-                logger.debug(f"Read messages: {messages}")
-                return messages
-            except json.JSONDecodeError:
-                return []
-    return []
+                # Use model_dump if available (Pydantic v2), otherwise dict()
+                if hasattr(msg, 'model_dump'):
+                    messages_data.append(msg.model_dump())
+                else:
+                    messages_data.append(msg.dict())
+            except Exception as e:
+                logger.error(f"Error serializing message: {msg}. Error: {e}")
+                # Optionally skip the message or add placeholder
 
-def _write_messages(file_path: str, messages: list[BaseMessage]) -> None:
-    """Write messages to JSON file."""
-    messages_data = [msg.model_dump() for msg in messages]
-    logger.debug(f"Writing messages: {messages_data}")
-    with open(file_path, "w") as f:
-        json.dump(messages_data, f, indent=4)
+        # Ensure aider_done_messages exists in the state being written
+        if "aider_done_messages" not in aider_state:
+            aider_state["aider_done_messages"] = []
+        elif not isinstance(aider_state.get("aider_done_messages"), list):
+            logger.warning(f"aider_done_messages in state (file: {file_path}) is not a list before writing, resetting.")
+            aider_state["aider_done_messages"] = []
 
-# Initialize the LLM based on current model configuration
+        # Filter out None values from the rest of aider_state *before* saving
+        # We explicitly keep aider_done_messages even if empty
+        filtered_aider_state = {
+            k: v for k, v in aider_state.items()
+            if v is not None or k == "aider_done_messages"  # Keep aider_done_messages
+        }
+
+        data_to_write = {
+            "messages": messages_data,
+            "aider_state": filtered_aider_state
+        }
+        logger.debug(f"Writing {len(messages_data)} agent messages to {file_path}")
+        logger.debug(f"Writing aider_state keys: {list(filtered_aider_state.keys())} to {file_path}")
+
+        # Ensure we log how many Aider messages are being saved
+        aider_messages_count = len(filtered_aider_state.get("aider_done_messages", []))
+        logger.debug(f"Writing {aider_messages_count} aider_done_messages to {file_path}")
+
+        # Ensure directory exists before writing
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        with open(file_path, "w", encoding='utf-8') as f:  # Specify encoding
+            json.dump(data_to_write, f, indent=4, default=str) # Add default=str for non-serializable types
+
+    except TypeError as e:
+         logger.error(f"Serialization error writing to {file_path}: {e}")
+         logger.error(f"Data that failed: {data_to_write}") # Log the problematic data
+    except Exception as e:
+        logger.error(f"Error writing chat data to {file_path}: {e}\n{traceback.format_exc()}")
+
+# Aider state management
+def get_aider_state(chat_file: str) -> Dict[str, Any]:
+    """Loads the aider_state dictionary from the chat file."""
+    if not chat_file or not os.path.exists(chat_file):
+        logger.debug(f"Chat file {chat_file} not found or not specified for get_aider_state.")
+        return {"aider_done_messages": []} # Return default empty state
+    try:
+        _, aider_state = _read_chat_data(chat_file)
+        # Ensure the essential key exists even if read failed partially
+        if "aider_done_messages" not in aider_state:
+             aider_state["aider_done_messages"] = []
+        return aider_state
+    except Exception as e:
+        logger.error(f"Failed to get aider state from {chat_file}: {e}")
+        return {"aider_done_messages": []} # Return default on error
+
+def save_aider_state(chat_file: str, state_dict: Dict[str, Any]):
+    """Saves the aider_state dictionary to the chat file, preserving messages."""
+    if not chat_file:
+         logger.error("Cannot save aider state: chat_file path is empty.")
+         return
+    try:
+        messages, _ = _read_chat_data(chat_file)
+        # Ensure messages is a list even if read failed
+        if not isinstance(messages, list):
+            logger.warning(f"Read invalid messages from {chat_file}, using empty list.")
+            messages = []
+        _write_chat_data(chat_file, messages, state_dict)
+        logger.debug(f"Aider state saved to {chat_file}")
+    except Exception as e:
+        logger.error(f"Failed to save aider state to {chat_file}: {e}\n{traceback.format_exc()}")
+
+def clear_aider_state(chat_file: str):
+    """Clears the aider_state dictionary in the chat file, preserving messages."""
+    if not chat_file:
+         logger.error("Cannot clear aider state: chat_file path is empty.")
+         return
+    try:
+        messages, _ = _read_chat_data(chat_file)
+         # Ensure messages is a list even if read failed
+        if not isinstance(messages, list):
+            logger.warning(f"Read invalid messages from {chat_file} before clearing aider state, using empty list.")
+            messages = []
+        _write_chat_data(chat_file, messages, {}) # Write with an empty aider_state dict
+        logger.info(f"Aider state cleared for chat file: {chat_file}")
+    except Exception as e:
+         logger.error(f"Failed to clear aider state for {chat_file}: {e}\n{traceback.format_exc()}")
+
+# Initialize the LLM based on current model configuration and active tools
 def _get_llm():
-    """Get the LLM instance based on the current model configuration."""
+    """Get the LLM instance based on the current model configuration and active tools."""
     model_name = get_current_model()
     provider = get_model_provider(model_name)
+    
+    # Determine available tools based on current Aider session state
+    chat_file = get_current_chat()
+    active_state = get_active_coder_state(chat_file) if chat_file else None
+    
+    if active_state:
+        # An Aider session is active, include all tools (base tools + all aider tools)
+        # Tools list already includes aider_tools from imports in tools.py
+        available_tools = all_base_tools
+        logger.debug("Aider session is active, providing all tools including Aider tools")
+    else:
+        # No active Aider session, provide only StartCodeEditorTool + base tools
+        # Filter out aider tools except start_code_editor_tool
+        base_tools_only = [t for t in all_base_tools if t not in aider_tools]
+        available_tools = base_tools_only + [start_code_editor_tool]
+        logger.debug("No active Aider session, providing only start_code_editor_tool with base tools")
+    
+    # Generate tool functions for the selected tools
+    global tools, tools_functions
+    tools = available_tools
+    tools_functions = [convert_to_openai_function(t) for t in tools]
     
     if provider == "openai":
         return ChatOpenAI(model=model_name).bind_tools(tools_functions)
@@ -149,7 +322,7 @@ def create_or_load_chat(title: str) -> str:
             _write_json(CONFIG_FILE, config)
         default_prompt = config.get("default_system_prompt", default_system_prompt)
         initial_messages = [SystemMessage(content=default_prompt)]
-        _write_messages(chat_file, initial_messages)
+        _write_chat_data(chat_file, initial_messages, {})
     set_current_chat(chat_file)
     return chat_file
 
@@ -239,10 +412,7 @@ def _handle_tool_calls(ai_message: AIMessage) -> list[BaseMessage]:
         return []
     messages = []
 
-    tools_dict = {
-        "interactive_windows_cmd_tool": tools[0],
-        "run_python_code": tools[1]
-    }
+    tools_dict = {tool.name: tool for tool in tools}
     logger.info(f"AI wants to run commands...")
     for tool_call in ai_message.tool_calls:
         if tool_call["name"] not in tools_dict:
@@ -256,6 +426,18 @@ def _handle_tool_calls(ai_message: AIMessage) -> list[BaseMessage]:
             tool = tools_dict[tool_name]
             tool_response: ToolMessage = tool.invoke(tool_call)
             tool_response.tool_call_id = tool_call_id
+            
+            # Check if this is an Aider tool response that needs input
+            if isinstance(tool_response.content, str) and tool_response.content.startswith(SIGNAL_PROMPT_NEEDED):
+                # Extract the prompt details
+                prompt_details = tool_response.content[len(SIGNAL_PROMPT_NEEDED):].strip()
+                logger.info(f"Aider needs input: {prompt_details}")
+                
+                # We'll add the tool response to messages and let the agent respond in the next call
+                # Note that we're not changing the structure here, but the agent will detect
+                # this signal and respond appropriately in its next turn
+                logger.debug(f"Returning tool response with Aider input request: {tool_response}")
+            
             messages.append(tool_response)
         except Exception as e:
             raise Exception(f"Error running tool '{tool_name}': {e}")
@@ -263,7 +445,7 @@ def _handle_tool_calls(ai_message: AIMessage) -> list[BaseMessage]:
 
 def _prune_unmatched_tool_calls(messages: list[BaseMessage]) -> list[BaseMessage]:
     # Find the index of the last AIMessage
-    last_ai_index = -1
+    last_ai_index = -1;
     for i in range(len(messages) - 1, -1, -1):
         if isinstance(messages[i], AIMessage):
             last_ai_index = i
@@ -319,7 +501,8 @@ def send_message(message: str) -> str:
         chat_file = create_or_load_chat(console_session_id)
     
     # Load existing messages and ensure they exist
-    current_messages = _read_messages(chat_file) or []
+    current_messages, current_aider_state = _read_chat_data(chat_file)
+    current_messages = current_messages or []
     logger.debug(f"Current messages: {current_messages}")
     # Ensure system prompt exists at the start
     if len(current_messages) == 0 or not isinstance(current_messages[0], SystemMessage):
@@ -372,7 +555,7 @@ def send_message(message: str) -> str:
         else:
             logger.info(f"AI: {ai_response.content}")
             break
-    _write_messages(chat_file, current_messages)
+    _write_chat_data(chat_file, current_messages, current_aider_state)
     return ai_response.content
 
 def start_temp_chat(message: str) -> str:
@@ -395,7 +578,7 @@ def start_temp_chat(message: str) -> str:
     chat_file = create_or_load_chat(console_session_id)
     logger.debug(f"Chat file: {chat_file}")
     
-    current_messages = _read_messages(chat_file)
+    current_messages, current_aider_state = _read_chat_data(chat_file)
     logger.debug(f"Messages: {current_messages}")
     if not any(isinstance(msg, SystemMessage) for msg in current_messages):
         config = _read_json(CONFIG_FILE)
@@ -442,7 +625,7 @@ def start_temp_chat(message: str) -> str:
             break
     
     set_current_chat(chat_file)
-    _write_messages(chat_file, current_messages)
+    _write_chat_data(chat_file, current_messages, current_aider_state)
     return ai_response.content
 
 def edit_message(index: Optional[int], new_message: str) -> bool:
@@ -462,7 +645,7 @@ def edit_message(index: Optional[int], new_message: str) -> bool:
     if not chat_file:
         return False
         
-    messages = _read_messages(chat_file)
+    messages, current_aider_state = _read_chat_data(chat_file)
     logger.debug(f"Messages: {messages}")
     
     if index is None:
@@ -480,7 +663,7 @@ def edit_message(index: Optional[int], new_message: str) -> bool:
     # truncate messages removing the edited message and all subsequent messages
     messages = messages[:index]
     logger.debug(f"Edited messages: {messages}")
-    _write_messages(chat_file, messages)
+    _write_chat_data(chat_file, messages, current_aider_state)
     # Send the new message via send_message to trigger complete processing
     send_message(new_message)
     return True
@@ -528,10 +711,10 @@ def update_system_prompt(prompt_text: str) -> None:
         logger.warning("No active chat session to update.")
         return
         
-    messages = _read_messages(chat_file)
+    messages, current_aider_state = _read_chat_data(chat_file)
     logger.debug(f"Messages: {messages}")
     messages.insert(0, SystemMessage(content=prompt_text))
-    _write_messages(chat_file, messages)
+    _write_chat_data(chat_file, messages, current_aider_state)
 
 def execute(command: str) -> str:
     """
@@ -553,7 +736,8 @@ def execute(command: str) -> str:
         chat_file = create_or_load_chat(console_session_id)
     
     # Load existing messages and ensure they exist
-    current_messages = _read_messages(chat_file) or []
+    current_messages, current_aider_state = _read_chat_data(chat_file)
+    current_messages = current_messages or []
     logger.debug(f"Current messages: {current_messages}")
     
     # Ensure system prompt exists
@@ -573,7 +757,7 @@ def execute(command: str) -> str:
     logger.debug(f"Appended command message: {cmd_message}")
     
     # Save complete updated conversation
-    _write_messages(chat_file, current_messages)
+    _write_chat_data(chat_file, current_messages, current_aider_state)
     return output
 
 def list_messages(chat_title:Optional[str]=None):
@@ -604,7 +788,7 @@ def list_messages(chat_title:Optional[str]=None):
         logger.error(f"Chat session not found: {chat_title}")
         return
     chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
-    current_messages = _read_messages(chat_file)
+    current_messages, aider_state = _read_chat_data(chat_file)
     logger.debug(f"Chat messages: {current_messages}")
     user_messages = 0
     for i, msg in enumerate(current_messages):
