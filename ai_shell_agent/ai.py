@@ -21,7 +21,15 @@ from .config_manager import (
     get_api_key_for_model,
     set_api_key_for_model,
     get_model_provider,
-    check_if_first_run
+    check_if_first_run,
+    prompt_for_edit_mode_selection,  # New import for AI Code Editor edit format selection
+    prompt_for_coder_models_selection,  # New import for AI Code Editor coder models selection
+    get_aider_main_model,  # Added for API key check
+    get_aider_editor_model,  # Added for API key check
+    get_aider_weak_model,   # Added for API key check
+    set_aider_main_model,   # Added for setting default models
+    set_aider_editor_model, # Added for setting default models 
+    set_aider_weak_model    # Added for setting default models
 )
 
 # First time setup to ensure model is selected before API key
@@ -33,6 +41,25 @@ def first_time_setup():
         logger.info("Welcome to AI Shell Agent! Please select a model to use.")
         selected_model = prompt_for_model_selection()
         set_model(selected_model)
+        
+        # Also set up AI Code Editor models on first run
+        logger.info("Would you like to configure AI Code Editor models now?")
+        setup_coder = input("Configure AI Code Editor models? (y/n, default: y): ").strip().lower()
+        if not setup_coder or setup_coder.startswith('y'):
+            # Set default coder models if user wants to configure
+            # Default to o3-mini for editor and weak models if not set
+            if not get_aider_main_model():
+                set_aider_main_model(selected_model)  # Use the same model as agent by default
+            if not get_aider_editor_model():
+                set_aider_editor_model("o3-mini")     # Default to o3-mini for editor
+            if not get_aider_weak_model():
+                set_aider_weak_model("o3-mini")       # Default to o3-mini for weak model
+            
+            # Run the full configuration wizard
+            prompt_for_coder_models_selection()
+            
+            # After models are set, ensure API keys for all selected models
+            ensure_api_keys_for_coder_models()
 
 # Ensure the API key is set before any other operations
 def ensure_api_key() -> None:
@@ -40,6 +67,42 @@ def ensure_api_key() -> None:
     Ensure that the appropriate API key is set for the selected model.
     """
     ensure_api_key_for_current_model()
+
+# Ensure API keys for all model types
+def ensure_api_keys_for_coder_models() -> None:
+    """
+    Check and ensure API keys are set for all models used by the AI Code Editor.
+    This includes the main model, editor model, and weak model if they're configured.
+    """
+    # Check main agent model first (already checked by ensure_api_key)
+    main_agent_model = get_current_model()
+    
+    # Check main code editor model if different from agent model
+    main_coder_model = get_aider_main_model()
+    if main_coder_model and main_coder_model != main_agent_model:
+        logger.info(f"Checking API key for AI Code Editor main model: {main_coder_model}")
+        api_key, env_var = get_api_key_for_model(main_coder_model)
+        if not api_key:
+            logger.info(f"API key needed for {main_coder_model}")
+            set_api_key_for_model(main_coder_model)
+    
+    # Check editor model if configured
+    editor_model = get_aider_editor_model()
+    if editor_model and editor_model != main_agent_model and editor_model != main_coder_model:
+        logger.info(f"Checking API key for AI Code Editor editor model: {editor_model}")
+        api_key, env_var = get_api_key_for_model(editor_model)
+        if not api_key:
+            logger.info(f"API key needed for {editor_model}")
+            set_api_key_for_model(editor_model)
+    
+    # Check weak model if configured
+    weak_model = get_aider_weak_model()
+    if weak_model and weak_model != main_agent_model and weak_model != main_coder_model and weak_model != editor_model:
+        logger.info(f"Checking API key for AI Code Editor weak model: {weak_model}")
+        api_key, env_var = get_api_key_for_model(weak_model)
+        if not api_key:
+            logger.info(f"API key needed for {weak_model}")
+            set_api_key_for_model(weak_model)
 
 from .chat_manager import (
     create_or_load_chat,
@@ -77,6 +140,10 @@ def main():
     # Model selection
     parser.add_argument("-llm", "--model", help="Set the LLM model to use")
     parser.add_argument("--select-model", action="store_true", help="Interactively select an LLM model")
+    
+    # AI Code Editor Configuration Wizards
+    parser.add_argument("--select-edit-mode", action="store_true", help="Interactively select the edit format the AI Code Editor should use.")
+    parser.add_argument("--select-coder-models", action="store_true", help="Interactively select the models the AI Code Editor should use for coding tasks.")
     
     # Chat management options
     parser.add_argument("-c", "--chat", help="Create or load a chat session with the specified title")
@@ -116,7 +183,7 @@ def main():
     
     if args.select_model:
         selected_model = prompt_for_model_selection()
-        if selected_model:
+        if (selected_model):
             set_model(selected_model)
             ensure_api_key()
         return
@@ -135,6 +202,17 @@ def main():
 
     # Check API key before executing any command
     ensure_api_key()
+    
+    # Handle Aider configuration wizards if arguments are present
+    if args.select_edit_mode:
+        prompt_for_edit_mode_selection()
+        return
+        
+    if args.select_coder_models:
+        prompt_for_coder_models_selection()
+        # Check API keys for all selected models after configuration
+        ensure_api_keys_for_coder_models()
+        return
     
     # Handle direct command execution
     if args.execute:

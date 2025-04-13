@@ -22,6 +22,20 @@ ALL_MODELS = {**OPENAI_MODELS, **GOOGLE_MODELS}
 
 DEFAULT_MODEL = "gpt-4o-mini"
 
+# Define Aider edit formats with descriptions
+AIDER_EDIT_FORMATS = {
+    "whole": "LLM sends back the entire file content.",
+    "diff": "LLM sends back search/replace blocks.",
+    "diff-fenced": "LLM sends back search/replace blocks within a fenced code block (good for Gemini).",
+    "udiff": "LLM sends back simplified unified diff format (good for GPT-4 Turbo).",
+    "architect": "High-level planning by main model, detailed edits by editor model.",
+    # editor-* formats are typically set automatically with architect mode or --editor-model
+    # but allow explicit selection if needed.
+    "editor-diff": "Streamlined diff format for editor models.",
+    "editor-whole": "Streamlined whole format for editor models.",
+}
+DEFAULT_AIDER_EDIT_FORMAT = None  # Let AI Code Editor/Model decide by default
+
 def get_data_dir():
     """Return the directory where configuration data should be stored."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -275,3 +289,159 @@ def ensure_api_key_for_current_model() -> bool:
             return False
     
     return True
+
+def get_aider_edit_format() -> Optional[str]:
+    """Gets the configured Aider edit format."""
+    config = _read_config()
+    # Return None if not set, allowing Aider's defaults to take precedence
+    return config.get("aider_edit_format", DEFAULT_AIDER_EDIT_FORMAT)
+
+def set_aider_edit_format(edit_format: Optional[str]) -> None:
+    """Sets the Aider edit format in the config."""
+    config = _read_config()
+    if edit_format is None:
+        config.pop("aider_edit_format", None) # Remove key if set to None (use default)
+        logger.info("Aider edit format reset to default (model-specific).")
+    elif edit_format in AIDER_EDIT_FORMATS:
+        config["aider_edit_format"] = edit_format
+        logger.info(f"Aider edit format set to: {edit_format}")
+    else:
+        logger.error(f"Invalid edit format '{edit_format}'. Not setting.")
+        return
+    _write_config(config)
+
+def prompt_for_edit_mode_selection() -> Optional[str]:
+    """Prompts the user to select an AI Code Editor edit format."""
+    current_format = get_aider_edit_format()
+    print("\nSelect AI Code Editor Format:")
+    print("-------------------------")
+    i = 0
+    valid_choices = {}
+    # Option 0: Use Default
+    print(f"  0: Default (Let the AI Code Editor choose based on the main model) {'<- Current Setting' if current_format is None else ''}")
+    valid_choices['0'] = None
+
+    # List other formats
+    format_list = sorted(AIDER_EDIT_FORMATS.keys())
+    for idx, fmt in enumerate(format_list, 1):
+        description = AIDER_EDIT_FORMATS[fmt]
+        marker = " <- Current Setting" if fmt == current_format else ""
+        print(f"  {idx}: {fmt}{marker} - {description}")
+        valid_choices[str(idx)] = fmt
+
+    while True:
+        try:
+            choice = input(f"Enter choice (0-{len(format_list)}): ").strip()
+            if choice in valid_choices:
+                selected_format = valid_choices[choice]
+                set_aider_edit_format(selected_format)
+                return selected_format
+            elif not choice: # Allow empty input to keep current setting
+                 print(f"Keeping current setting: {current_format or 'Default'}")
+                 return current_format
+            else:
+                print("Invalid choice. Please try again.")
+        except EOFError:
+            print("\nSelection cancelled.")
+            return current_format # Keep current on Ctrl+D
+        except KeyboardInterrupt:
+             print("\nSelection cancelled.")
+             return current_format # Keep current on Ctrl+C
+
+def _get_aider_model(config_key: str) -> Optional[str]:
+    """Helper to get a specific aider model config."""
+    config = _read_config()
+    return config.get(config_key) # Returns None if not set
+
+def _set_aider_model(config_key: str, model_name: Optional[str]) -> None:
+    """Helper to set a specific aider model config."""
+    config = _read_config()
+    normalized_name = normalize_model_name(model_name) if model_name else None
+    if normalized_name:
+         config[config_key] = normalized_name
+         logger.info(f"Set {config_key} to: {normalized_name}")
+    elif config_key in config:
+         del config[config_key] # Remove if set to None
+         logger.info(f"Reset {config_key} to default.")
+    _write_config(config)
+
+def get_aider_main_model() -> Optional[str]:
+    """Gets the configured main/architect model for Aider."""
+    return _get_aider_model("aider_main_model")
+
+def set_aider_main_model(model_name: Optional[str]) -> None:
+    """Sets the main/architect model for Aider."""
+    _set_aider_model("aider_main_model", model_name)
+
+def get_aider_editor_model() -> Optional[str]:
+    """Gets the configured editor model for Aider."""
+    return _get_aider_model("aider_editor_model")
+
+def set_aider_editor_model(model_name: Optional[str]) -> None:
+    """Sets the editor model for Aider."""
+    _set_aider_model("aider_editor_model", model_name)
+
+def get_aider_weak_model() -> Optional[str]:
+    """Gets the configured weak model for Aider."""
+    return _get_aider_model("aider_weak_model")
+
+def set_aider_weak_model(model_name: Optional[str]) -> None:
+    """Sets the weak model for Aider."""
+    _set_aider_model("aider_weak_model", model_name)
+
+def _prompt_for_single_coder_model(role_name: str, current_value: Optional[str]) -> Optional[str]:
+    """Helper to prompt for one of the coder models."""
+    print(f"\n--- Select AI Code Editor {role_name} Model ---")
+    
+    print("Available models (same as agent models):")
+    all_model_names = sorted(list(set(ALL_MODELS.values()))) # Use ALL_MODELS from config_manager
+    for model in all_model_names:
+         marker = " <- Current Value" if model == current_value else ""
+         print(f"- {model}{marker}")
+         # Add aliases maybe?
+         aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
+         if aliases: print(f"  (aliases: {', '.join(aliases)})")
+
+    prompt_msg = (f"Enter model name for {role_name} role"
+                  f" (leave empty to keep '{current_value or 'Default'}',"
+                  f" enter 'none' to use default): ")
+
+    while True:
+        selected = input(prompt_msg).strip()
+        if not selected:
+            print(f"Keeping current setting: {current_value or 'Default'}")
+            return current_value # Keep current
+        elif selected.lower() == 'none':
+             print(f"Resetting {role_name} model to default.")
+             return None # Use None to signify default/reset
+        else:
+             normalized_model = normalize_model_name(selected)
+             if normalized_model in all_model_names:
+                  return normalized_model # Return the selected normalized name
+             else:
+                  print(f"Error: Unknown model '{selected}'. Please choose from the list or enter 'none'.")
+
+
+def prompt_for_coder_models_selection() -> None:
+    """Runs the multi-step wizard to select AI Code Editor models."""
+    print("\n--- Configure AI Code Editor Models ---")
+    print("Select the models the AI Code Editor should use for different coding tasks.")
+    print("Leave input empty at any step to keep the current setting.")
+    print("Enter 'none' to reset a model to its default behavior.")
+
+    current_main = get_aider_main_model()
+    selected_main = _prompt_for_single_coder_model("Main/Architect", current_main)
+    if selected_main != current_main: # Only set if changed
+        set_aider_main_model(selected_main)
+
+    current_editor = get_aider_editor_model()
+    selected_editor = _prompt_for_single_coder_model("Editor", current_editor)
+    if selected_editor != current_editor:
+        set_aider_editor_model(selected_editor)
+
+    current_weak = get_aider_weak_model()
+    selected_weak = _prompt_for_single_coder_model("Weak (Commits/Summaries)", current_weak)
+    if selected_weak != current_weak:
+        set_aider_weak_model(selected_weak)
+
+    print("\nAI Code Editor models configuration updated.")

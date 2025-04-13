@@ -41,7 +41,7 @@ except ImportError:
 from . import logger
 # Import necessary functions from chat_manager and config_manager
 # These will be used by the tools and helper functions
-from .config_manager import get_current_model, get_api_key_for_model, normalize_model_name
+from .config_manager import get_current_model, get_api_key_for_model, normalize_model_name, get_aider_edit_format, get_aider_main_model, get_aider_editor_model, get_aider_weak_model
 from .chat_manager import (
     get_current_chat,
     get_aider_state,
@@ -326,46 +326,54 @@ def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[C
         logger.debug(f"Recreating Coder for {chat_file} with state keys: {list(aider_state.keys())}")
 
         # --- Model and Config Setup ---
-        # Prioritize state, then agent's current, then default
-        main_model_name = aider_state.get('main_model_name')
+        # Priority: Agent Config -> Persistent State -> Agent Current Model
+        main_model_name_cfg = get_aider_main_model()
+        main_model_name_state = aider_state.get('main_model_name')
+        main_model_name_agent = get_current_model() # Agent's primary model
+
+        main_model_name = main_model_name_cfg or main_model_name_state or main_model_name_agent
         if not main_model_name:
-            main_model_name = get_current_model() # Agent's current model
-            logger.warning(f"Aider main_model_name not in state, using agent's current: {main_model_name}")
-        if not main_model_name: # Should not happen if agent setup is correct
-             logger.error("Cannot determine main model name for Aider Coder recreation.")
-             return None
+            logger.error("Cannot determine main model name for Aider Coder recreation.")
+            return None
+        logger.debug(f"Using main model: {main_model_name} (Source: {'Config' if main_model_name_cfg else 'State' if main_model_name_state else 'Agent'})")
 
-        weak_model_name = aider_state.get('weak_model_name')
-        editor_model_name = aider_state.get('editor_model_name')
-        # Ensure edit format comes from state or model default
-        edit_format = aider_state.get('edit_format')
-        editor_edit_format = aider_state.get('editor_edit_format')
+        # Other models (Priority: Agent Config -> Persistent State -> None/Default)
+        editor_model_name = get_aider_editor_model() or aider_state.get('editor_model_name')
+        weak_model_name = get_aider_weak_model() or aider_state.get('weak_model_name')
+        logger.debug(f"Using editor model: {editor_model_name or 'Default'}")
+        logger.debug(f"Using weak model: {weak_model_name or 'Default'}")
 
-        # Ensure API keys are set in the environment (Coder relies on this)
+
+        # Edit format (Priority: Agent Config -> Persistent State -> Model Default)
+        edit_format_cfg = get_aider_edit_format()
+        edit_format_state = aider_state.get('edit_format')
+        # We'll determine the final edit_format after instantiating the model if needed
+        
+        editor_edit_format = aider_state.get('editor_edit_format') # Editor format primarily from state for now
+
+        # Ensure API key for the *determined* main_model_name
         api_key, env_var = get_api_key_for_model(main_model_name)
         if not api_key:
             logger.error(f"API Key ({env_var}) not found for model {main_model_name}. Cannot recreate Coder.")
-            return None # Cannot proceed without API key
+            return None
 
-        # Instantiate the main model object
-        # This might fail if the model name is invalid or requires specific setup not handled here
         try:
-             main_model = Model(
+            main_model_instance = Model(
                  main_model_name,
-                 weak_model=weak_model_name,
+                 weak_model=weak_model_name, # Pass potentially overridden models
                  editor_model=editor_model_name,
-                 editor_edit_format=editor_edit_format
-             )
-             # If edit_format wasn't in state, get it from the instantiated model
-             if edit_format is None:
-                  edit_format = main_model.edit_format
-                  logger.debug(f"Edit format not in state, using model default: {edit_format}")
+                 editor_edit_format=editor_edit_format # Pass format from state
+            )
+            # Determine final edit format
+            # If config is set, use it. If not, use state. If neither, use model default.
+            edit_format = edit_format_cfg or edit_format_state or main_model_instance.edit_format
+            logger.debug(f"Using edit format: {edit_format} (Source: {'Config' if edit_format_cfg else 'State' if edit_format_state else 'Model Default'})")
 
         except Exception as e:
              logger.error(f"Failed to instantiate main_model '{main_model_name}': {e}")
              return None
 
-        # --- Load Aider History ---
+        # --- Load Aider History --- 
         aider_done_messages = aider_state.get("aider_done_messages", [])
         if not isinstance(aider_done_messages, list):
              logger.warning("aider_done_messages in state is not a list, using empty list.")
@@ -421,8 +429,8 @@ def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[C
 
         # --- Prepare Explicit Config for Coder.create ---
         coder_kwargs = dict(
-            main_model=main_model,
-            edit_format=edit_format,
+            main_model=main_model_instance,
+            edit_format=edit_format, # Use determined format
             io=io_stub, # Use the provided stub
             repo=repo,
             fnames=abs_fnames, # Use absolute paths from state
@@ -460,7 +468,6 @@ def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[C
                 # Proceed without commands if not critical for all tools
             except Exception as e:
                  logger.warning(f"Could not initialize Commands for coder {chat_file}: {e}")
-
 
         logger.info(f"Coder successfully recreated for {chat_file}")
         return coder
@@ -565,65 +572,150 @@ class StartCodeEditorTool(BaseTool):
     def _run(self, args: str = "") -> str:
         """Initializes the Aider state for the current chat."""
         from .chat_manager import get_current_chat, clear_aider_state, save_aider_state
-        from .config_manager import get_current_model
-        # Import Model and GitRepo locally if needed for default determination
-        from aider.models import Model
-        try:
-            from aider.repo import GitRepo
-        except ImportError:
-            GitRepo = None  # Define dummy if missing
+        from .config_manager import get_current_model, get_api_key_for_model
+        from .ai import ensure_api_keys_for_coder_models
+        import traceback
         
         chat_file = get_current_chat()
         if not chat_file:
             return "Error: No active chat session found."
-            
-        clear_aider_state(chat_file)  # Start fresh
         
-        # Determine initial settings based on agent's current model
-        current_main_model_name = get_current_model()
+        # Check API keys for all configured coder models upfront
         try:
-            # Temporarily instantiate model to get defaults
-            temp_model = Model(current_main_model_name)
-            default_edit_format = temp_model.edit_format
-            # Handle potential AttributeError if editor_model is None
-            default_editor_model_name = getattr(temp_model.editor_model, 'name', None) if hasattr(temp_model, 'editor_model') and temp_model.editor_model else None
-            default_editor_edit_format = getattr(temp_model, 'editor_edit_format', None)
+            ensure_api_keys_for_coder_models()
         except Exception as e:
-            logger.warning(f"Could not get defaults for {current_main_model_name}: {e}. Using 'whole'.")
-            default_edit_format = 'whole'
-            default_editor_model_name = None
-            default_editor_edit_format = None
+            logger.error(f"Error checking API keys for coder models: {e}")
+            return f"Error: Failed to validate API keys for all required models: {e}"
         
-        # Save comprehensive initial state with all necessary settings
+        # Create a temporary IO stub for any output during recreation/setup
+        temp_io_stub = AiderIOStubWithQueues()
+        
+        # First check if this chat has an existing state we can resume
+        try:
+            coder = recreate_coder(chat_file, temp_io_stub)
+            if coder:
+                logger.info(f"Resuming AI Code Editor session for {chat_file} from persistent state.")
+                # Create the active state using the recreated coder
+                state = create_active_coder_state(chat_file, coder) # This now associates the ACTUAL io_stub
+
+                # ---> Update persistent state AFTER creating active state <---
+                # This ensures the saved state reflects any overrides applied during recreation
+                update_aider_state_from_coder(chat_file, coder)
+
+                recreation_output = temp_io_stub.get_captured_output()
+                if recreation_output:
+                    logger.warning(f"Output during coder recreation for {chat_file}: {recreation_output}")
+                # Update return message to show effective settings
+                return (f"Code editor session resumed (Main: {coder.main_model.name},"
+                        f" Editor: {getattr(coder.main_model.editor_model, 'name', 'Default')},"
+                        f" Weak: {getattr(coder.main_model.weak_model, 'name', 'Default')},"
+                        f" Format: {coder.edit_format}). Ready for files and edits.")
+        except Exception as e:
+            logger.error(f"Error attempting to resume session: {e}")
+            logger.error(traceback.format_exc())
+            # Continue to fresh start instead of returning error
+        
+        # No valid state or resume failed - start a fresh session
+        logger.info(f"No valid persistent state found for {chat_file}, starting fresh.")
+        clear_aider_state(chat_file)
+        
+        # --- Determine initial settings using config overrides ---
+        main_model_name = get_aider_main_model() or get_current_model()
+        editor_model_name = get_aider_editor_model() # Defaults to None if not set
+        weak_model_name = get_aider_weak_model()     # Defaults to None if not set
+        edit_format = get_aider_edit_format()       # Defaults to None if not set
+        # Note: editor_edit_format is not directly configured via wizard yet
+        
+        if not main_model_name:
+            return "Error: Could not determine the main model for the agent or AI Code Editor config."
+        
+        # Ensure API key for the main model
+        api_key, env_var = get_api_key_for_model(main_model_name)
+        if not api_key:
+            # Handle missing API key - maybe call ensure_api_key_for_model?
+            # For now, return error, assuming ensure_api_key ran earlier in ai.py
+            return f"Error: API Key ({env_var}) not found for model {main_model_name}."
+        
+        # Instantiate the main model to get defaults if edit_format is still None
+        final_edit_format = edit_format
+        final_editor_edit_format = None # Let Model/Coder handle this initially
+        try:
+            temp_model = Model(
+                main_model_name,
+                weak_model=weak_model_name,
+                editor_model=editor_model_name
+                # No editor_edit_format here yet
+            )
+            if final_edit_format is None: # If no config override and no state value (which is none here)
+                final_edit_format = temp_model.edit_format
+            # Get the default editor format if an editor model exists
+            final_editor_edit_format = getattr(temp_model, 'editor_edit_format', None)
+        
+        except Exception as e:
+            logger.warning(f"Could not get model defaults for {main_model_name}: {e}. Using basic defaults.")
+            if final_edit_format is None: final_edit_format = 'whole' # Safe fallback
+        
+        # --- Define initial persistent state (using determined settings) ---
         initial_state = {
             "enabled": True,
-            "main_model_name": current_main_model_name,
-            "edit_format": default_edit_format,
-            "editor_model_name": default_editor_model_name,
-            "editor_edit_format": default_editor_edit_format,
+            "main_model_name": main_model_name,
+            "edit_format": final_edit_format,
+            "weak_model_name": weak_model_name,
+            "editor_model_name": editor_model_name,
+            "editor_edit_format": final_editor_edit_format,
             "abs_fnames": [],
             "abs_read_only_fnames": [],
-            "aider_done_messages": [],  # Initialize aider history
+            "aider_done_messages": [],
             "aider_commit_hashes": [],
-            "git_root": None,  # Will be determined/set later if git is used
-            "auto_commits": True,  # Default setting
-            "dirty_commits": True,  # Explicitly match Coder default
+            "git_root": None,
+            "auto_commits": True,
+            "dirty_commits": True,
         }
-        
-        # Attempt to find git root automatically
-        try:
-            if GitRepo:  # Check if GitRepo was imported successfully
-                io_stub = AiderIOStubWithQueues()
-                repo = GitRepo(io=io_stub, fnames=[], git_dname=os.getcwd())
-                initial_state["git_root"] = repo.root
-                logger.debug(f"Detected Git root: {repo.root}")
-        except Exception as e:
-            logger.debug(f"No Git repository found or error detecting it: {e}")
-            pass  # Keep git_root as None if no repo found
-            
+        # Save initial state (without git_root initially)
         save_aider_state(chat_file, initial_state)
-        return f"Code editor initialized (model: {current_main_model_name}, format: {default_edit_format}). Ready for files and edits."
         
+        # --- Now create the Coder instance for the active session ---
+        try:
+            fresh_io_stub = AiderIOStubWithQueues()
+            # Re-instantiate model with final determined names
+            fresh_main_model = Model(
+                main_model_name,
+                weak_model=weak_model_name,
+                editor_model=editor_model_name,
+                editor_edit_format=final_editor_edit_format # Pass determined format
+            )
+            fresh_coder = Coder.create(
+                main_model=fresh_main_model,
+                edit_format=final_edit_format, # Use determined format
+                io=fresh_io_stub,
+                fnames=[], read_only_fnames=[], done_messages=[], cur_messages=[],
+                auto_commits=True, dirty_commits=True, use_git=True
+            )
+            
+            # If repo was found, update persistent state *again* with git_root
+            if fresh_coder.repo:
+                initial_state["git_root"] = fresh_coder.repo.root
+                save_aider_state(chat_file, initial_state)
+            
+            # Create the active state
+            create_active_coder_state(chat_file, fresh_coder)
+            
+            # Update persistent state *after* creating active state
+            # This ensures the saved state reflects the actual coder created
+            update_aider_state_from_coder(chat_file, fresh_coder)
+            
+            # Update return message
+            return (f"New code editor session started (Main: {fresh_coder.main_model.name},"
+                f" Editor: {getattr(fresh_coder.main_model.editor_model, 'name', 'Default')},"
+                f" Weak: {getattr(fresh_coder.main_model.weak_model, 'name', 'Default')},"
+                f" Format: {fresh_coder.edit_format}). Ready for files and edits.")
+        except Exception as e:
+            logger.error(f"Failed to create new Coder instance for {chat_file}: {e}")
+            logger.error(traceback.format_exc())
+            clear_aider_state(chat_file)
+            remove_active_coder_state(chat_file)
+            return f"Error: Failed to initialize code editor. {e}"
+    
     async def _arun(self, args: str = "") -> str:
         return self._run(args)
 

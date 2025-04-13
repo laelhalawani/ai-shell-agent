@@ -1806,3 +1806,515 @@ This finalized plan provides a detailed roadmap for the integration, addressing 
     *   Test restarting the agent and resuming an Aider session (`/start_code_editor` again).
     *   Test error conditions (e.g., file not found, git errors).
 2.  **Refinement:** Adjust logging levels (`logger.debug`, `logger.info`, etc.) as needed for clarity during operation and debugging. Refine the prompt formatting in `[CODE_EDITOR_INPUT_NEEDED]` if the LLM struggles to understand the request.
+
+
+# Improvements 
+
+Okay, this is a good refinement. We want `ai-shell-agent` to have its own persistent configuration for the Aider settings (edit format, models) that overrides whatever might be saved in Aider's own internal state or defaults.
+
+Here's the detailed plan to implement the `--select-edit-mode` and `--select-coder-models` options:
+
+## Phase 1: Update `ai_shell_agent/config_manager.py`
+
+*Goal: Add functions to manage persistent configuration for Aider's edit format and specific models used within the coder context.*
+
+1.  **Define Valid Edit Formats:** Add a list of valid Aider edit formats with descriptions.
+
+    ```python
+    # Add near the top of config_manager.py
+    AIDER_EDIT_FORMATS = {
+        "whole": "LLM sends back the entire file content.",
+        "diff": "LLM sends back search/replace blocks.",
+        "diff-fenced": "LLM sends back search/replace blocks within a fenced code block (good for Gemini).",
+        "udiff": "LLM sends back simplified unified diff format (good for GPT-4 Turbo).",
+        "architect": "High-level planning by main model, detailed edits by editor model.",
+        # editor-* formats are typically set automatically with architect mode or --editor-model
+        # but allow explicit selection if needed.
+        "editor-diff": "Streamlined diff format for editor models.",
+        "editor-whole": "Streamlined whole format for editor models.",
+    }
+    DEFAULT_AIDER_EDIT_FORMAT = None # Let Aider/Model decide by default
+    ```
+
+2.  **Implement Edit Format Get/Set/Prompt:**
+
+    ```python
+    # Add these functions to config_manager.py
+
+    def get_aider_edit_format() -> Optional[str]:
+        """Gets the configured Aider edit format."""
+        config = _read_config()
+        # Return None if not set, allowing Aider's defaults to take precedence
+        return config.get("aider_edit_format", DEFAULT_AIDER_EDIT_FORMAT)
+
+    def set_aider_edit_format(edit_format: Optional[str]) -> None:
+        """Sets the Aider edit format in the config."""
+        config = _read_config()
+        if edit_format is None:
+            config.pop("aider_edit_format", None) # Remove key if set to None (use default)
+            logger.info("Aider edit format reset to default (model-specific).")
+        elif edit_format in AIDER_EDIT_FORMATS:
+            config["aider_edit_format"] = edit_format
+            logger.info(f"Aider edit format set to: {edit_format}")
+        else:
+            logger.error(f"Invalid edit format '{edit_format}'. Not setting.")
+            return
+        _write_config(config)
+
+    def prompt_for_edit_mode_selection() -> Optional[str]:
+        """Prompts the user to select an Aider edit format."""
+        current_format = get_aider_edit_format()
+        print("\nSelect Aider Edit Format:")
+        print("-------------------------")
+        i = 0
+        valid_choices = {}
+        # Option 0: Use Default
+        print(f"  0: Default (Let Aider/Model choose based on the main model) {'<- Current Setting' if current_format is None else ''}")
+        valid_choices['0'] = None
+
+        # List other formats
+        format_list = sorted(AIDER_EDIT_FORMATS.keys())
+        for idx, fmt in enumerate(format_list, 1):
+            description = AIDER_EDIT_FORMATS[fmt]
+            marker = " <- Current Setting" if fmt == current_format else ""
+            print(f"  {idx}: {fmt}{marker} - {description}")
+            valid_choices[str(idx)] = fmt
+
+        while True:
+            try:
+                choice = input(f"Enter choice (0-{len(format_list)}): ").strip()
+                if choice in valid_choices:
+                    selected_format = valid_choices[choice]
+                    set_aider_edit_format(selected_format)
+                    return selected_format
+                elif not choice: # Allow empty input to keep current setting
+                     print(f"Keeping current setting: {current_format or 'Default'}")
+                     return current_format
+                else:
+                    print("Invalid choice. Please try again.")
+            except EOFError:
+                print("\nSelection cancelled.")
+                return current_format # Keep current on Ctrl+D
+            except KeyboardInterrupt:
+                 print("\nSelection cancelled.")
+                 return current_format # Keep current on Ctrl+C
+    ```
+
+3.  **Implement Coder Model Get/Set/Prompt:**
+
+    ```python
+    # Add these functions to config_manager.py
+
+    def _get_aider_model(config_key: str) -> Optional[str]:
+        """Helper to get a specific aider model config."""
+        config = _read_config()
+        return config.get(config_key) # Returns None if not set
+
+    def _set_aider_model(config_key: str, model_name: Optional[str]) -> None:
+        """Helper to set a specific aider model config."""
+        config = _read_config()
+        normalized_name = normalize_model_name(model_name) if model_name else None
+        if normalized_name:
+             config[config_key] = normalized_name
+             logger.info(f"Set {config_key} to: {normalized_name}")
+        elif config_key in config:
+             del config[config_key] # Remove if set to None
+             logger.info(f"Reset {config_key} to default.")
+        _write_config(config)
+
+    def get_aider_main_model() -> Optional[str]:
+        """Gets the configured main/architect model for Aider."""
+        return _get_aider_model("aider_main_model")
+
+    def set_aider_main_model(model_name: Optional[str]) -> None:
+        """Sets the main/architect model for Aider."""
+        _set_aider_model("aider_main_model", model_name)
+
+    def get_aider_editor_model() -> Optional[str]:
+        """Gets the configured editor model for Aider."""
+        return _get_aider_model("aider_editor_model")
+
+    def set_aider_editor_model(model_name: Optional[str]) -> None:
+        """Sets the editor model for Aider."""
+        _set_aider_model("aider_editor_model", model_name)
+
+    def get_aider_weak_model() -> Optional[str]:
+        """Gets the configured weak model for Aider."""
+        return _get_aider_model("aider_weak_model")
+
+    def set_aider_weak_model(model_name: Optional[str]) -> None:
+        """Sets the weak model for Aider."""
+        _set_aider_model("aider_weak_model", model_name)
+
+    def _prompt_for_single_coder_model(role_name: str, current_value: Optional[str]) -> Optional[str]:
+        """Helper to prompt for one of the coder models."""
+        print(f"\n--- Select Aider {role_name} Model ---")
+        # Use the existing model selection prompt but adapt the message
+        # Pass the current value so it can be displayed
+        # Need to slightly modify prompt_for_model_selection or create a variant
+        # For now, let's assume prompt_for_model_selection can take a current_value hint
+
+        # Reusing prompt_for_model_selection; it needs modification to accept a current value hint
+        # and maybe a different prompt message. Let's define a new function for clarity.
+
+        print("Available models (same as agent models):")
+        all_model_names = sorted(list(set(ALL_MODELS.values()))) # Use ALL_MODELS from config_manager
+        for model in all_model_names:
+             marker = " <- Current Value" if model == current_value else ""
+             print(f"- {model}{marker}")
+             # Add aliases maybe?
+             aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
+             if aliases: print(f"  (aliases: {', '.join(aliases)})")
+
+        prompt_msg = (f"Enter model name for {role_name} role"
+                      f" (leave empty to keep '{current_value or 'Default'}',"
+                      f" enter 'none' to use default): ")
+
+        while True:
+            selected = input(prompt_msg).strip()
+            if not selected:
+                print(f"Keeping current setting: {current_value or 'Default'}")
+                return current_value # Keep current
+            elif selected.lower() == 'none':
+                 print(f"Resetting {role_name} model to default.")
+                 return None # Use None to signify default/reset
+            else:
+                 normalized_model = normalize_model_name(selected)
+                 if normalized_model in all_model_names:
+                      return normalized_model # Return the selected normalized name
+                 else:
+                      print(f"Error: Unknown model '{selected}'. Please choose from the list or enter 'none'.")
+
+
+    def prompt_for_coder_models_selection() -> None:
+        """Runs the multi-step wizard to select Aider coder models."""
+        print("\n--- Configure Aider Coder Models ---")
+        print("Select the models Aider should use for different coding tasks.")
+        print("Leave input empty at any step to keep the current setting.")
+        print("Enter 'none' to reset a model to its default behavior.")
+
+        current_main = get_aider_main_model()
+        selected_main = _prompt_for_single_coder_model("Main/Architect", current_main)
+        if selected_main != current_main: # Only set if changed
+            set_aider_main_model(selected_main)
+
+        current_editor = get_aider_editor_model()
+        selected_editor = _prompt_for_single_coder_model("Editor", current_editor)
+        if selected_editor != current_editor:
+            set_aider_editor_model(selected_editor)
+
+        current_weak = get_aider_weak_model()
+        selected_weak = _prompt_for_single_coder_model("Weak (Commits/Summaries)", current_weak)
+        if selected_weak != current_weak:
+            set_aider_weak_model(selected_weak)
+
+        print("\nAider coder models configuration updated.")
+
+    ```
+
+## Phase 2: Update `ai_shell_agent/ai.py`
+
+*Goal: Add the new command-line arguments and the logic to call the selection wizards.*
+
+1.  **Add Arguments:** Add `--select-edit-mode` and `--select-coder-models` to the `ArgumentParser` in the `main` function.
+
+    ```python
+    # In main() function, within parser definition:
+    # ... other arguments ...
+
+    # Aider Configuration Wizards
+    parser.add_argument("--select-edit-mode", action="store_true", help="Interactively select the edit format Aider should use.")
+    parser.add_argument("--select-coder-models", action="store_true", help="Interactively select the models Aider should use for coding tasks.")
+
+    # ... rest of the arguments ...
+    ```
+
+2.  **Call Wizards:** Add logic in `main()` to call the new prompt functions. Place this *after* `ensure_api_key()` and *before* any commands that might initiate an Aider session (like `-m`, `-tc`, `message`).
+
+    ```python
+    # In main() function, after ensure_api_key() and before command handling:
+
+    # Handle Aider configuration wizards if arguments are present
+    if args.select_edit_mode:
+        prompt_for_edit_mode_selection()
+        # Optionally return here if this is the only action desired
+        # return # Uncomment if you want the script to exit after selection
+
+    if args.select_coder_models:
+        # We need API keys potentially checked for the models we might select,
+        # so ensure_api_key() should ideally run before this or be handled within.
+        # Let's assume ensure_api_key() for the *main agent* model is sufficient for now.
+        prompt_for_coder_models_selection()
+        # Optionally return here
+        # return # Uncomment if desired
+
+    # ... rest of the command handling (if args.execute:, if args.chat:, etc.) ...
+    ```
+3.  **Import new functions:** Add the necessary imports at the top of `ai.py`.
+    ```python
+    from .config_manager import (
+        # ... existing imports ...
+        prompt_for_edit_mode_selection, # New import
+        prompt_for_coder_models_selection, # New import
+    )
+    ```
+
+
+## Phase 3: Update `ai_shell_agent/aider_integration.py`
+
+*Goal: Make `StartCodeEditorTool` and `recreate_coder` respect the new configuration settings.*
+
+1.  **Import Getters:** Import the new getter functions from `config_manager`.
+
+    ```python
+    # Add to imports at the top of aider_integration.py
+    from .config_manager import (
+        # ... existing imports ...
+        get_aider_edit_format,
+        get_aider_main_model,
+        get_aider_editor_model,
+        get_aider_weak_model
+    )
+    ```
+
+2.  **Modify `recreate_coder`:** Update the logic for determining models and edit format.
+
+    ```python
+    # Inside recreate_coder function:
+    # ... after reading aider_state ...
+
+    # --- Model and Config Setup ---
+    # Priority: Agent Config -> Persistent State -> Agent Current Model
+    main_model_name_cfg = get_aider_main_model()
+    main_model_name_state = aider_state.get('main_model_name')
+    main_model_name_agent = get_current_model() # Agent's primary model
+
+    main_model_name = main_model_name_cfg or main_model_name_state or main_model_name_agent
+    if not main_model_name:
+         logger.error("Cannot determine main model name for Aider Coder recreation.")
+         return None
+    logger.debug(f"Using main model: {main_model_name} (Source: {'Config' if main_model_name_cfg else 'State' if main_model_name_state else 'Agent'})")
+
+    # Other models (Priority: Agent Config -> Persistent State -> None/Default)
+    editor_model_name = get_aider_editor_model() or aider_state.get('editor_model_name')
+    weak_model_name = get_aider_weak_model() or aider_state.get('weak_model_name')
+    logger.debug(f"Using editor model: {editor_model_name or 'Default'}")
+    logger.debug(f"Using weak model: {weak_model_name or 'Default'}")
+
+
+    # Edit format (Priority: Agent Config -> Persistent State -> Model Default)
+    edit_format_cfg = get_aider_edit_format()
+    edit_format_state = aider_state.get('edit_format')
+    # We'll determine the final edit_format after instantiating the model if needed
+
+    editor_edit_format = aider_state.get('editor_edit_format') # Editor format primarily from state for now
+
+    # Ensure API key for the *determined* main_model_name
+    api_key, env_var = get_api_key_for_model(main_model_name)
+    if not api_key:
+        logger.error(f"API Key ({env_var}) not found for model {main_model_name}. Cannot recreate Coder.")
+        return None
+
+    try:
+        main_model_instance = Model(
+             main_model_name,
+             weak_model=weak_model_name, # Pass potentially overridden models
+             editor_model=editor_model_name,
+             editor_edit_format=editor_edit_format # Pass format from state
+        )
+        # Determine final edit format
+        # If config is set, use it. If not, use state. If neither, use model default.
+        edit_format = edit_format_cfg or edit_format_state or main_model_instance.edit_format
+        logger.debug(f"Using edit format: {edit_format} (Source: {'Config' if edit_format_cfg else 'State' if edit_format_state else 'Model Default'})")
+
+    except Exception as e:
+         logger.error(f"Failed to instantiate main_model '{main_model_name}': {e}")
+         return None
+
+    # --- Load Aider History --- (Keep existing logic)
+    aider_done_messages = aider_state.get("aider_done_messages", [])
+    # ... rest of history loading ...
+
+    # --- Git Repo Setup --- (Keep existing logic)
+    # ... git repo setup ...
+
+    # --- Prepare Explicit Config for Coder.create ---
+    coder_kwargs = dict(
+        main_model=main_model_instance, # Use the instance created above
+        edit_format=edit_format, # Use the final determined edit format
+        io=io_stub,
+        repo=repo,
+        fnames=abs_fnames,
+        read_only_fnames=abs_read_only_fnames,
+        done_messages=aider_done_messages,
+        cur_messages=[],
+        auto_commits=aider_state.get("auto_commits", True),
+        dirty_commits=aider_state.get("dirty_commits", True),
+        use_git=bool(repo),
+        map_tokens=aider_state.get("map_tokens", 0),
+        verbose=False,
+        stream=False,
+        suggest_shell_commands=False,
+    )
+
+    # --- Instantiate Coder --- (Keep existing logic)
+    coder = Coder.create(**coder_kwargs)
+    # ... rest of coder setup (root, commands) ...
+
+    # ---> IMPORTANT: Immediately update persistent state with potentially resolved values <---
+    # This ensures the state reflects overrides even if the session was just recreated
+    # This replaces the update call that was previously suggested to be only in StartCodeEditorTool
+    # Because recreate_coder is now passive, the caller (StartCodeEditorTool) needs to handle
+    # saving the state *after* associating it with the active session. Let's remove this update here.
+    # update_aider_state_from_coder(chat_file, coder) # REMOVED FROM HERE
+
+    logger.info(f"Coder successfully recreated for {chat_file}")
+    return coder
+
+    # ... rest of recreate_coder ...
+    ```
+
+3.  **Modify `StartCodeEditorTool._run`:** Update the "Start Fresh" and "Resumed Successfully" sections to use the new config getters and to update the persistent state correctly *after* creating the active state.
+
+    ```python
+    # Inside StartCodeEditorTool._run method:
+
+    # ---> In the "Resumed Successfully" block (after `coder = recreate_coder(...)`) <---
+    if coder:
+        logger.info(f"Resuming Aider session for {chat_file} from persistent state.")
+        # Create the active state using the recreated coder
+        state = create_active_coder_state(chat_file, coder) # This now associates the ACTUAL io_stub
+
+        # ---> Update persistent state AFTER creating active state <---
+        # This ensures the saved state reflects any overrides applied during recreation
+        update_aider_state_from_coder(chat_file, coder)
+
+        recreation_output = temp_io_stub.get_captured_output()
+        if recreation_output:
+             logger.warning(f"Output during coder recreation for {chat_file}: {recreation_output}")
+        # Update return message to show effective settings
+        return (f"Code editor session resumed (Main: {coder.main_model.name},"
+                 f" Editor: {getattr(coder.main_model.editor_model, 'name', 'Default')},"
+                 f" Weak: {getattr(coder.main_model.weak_model, 'name', 'Default')},"
+                 f" Format: {coder.edit_format}). Ready for files and edits.")
+
+    # ---> In the "Failed to Resume: Start Fresh" block <---
+    else:
+        logger.info(f"No valid persistent state found for {chat_file}, starting fresh.")
+        clear_aider_state(chat_file)
+
+        # --- Determine initial settings using config overrides ---
+        main_model_name = get_aider_main_model() or get_current_model()
+        editor_model_name = get_aider_editor_model() # Defaults to None if not set
+        weak_model_name = get_aider_weak_model()     # Defaults to None if not set
+        edit_format = get_aider_edit_format()       # Defaults to None if not set
+        # Note: editor_edit_format is not directly configured via wizard yet
+
+        if not main_model_name:
+            return "Error: Could not determine the main model for the agent or Aider config."
+
+        # Ensure API key for the main model
+        api_key, env_var = get_api_key_for_model(main_model_name)
+        if not api_key:
+             # Handle missing API key - maybe call ensure_api_key_for_model?
+             # For now, return error, assuming ensure_api_key ran earlier in ai.py
+             return f"Error: API Key ({env_var}) not found for model {main_model_name}."
+
+        # Instantiate the main model to get defaults if edit_format is still None
+        final_edit_format = edit_format
+        final_editor_edit_format = None # Let Model/Coder handle this initially
+        try:
+            temp_model = Model(
+                main_model_name,
+                weak_model=weak_model_name,
+                editor_model=editor_model_name
+                # No editor_edit_format here yet
+            )
+            if final_edit_format is None: # If no config override and no state value (which is none here)
+                final_edit_format = temp_model.edit_format
+            # Get the default editor format if an editor model exists
+            final_editor_edit_format = getattr(temp_model, 'editor_edit_format', None)
+
+        except Exception as e:
+             logger.warning(f"Could not get model defaults for {main_model_name}: {e}. Using basic defaults.")
+             if final_edit_format is None: final_edit_format = 'whole' # Safe fallback
+
+        # --- Define initial persistent state (using determined settings) ---
+        initial_state = {
+            "enabled": True,
+            "main_model_name": main_model_name,
+            "edit_format": final_edit_format,
+            "weak_model_name": weak_model_name,
+            "editor_model_name": editor_model_name,
+            "editor_edit_format": final_editor_edit_format,
+            "abs_fnames": [],
+            "abs_read_only_fnames": [],
+            "aider_done_messages": [],
+            "aider_commit_hashes": [],
+            "git_root": None,
+            "auto_commits": True,
+            "dirty_commits": True,
+        }
+        # Save initial state (without git_root initially)
+        save_aider_state(chat_file, initial_state)
+
+        # --- Now create the Coder instance for the active session ---
+        try:
+             fresh_io_stub = AiderIOStubWithQueues()
+             # Re-instantiate model with final determined names
+             fresh_main_model = Model(
+                  main_model_name,
+                  weak_model=weak_model_name,
+                  editor_model=editor_model_name,
+                  editor_edit_format=final_editor_edit_format # Pass determined format
+             )
+             fresh_coder = Coder.create(
+                  main_model=fresh_main_model,
+                  edit_format=final_edit_format, # Use determined format
+                  io=fresh_io_stub,
+                  fnames=[], read_only_fnames=[], done_messages=[], cur_messages=[],
+                  auto_commits=True, dirty_commits=True, use_git=True
+             )
+
+             # If repo was found, update persistent state *again* with git_root
+             if fresh_coder.repo:
+                  initial_state["git_root"] = fresh_coder.repo.root
+                  save_aider_state(chat_file, initial_state)
+
+             # Create the active state
+             create_active_coder_state(chat_file, fresh_coder)
+
+             # Update persistent state *after* creating active state
+             # This ensures the saved state reflects the actual coder created
+             update_aider_state_from_coder(chat_file, fresh_coder)
+
+             # Update return message
+             return (f"New code editor session started (Main: {fresh_coder.main_model.name},"
+                      f" Editor: {getattr(fresh_coder.main_model.editor_model, 'name', 'Default')},"
+                      f" Weak: {getattr(fresh_coder.main_model.weak_model, 'name', 'Default')},"
+                      f" Format: {fresh_coder.edit_format}). Ready for files and edits.")
+        except Exception as e:
+             logger.error(f"Failed to create new Coder instance for {chat_file}: {e}")
+             logger.error(traceback.format_exc())
+             clear_aider_state(chat_file)
+             remove_active_coder_state(chat_file)
+             return f"Error: Failed to initialize code editor. {e}"
+
+    ```
+
+4.  **Modify `update_aider_state_from_coder`:** Ensure it saves the *effective* settings currently used by the `coder` instance. *Self-correction: The existing `update_aider_state_from_coder` already reads from the `coder` instance, so it should correctly save the effective settings after overrides have been applied during creation/recreation. No change needed here.*
+
+## Phase 4: Testing
+
+1.  Run `aider --select-edit-mode` and choose an option (e.g., `udiff`). Verify `config.json` is updated.
+2.  Run `aider --select-coder-models`. Select different models for main, editor, and weak roles. Verify `config.json`.
+3.  Start aider with a specific chat (`aider -c my-coding-chat`).
+4.  Start the code editor (`/start_code_editor`). Verify the output message reflects the configured models/format from steps 1 & 2, not necessarily the agent's default model or Aider's defaults.
+5.  Add a file (`/add_code_file test.py`).
+6.  Request an edit (`/edit_code "Refactor this"`).
+7.  Close the agent (Ctrl+C).
+8.  Restart the agent with the same chat (`aider -c my-coding-chat`).
+9.  Start the code editor again (`/start_code_editor`). Verify it *resumes* and the output message *still* reflects the models/format configured in steps 1 & 2.
+10. Reset a setting (e.g., run `aider --select-edit-mode` and choose `0` for Default). Verify `config.json` removes the key. Start aider again and verify the output message reflects the default behavior.
+
+This completes the implementation steps for adding the configuration overrides.
