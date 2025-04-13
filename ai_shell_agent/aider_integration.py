@@ -15,42 +15,39 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Set, Tuple, Union
 
-# Aider imports (ensure aider-chat is installed)
-try:
-    from aider.coders import Coder
-    from aider.models import Model, models # Import the 'models' module itself for sanity_check_models
-    from aider.repo import GitRepo, ANY_GIT_ERROR
-    from aider.io import InputOutput
-    from aider.utils import format_content # If needed for formatting output, otherwise remove
-    from aider.commands import Commands
-except ImportError as e:
-    raise ImportError(
-        "Aider package not found or incomplete. Please install it:"
-        " pip install aider-chat"
-    ) from e
+from aider.coders import Coder
+from aider.models import Model
+from aider.repo import GitRepo, ANY_GIT_ERROR
+from aider.io import InputOutput
+from aider.utils import format_content # If needed for formatting output, otherwise remove
+from aider.commands import Commands
 
-# Langchain import for BaseTool
-try:
-    from langchain.tools import BaseTool
-except ImportError:
-     # Fallback for older langchain/langchain-core versions if needed
-     from langchain_core.tools import BaseTool
 
+from langchain.tools import BaseTool
 
 # Local imports (relative)
 from . import logger
-# Import necessary functions from chat_manager and config_manager
+# Import necessary functions from chat_state_manager and config_manager
 # These will be used by the tools and helper functions
 from .config_manager import get_current_model, get_api_key_for_model, normalize_model_name, get_aider_edit_format, get_aider_main_model, get_aider_editor_model, get_aider_weak_model
-from .chat_manager import (
+# --- Import chat state functions from chat_state_manager instead of chat_manager ---
+from .chat_state_manager import (
     get_current_chat,
     get_aider_state,
     save_aider_state,
-    clear_aider_state
+    clear_aider_state,
+    # --- NEW: Imports for toolset/prompt update ---
+    get_active_toolsets,
+    update_active_toolsets,
+    _update_message_in_chat
 )
+# --- NEW: Import prompt builder ---
+from .prompts.prompts import build_prompt
+# --- Import the registry function ---
+from .tool_registry import register_tools, get_all_tools_dict
 
 # --- Constants ---
-SIGNAL_PROMPT_NEEDED = "[CODE_EDITOR_INPUT_NEEDED]"
+SIGNAL_PROMPT_NEEDED = "[AI_EDITOR_INPUT_NEEDED]"
 
 # --- Custom IO Stub ---
 class AiderIOStubWithQueues(InputOutput):
@@ -559,169 +556,181 @@ def _run_aider_in_thread(coder: Coder, instruction: str, output_q: queue.Queue):
         logger.error(traceback.format_exc())
         # Capture any output accumulated before the error
         error_output = coder.io.get_captured_output()
-        error_message = f"Error during code edit: {e}\nOutput before error:\n{error_output}"
+        error_message = f"Error during edit: {e}\nOutput before error:\n{error_output}"
         output_q.put({'type': 'error', 'message': error_message, 'traceback': traceback.format_exc()})
     finally:
          logger.info(f"Aider worker thread '{thread_name}' finished.")
 
 # --- Tool Definitions ---
-class StartCodeEditorTool(BaseTool):
-    name = "start_code_editor"
-    description = "Initializes or resets the code editing session for the current chat. Must be called before adding files or requesting edits."
-    
+class StartAIEditorTool(BaseTool):
+    name: str = "start_ai_editor"
+    description: str = "Activates the 'AI Editor' toolset, enabling tools for code/file editing (include_file, request_edit, etc.). Call this before attempting any file edits."
+
     def _run(self, args: str = "") -> str:
-        """Initializes the Aider state for the current chat."""
-        from .chat_manager import get_current_chat, clear_aider_state, save_aider_state
-        from .config_manager import get_current_model, get_api_key_for_model
+        """
+        Initializes the Aider state, activates the 'AI Editor' toolset,
+        and updates the system prompt.
+        """
+        # from .chat_manager import get_current_chat, clear_aider_state, save_aider_state # Already imported via state_manager
+        # from .config_manager import get_current_model, get_api_key_for_model # Already imported globally
         from .ai import ensure_api_keys_for_coder_models
         import traceback
-        
+
         chat_file = get_current_chat()
         if not chat_file:
             return "Error: No active chat session found."
-        
-        # Check API keys for all configured coder models upfront
+
+        toolset_name = "AI Editor" # The name defined in llm.py
+
+        # --- Toolset Activation & Prompt Update ---
+        current_toolsets = get_active_toolsets(chat_file)
+        toolsets_updated = False
+        if toolset_name not in current_toolsets:
+            logger.info(f"Activating '{toolset_name}' toolset for chat {chat_file}.")
+            new_toolsets = list(current_toolsets)
+            new_toolsets.append(toolset_name)
+            update_active_toolsets(chat_file, new_toolsets) # Save updated toolsets list
+
+            # Re-build the system prompt with the new set of active toolsets
+            new_system_prompt = build_prompt(active_toolsets=new_toolsets)
+
+            # Update the system prompt message in the chat history (message 0)
+            _update_message_in_chat(chat_file, 0, {"role": "system", "content": new_system_prompt})
+            toolsets_updated = True
+            logger.info(f"System prompt updated for chat {chat_file} due to toolset activation.")
+        # --- End Toolset Activation ---
+
+        # --- Aider Initialization Logic (largely unchanged) ---
         try:
             ensure_api_keys_for_coder_models()
         except Exception as e:
             logger.error(f"Error checking API keys for coder models: {e}")
-            return f"Error: Failed to validate API keys for all required models: {e}"
-        
-        # Create a temporary IO stub for any output during recreation/setup
+            # Revert toolset activation if API keys fail? Maybe not, let user fix keys.
+            return f"Error: Failed to validate API keys for required models: {e}. '{toolset_name}' toolset was activated but may not function."
+
         temp_io_stub = AiderIOStubWithQueues()
-        
-        # First check if this chat has an existing state we can resume
-        try:
-            coder = recreate_coder(chat_file, temp_io_stub)
-            if coder:
-                logger.info(f"Resuming AI Code Editor session for {chat_file} from persistent state.")
-                # Create the active state using the recreated coder
-                state = create_active_coder_state(chat_file, coder) # This now associates the ACTUAL io_stub
+        coder = None
+        resume_attempted = False
+        if get_aider_state(chat_file): # Check if state exists before trying to resume
+             resume_attempted = True
+             try:
+                 coder = recreate_coder(chat_file, temp_io_stub)
+                 if coder:
+                     logger.info(f"Resuming AI Editor session for {chat_file} from persistent state.")
+                     state = create_active_coder_state(chat_file, coder)
+                     update_aider_state_from_coder(chat_file, coder) # Update state after recreation
+                     recreation_output = temp_io_stub.get_captured_output()
+                     if recreation_output: logger.warning(f"Output during coder recreation: {recreation_output}")
 
-                # ---> Update persistent state AFTER creating active state <---
-                # This ensures the saved state reflects any overrides applied during recreation
-                update_aider_state_from_coder(chat_file, coder)
+                     activation_message = f"'{toolset_name}' toolset activated. " if toolsets_updated else ""
+                     return activation_message + f"Resumed existing AI Editor session. Files in context: {', '.join(coder.get_rel_fnames()) or 'None'}. Ready for edits."
 
-                recreation_output = temp_io_stub.get_captured_output()
-                if recreation_output:
-                    logger.warning(f"Output during coder recreation for {chat_file}: {recreation_output}")
-                # Update return message to show effective settings
-                return (f"Code editor session resumed (Main: {coder.main_model.name},"
-                        f" Editor: {getattr(coder.main_model.editor_model, 'name', 'Default')},"
-                        f" Weak: {getattr(coder.main_model.weak_model, 'name', 'Default')},"
-                        f" Format: {coder.edit_format}). Ready for files and edits.")
-        except Exception as e:
-            logger.error(f"Error attempting to resume session: {e}")
-            logger.error(traceback.format_exc())
-            # Continue to fresh start instead of returning error
-        
-        # No valid state or resume failed - start a fresh session
-        logger.info(f"No valid persistent state found for {chat_file}, starting fresh.")
-        clear_aider_state(chat_file)
-        
-        # --- Determine initial settings using config overrides ---
-        main_model_name = get_aider_main_model() or get_current_model()
-        editor_model_name = get_aider_editor_model() # Defaults to None if not set
-        weak_model_name = get_aider_weak_model()     # Defaults to None if not set
-        edit_format = get_aider_edit_format()       # Defaults to None if not set
-        # Note: editor_edit_format is not directly configured via wizard yet
-        
-        if not main_model_name:
-            return "Error: Could not determine the main model for the agent or AI Code Editor config."
-        
-        # Ensure API key for the main model
-        api_key, env_var = get_api_key_for_model(main_model_name)
-        if not api_key:
-            # Handle missing API key - maybe call ensure_api_key_for_model?
-            # For now, return error, assuming ensure_api_key ran earlier in ai.py
-            return f"Error: API Key ({env_var}) not found for model {main_model_name}."
-        
-        # Instantiate the main model to get defaults if edit_format is still None
-        final_edit_format = edit_format
-        final_editor_edit_format = None # Let Model/Coder handle this initially
-        try:
-            temp_model = Model(
-                main_model_name,
-                weak_model=weak_model_name,
-                editor_model=editor_model_name
-                # No editor_edit_format here yet
-            )
-            if final_edit_format is None: # If no config override and no state value (which is none here)
-                final_edit_format = temp_model.edit_format
-            # Get the default editor format if an editor model exists
-            final_editor_edit_format = getattr(temp_model, 'editor_edit_format', None)
-        
-        except Exception as e:
-            logger.warning(f"Could not get model defaults for {main_model_name}: {e}. Using basic defaults.")
-            if final_edit_format is None: final_edit_format = 'whole' # Safe fallback
-        
-        # --- Define initial persistent state (using determined settings) ---
-        initial_state = {
-            "enabled": True,
-            "main_model_name": main_model_name,
-            "edit_format": final_edit_format,
-            "weak_model_name": weak_model_name,
-            "editor_model_name": editor_model_name,
-            "editor_edit_format": final_editor_edit_format,
-            "abs_fnames": [],
-            "abs_read_only_fnames": [],
-            "aider_done_messages": [],
-            "aider_commit_hashes": [],
-            "git_root": None,
-            "auto_commits": True,
-            "dirty_commits": True,
-        }
-        # Save initial state (without git_root initially)
-        save_aider_state(chat_file, initial_state)
-        
-        # --- Now create the Coder instance for the active session ---
-        try:
-            fresh_io_stub = AiderIOStubWithQueues()
-            # Re-instantiate model with final determined names
-            fresh_main_model = Model(
-                main_model_name,
-                weak_model=weak_model_name,
-                editor_model=editor_model_name,
-                editor_edit_format=final_editor_edit_format # Pass determined format
-            )
-            fresh_coder = Coder.create(
-                main_model=fresh_main_model,
-                edit_format=final_edit_format, # Use determined format
-                io=fresh_io_stub,
-                fnames=[], read_only_fnames=[], done_messages=[], cur_messages=[],
-                auto_commits=True, dirty_commits=True, use_git=True
-            )
+             except Exception as e:
+                 logger.error(f"Error attempting to resume Aider session: {e}")
+                 logger.error(traceback.format_exc())
+                 # Fall through to fresh start
+
+        # Start fresh if no state, or resume failed
+        if not coder:
+            logger.info(f"Starting fresh AI Editor session for {chat_file}.")
+            clear_aider_state(chat_file) # Clear any invalid old state first
+
+            # Determine initial settings using config overrides
+            main_model_name = get_aider_main_model() or get_current_model() # Use agent model as fallback
+            editor_model_name = get_aider_editor_model()
+            weak_model_name = get_aider_weak_model()
+            edit_format = get_aider_edit_format()
             
-            # If repo was found, update persistent state *again* with git_root
-            if fresh_coder.repo:
-                initial_state["git_root"] = fresh_coder.repo.root
-                save_aider_state(chat_file, initial_state)
+            if not main_model_name:
+                return "Error: Could not determine the main model for the agent or AI Editor config."
             
-            # Create the active state
-            create_active_coder_state(chat_file, fresh_coder)
+            # Ensure API key for the main model
+            api_key, env_var = get_api_key_for_model(main_model_name)
+            if not api_key:
+                return f"Error: API Key ({env_var}) not found for model {main_model_name}."
             
-            # Update persistent state *after* creating active state
-            # This ensures the saved state reflects the actual coder created
-            update_aider_state_from_coder(chat_file, fresh_coder)
-            
-            # Update return message
-            return (f"New code editor session started (Main: {fresh_coder.main_model.name},"
-                f" Editor: {getattr(fresh_coder.main_model.editor_model, 'name', 'Default')},"
-                f" Weak: {getattr(fresh_coder.main_model.weak_model, 'name', 'Default')},"
-                f" Format: {fresh_coder.edit_format}). Ready for files and edits.")
-        except Exception as e:
-            logger.error(f"Failed to create new Coder instance for {chat_file}: {e}")
-            logger.error(traceback.format_exc())
-            clear_aider_state(chat_file)
-            remove_active_coder_state(chat_file)
-            return f"Error: Failed to initialize code editor. {e}"
-    
+            # Instantiate the main model to get defaults if edit_format is still None
+            final_edit_format = edit_format
+            final_editor_edit_format = None # Let Model/Coder handle this initially
+            try:
+                temp_model = Model(
+                    main_model_name,
+                    weak_model=weak_model_name,
+                    editor_model=editor_model_name
+                )
+                if final_edit_format is None: 
+                    final_edit_format = temp_model.edit_format
+                final_editor_edit_format = getattr(temp_model, 'editor_edit_format', None)
+            except Exception as e:
+                logger.warning(f"Could not get model defaults for {main_model_name}: {e}. Using basic defaults.")
+                if final_edit_format is None: final_edit_format = 'whole'
+
+            # Create initial persistent state
+            initial_state = {
+                "enabled": True, # Mark as enabled
+                "main_model_name": main_model_name,
+                "edit_format": final_edit_format,
+                "weak_model_name": weak_model_name,
+                "editor_model_name": editor_model_name,
+                "editor_edit_format": final_editor_edit_format,
+                "abs_fnames": [],
+                "abs_read_only_fnames": [],
+                "aider_done_messages": [],
+                "aider_commit_hashes": [],
+                "git_root": None,
+                "auto_commits": True,
+                "dirty_commits": True,
+            }
+            # Save state *before* creating coder to ensure 'enabled' flag is set
+            save_aider_state(chat_file, initial_state)
+
+            # Create the Coder instance
+            try:
+                fresh_io_stub = AiderIOStubWithQueues()
+                fresh_main_model = Model(
+                    main_model_name,
+                    weak_model=weak_model_name,
+                    editor_model=editor_model_name,
+                    editor_edit_format=final_editor_edit_format
+                )
+                fresh_coder = Coder.create(
+                    main_model=fresh_main_model,
+                    edit_format=final_edit_format,
+                    io=fresh_io_stub,
+                    fnames=[], read_only_fnames=[], done_messages=[], cur_messages=[],
+                    auto_commits=True, dirty_commits=True, use_git=True
+                )
+
+                if fresh_coder.repo: # If repo found, update state with git_root
+                    initial_state["git_root"] = fresh_coder.repo.root
+                    save_aider_state(chat_file, initial_state) # Save again with root
+
+                # Create the active state (in-memory)
+                create_active_coder_state(chat_file, fresh_coder)
+                # Update persistent state *after* creating active state to reflect actual coder
+                update_aider_state_from_coder(chat_file, fresh_coder)
+
+                activation_message = f"'{toolset_name}' toolset activated. " if toolsets_updated else ""
+                return activation_message + "New AI Editor session started. Please add files using 'include_file' before requesting edits."
+
+            except Exception as e:
+                logger.error(f"Failed to create new Coder instance for {chat_file}: {e}")
+                logger.error(traceback.format_exc())
+                clear_aider_state(chat_file) # Clear state on failure
+                remove_active_coder_state(chat_file) # Remove active state
+                # Should we deactivate the toolset again on failure? Probably not.
+                return f"Error: Failed to initialize AI Editor. {e}. '{toolset_name}' toolset is active but unusable."
+
+        # This part should ideally not be reached if logic above is correct
+        return "Error: Unexpected state in StartAIEditorTool."
+
+
     async def _arun(self, args: str = "") -> str:
         return self._run(args)
 
 class AddFileTool(BaseTool):
-    name = "add_code_file"
-    description = "Adds a file to the code editing session context. Argument must be the relative or absolute file path."
+    name: str = "include_file"
+    description: str = "Before the AI editor can adit any file, they need to be included in the editor's context. Argument must be the relative or absolute file path to add."
     
     def _run(self, file_path: str) -> str:
         """Adds a file to the Aider context."""
@@ -733,12 +742,12 @@ class AddFileTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Code editor not initialized or is closed. Use start_code_editor first."
+            return "Error: Editor not initialized or is closed. Use start_ai_editor first."
             
         io_stub = AiderIOStubWithQueues()
         coder = recreate_coder(chat_file, io_stub)
         if not coder:
-            return f"Error: Failed to recreate code editor state. {io_stub.get_captured_output()}"
+            return f"Error: Failed to recreate editor state. {io_stub.get_captured_output()}"
             
         try:
             abs_path_to_add = str(Path(file_path).resolve())
@@ -771,19 +780,19 @@ class AddFileTool(BaseTool):
             # Update state - Coder modifies its own abs_fnames set
             update_aider_state_from_coder(chat_file, coder)
             
-            return f"Successfully added {rel_path}. {io_stub.get_captured_output()}"
+            return f"Successfully added {rel_path}. \n{io_stub.get_captured_output()}"
             
         except Exception as e:
             logger.error(f"Error in AddFileTool: {e}")
             logger.error(traceback.format_exc())
-            return f"Error adding file {file_path}: {e}. {io_stub.get_captured_output()}"
+            return f"Error adding file {file_path}: {e}. \n{io_stub.get_captured_output()}"
             
     async def _arun(self, file_path: str) -> str:
         return self._run(file_path)
 
 class DropFileTool(BaseTool):
-    name = "drop_code_file"
-    description = "Removes a file from the code editing session context. Argument must be the relative or absolute file path that was previously added."
+    name: str = "exclude_file"
+    description: str = "Removes a file from the AI editor's context. Argument must be the relative or absolute file path that was previously added."
     
     def _run(self, file_path: str) -> str:
         """Removes a file from the Aider context."""
@@ -795,12 +804,12 @@ class DropFileTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Code editor not initialized."
+            return "Error: Editor not initialized."
             
         io_stub = AiderIOStubWithQueues()
         coder = recreate_coder(chat_file, io_stub)
         if not coder:
-            return f"Error: Failed to recreate code editor state. {io_stub.get_captured_output()}"
+            return f"Error: Failed to recreate editor state. {io_stub.get_captured_output()}"
             
         try:
             # Coder's drop_rel_fname expects relative path
@@ -825,8 +834,8 @@ class DropFileTool(BaseTool):
         return self._run(file_path)
 
 class ListFilesInEditorTool(BaseTool):
-    name = "list_code_files"
-    description = "Lists all files currently in the code editing session context."
+    name: str = "list_files"
+    description: str = "Lists all files currently in the AI editor's context."
     
     def _run(self, args: str = "") -> str:
         """Lists all files in the Aider context."""
@@ -838,12 +847,12 @@ class ListFilesInEditorTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Code editor not initialized. Use start_code_editor first."
+            return "Error: Editor not initialized. Use start_ai_editor first."
             
         try:
             files = aider_state.get("abs_fnames", [])
             if not files:
-                return "No files are currently added to the code editing session."
+                return "No files are currently added to the editing session."
                 
             # Get the common root to show relative paths if possible
             root = aider_state.get("git_root", os.getcwd())
@@ -857,7 +866,7 @@ class ListFilesInEditorTool(BaseTool):
                     # If files are on different drives
                     files_list.append(f)
                     
-            return "Files in code editor:\n" + "\n".join(f"- {f}" for f in sorted(files_list))
+            return "Files in editor:\n" + "\n".join(f"- {f}" for f in sorted(files_list))
             
         except Exception as e:
             logger.error(f"Error in ListFilesInEditorTool: {e}")
@@ -868,146 +877,116 @@ class ListFilesInEditorTool(BaseTool):
         return self._run(args)
 
 class RunCodeEditTool(BaseTool):
-    name = "edit_code"
-    description = "Requests code changes based on the provided natural language instruction. Edits files currently in the session context."
+    name: str = "request_edit"
+    description: str = "Using natural language, request an edit to the files in the editor. The AI will respond with a plan and then execute it. Use this tool after adding files."
     
     def _run(self, instruction: str) -> str:
-        """Runs Aider's main edit loop with the given instruction, handling architect mode if needed."""
-        from .chat_manager import get_current_chat, get_aider_state, save_aider_state
-        
+        """Runs Aider's main edit loop in a background thread."""
         chat_file = get_current_chat()
         if not chat_file:
             return "Error: No active chat session found."
-            
-        aider_state = get_aider_state(chat_file)
-        if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Code editor not initialized. Use start_code_editor first."
-            
-        if not aider_state.get("abs_fnames", []):
-            return "Error: No files have been added to the code editing session. Use add_code_file first."
-            
-        io_stub = AiderIOStubWithQueues()
-        coder = recreate_coder(chat_file, io_stub)
-        if not coder:
-            return f"Error: Failed to recreate code editor state. {io_stub.get_captured_output()}"
-        
-        edit_format = coder.edit_format  # Get format from recreated coder (which got it from state)
-        final_coder_for_state_saving = coder  # By default, save state from the initial coder
-        
+
+        state = get_active_coder_state(chat_file)
+        if not state:
+            return "Error: AI editor not initialized. Use start_ai_editor first."
+
+        if not state.coder.abs_fnames:
+             return "Error: No files have been added to the editing session. Use include_file first."
+
+        # --- Threading Logic ---
+        # Acquire lock for this session before starting thread
+        with state.lock:
+            # Check if a thread is already running for this session
+            if state.thread and state.thread.is_alive():
+                logger.warning(f"An edit is already in progress for {chat_file}. Please wait or submit input if needed.")
+                # Optionally return a specific message indicating it's busy
+                # return "[AI_EDITOR_BUSY] An edit is already in progress."
+                # Or just let the agent figure it out from the lack of progress
+                return "Error: An edit is already in progress for this session."
+
+            # Ensure the coder's IO is the correct stub instance from the state
+            if state.coder.io is not state.io_stub:
+                 logger.warning("Correcting coder IO instance mismatch.")
+                 state.coder.io = state.io_stub
+
+            # Start the background thread
+            logger.info(f"Starting Aider worker thread for: {chat_file}")
+            state.thread = threading.Thread(
+                target=_run_aider_in_thread,
+                args=(state.coder, instruction, state.output_q),
+                daemon=True, # Make thread daemon so it doesn't block program exit if stuck
+                name=f"AiderWorker-{chat_file[:8]}"
+            )
+            state.thread.start()
+        # --- End Threading Logic ---
+
+        # Release lock before waiting on queue
+        # Wait for the *first* response from the Aider thread
+        logger.debug(f"Main thread waiting for initial message from output_q for {chat_file}...")
         try:
-            if edit_format == "architect":
-                logger.info("Running in Architect mode...")
-                # Step 1: Run the architect model
-                # The initial `coder` is already configured as the architect
-                coder.run(with_message=instruction)
-                architect_plan = coder.partial_response_content  # Get the plan
-                logger.debug(f"Architect plan:\n{architect_plan}")
-                
-                # Check if an editor model is configured
-                editor_model_name = aider_state.get("editor_model_name")
-                editor_edit_format = aider_state.get("editor_edit_format") 
-                
-                if not editor_model_name or not editor_edit_format or not architect_plan:
-                    logger.warning("Architect mode specified, but no editor model/format configured or no plan generated. No edits applied.")
-                    # Still save the architect's run history
-                    aider_state["aider_done_messages"] = coder.done_messages
-                    save_aider_state(chat_file, aider_state)
-                    return f"Architect proposed a plan (no editor configured or plan empty):\n{architect_plan}\n{io_stub.get_captured_output()}"
-                
-                # Step 2: Create and run the editor model
-                logger.info(f"Invoking editor model ({editor_model_name}, format: {editor_edit_format})...")
-                # We need a *new* io_stub for the editor run to capture its specific output
-                editor_io_stub = AiderIOStubWithQueues()
-                
-                # Create editor model
-                try:
-                    editor_model = Model(editor_model_name)
-                except Exception as e:
-                    logger.error(f"Failed to create editor model: {e}")
-                    # Fallback to saving architect state
-                    aider_state["aider_done_messages"] = coder.done_messages
-                    save_aider_state(chat_file, aider_state)
-                    return f"Failed to create editor model: {e}. Architect plan:\n{architect_plan}\n{io_stub.get_captured_output()}"
-                
-                # Create the editor coder - it needs the same file context but NOT the architect's chat history
-                try:
-                    editor_coder = Coder.create(
-                        main_model=editor_model,  # Use the designated editor model
-                        edit_format=editor_edit_format,
-                        io=editor_io_stub,
-                        repo=coder.repo,  # Share the repo object
-                        fnames=list(coder.abs_fnames),  # Pass copies of file lists
-                        read_only_fnames=list(getattr(coder, "abs_read_only_fnames", [])),
-                        # Start with empty history for the editor task
-                        done_messages=[],
-                        cur_messages=[],
-                        auto_commits=coder.auto_commits,  # Inherit settings
-                        aider_commit_hashes=set(coder.aider_commit_hashes),  # Share commit hashes
-                        verbose=False
-                    )
-                    editor_coder.root = coder.root  # Ensure root is set
-                    
-                    # Run the editor coder with the architect's plan
-                    editor_coder.run(with_message=architect_plan, preproc=False)
-                    
-                    # The editor coder made the actual commits and file changes
-                    final_coder_for_state_saving = editor_coder
-                    # Combine outputs - architect's reasoning + editor's actions
-                    combined_output = f"Architect Plan:\n{architect_plan}\n\nEditor Actions:\n{editor_io_stub.get_captured_output()}"
-                    
-                except Exception as e:
-                    logger.error(f"Error running editor model: {e}")
-                    # Still save the architect state on editor failure
-                    aider_state["aider_done_messages"] = coder.done_messages
-                    save_aider_state(chat_file, aider_state)
-                    return f"Error running editor model: {e}. Architect plan:\n{architect_plan}\n{io_stub.get_captured_output()}"
-                
-            else:  # Standard (non-architect) mode
-                logger.info(f"Running in standard mode (format: {edit_format})...")
-                coder.run(with_message=instruction)
-                combined_output = io_stub.get_captured_output()
-            
-            # --- State Synchronization ---
-            # Use the state from the coder that performed the final actions/commits
-            aider_state["aider_commit_hashes"] = list(final_coder_for_state_saving.aider_commit_hashes)
-            aider_state["abs_fnames"] = list(final_coder_for_state_saving.abs_fnames)
-            aider_state["abs_read_only_fnames"] = list(getattr(final_coder_for_state_saving, "abs_read_only_fnames", []))
-            
-            # *** Save Aider's potentially summarized history ***
-            # In architect mode, save the *architect's* history as it contains the user instruction + plan
-            # In standard mode, save the main coder's history
-            aider_state["aider_done_messages"] = coder.done_messages
-            logger.debug(f"Saving {len(coder.done_messages)} messages to aider_done_messages state.")
-            
-            save_aider_state(chat_file, aider_state)
-            
-            return f"Edit request processed. Output:\n{combined_output}"
-            
+             message = state.output_q.get(timeout=300) # Add a timeout (e.g., 5 minutes)
+             logger.debug(f"Main thread received initial message: {message.get('type')}")
+        except queue.Empty:
+             logger.error(f"Timeout waiting for initial Aider response ({chat_file}).")
+             remove_active_coder_state(chat_file) # Clean up state
+             return "Error: Timed out waiting for Aider response."
         except Exception as e:
-            logger.error(f"Error during code edit: {e}")
-            logger.error(traceback.format_exc())
-            
-            # Try saving partial state (commit hashes might be important)
-            try:
-                aider_state["aider_commit_hashes"] = list(final_coder_for_state_saving.aider_commit_hashes)
-                aider_state["aider_done_messages"] = coder.done_messages  # Save history even on error
-                save_aider_state(chat_file, aider_state)
-            except Exception as save_err:
-                logger.error(f"Failed to save partial state after error: {save_err}")
-                
-            # Combine outputs from both stubs if architect mode failed mid-way
-            combined_error_output = io_stub.get_captured_output()
-            if 'editor_io_stub' in locals() and edit_format == "architect":
-                combined_error_output += f"\nEditor Output (before error):\n{editor_io_stub.get_captured_output()}"
-                
-            return f"Error processing edit instruction: {e}. Captured output:\n{combined_error_output}"
+              logger.error(f"Exception waiting on output_q for {chat_file}: {e}")
+              remove_active_coder_state(chat_file)
+              return f"Error: Exception while waiting for Aider: {e}"
+
+
+        # Process the *first* message received
+        message_type = message.get('type')
+
+        if message_type == 'prompt':
+            # Aider needs input immediately
+            prompt_data = message
+            prompt_type = prompt_data.get('prompt_type', 'unknown')
+            question = prompt_data.get('question', 'Input needed')
+            subject = prompt_data.get('subject')
+            default = prompt_data.get('default')
+            allow_never = prompt_data.get('allow_never')
+
+            response_guidance = f"Aider requires input. Please respond using 'submit_editor_input'. Prompt: '{question}'"
+            if subject: response_guidance += f" (Regarding: {subject[:100]}{'...' if len(subject)>100 else ''})"
+            if default: response_guidance += f" [Default: {default}]"
+            if prompt_type == 'confirm':
+                 options = "(yes/no"
+                 if prompt_data.get('group_id'): options += "/all/skip"
+                 if allow_never: options += "/don't ask"
+                 options += ")"
+                 response_guidance += f" Options: {options}"
+
+            return f"{SIGNAL_PROMPT_NEEDED} {response_guidance}"
+
+        elif message_type == 'result':
+            # Aider finished without needing input
+            logger.info(f"Aider edit completed successfully for {chat_file}.")
+            with state.lock: # Re-acquire lock briefly
+                update_aider_state_from_coder(chat_file, state.coder)
+                state.thread = None # Clear the thread reference as it's done
+            return f"Edit completed. Output:\n{message.get('content', 'No output captured.')}"
+
+        elif message_type == 'error':
+            # Aider encountered an error immediately
+            logger.error(f"Aider edit failed for {chat_file}.")
+            error_content = message.get('message', 'Unknown error')
+            remove_active_coder_state(chat_file) # Clean up on error
+            return f"Error during edit:\n{error_content}"
+        else:
+             logger.error(f"Received unknown message type from Aider thread: {message_type}")
+             remove_active_coder_state(chat_file)
+             return f"Error: Unknown response type '{message_type}' from Aider process."
             
     async def _arun(self, instruction: str) -> str:
+        # For simplicity in this stage, run synchronously.
+        # Consider using asyncio.to_thread if true async is needed later.
         return self._run(instruction)
 
 class ViewDiffTool(BaseTool):
-    name = "view_code_diff"
-    description = "Shows the git diff of changes made by the 'edit_code' tool since the start of the last edit request."
+    name: str = "view_diff"
+    description: str = "Shows the git diff of changes made by the 'request_edit' tool in the current session. This is useful to see what changes have been made to the files."
     
     def _run(self, args: str = "") -> str:
         """Shows the diff of changes made by Aider."""
@@ -1020,12 +999,12 @@ class ViewDiffTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Code editor not initialized or is closed. Use start_code_editor first."
+            return "Error: Editor not initialized or is closed. Use start_ai_editor first."
             
         io_stub = AiderIOStubWithQueues()
         coder = recreate_coder(chat_file, io_stub)
         if not coder:
-            return f"Error: Failed to recreate code editor state. {io_stub.get_captured_output()}"
+            return f"Error: Failed to recreate editor state. {io_stub.get_captured_output()}"
             
         try:
             # If there's no git repo, we can't show diffs
@@ -1044,7 +1023,7 @@ class ViewDiffTool(BaseTool):
                 if not diff:
                     return "No changes detected in the tracked files."
                     
-                return f"Changes in code files:\n\n{diff}"
+                return f"Changes in files:\n\n{diff}"
             
         except ANY_GIT_ERROR as e:
             logger.error(f"Git error during diff: {e}")
@@ -1060,11 +1039,11 @@ class ViewDiffTool(BaseTool):
         return self._run(args)
 
 class UndoLastEditTool(BaseTool):
-    name = "undo_last_code_edit"
-    description = "Undoes the last code edit commit made by the 'edit_code' tool in the current session, if possible."
+    name: str = "undo_last_edit"
+    description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the AI editor."
     
     def _run(self, args: str = "") -> str:
-        """Undoes the last code edit commit made by Aider."""
+        """Undoes the last edit commit made by Aider."""
         from .chat_manager import get_current_chat, get_aider_state
         
         chat_file = get_current_chat()
@@ -1073,12 +1052,12 @@ class UndoLastEditTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Code editor not initialized. Use start_code_editor first."
+            return "Error: Editor not initialized. Use start_ai_editor first."
             
         io_stub = AiderIOStubWithQueues()
         coder = recreate_coder(chat_file, io_stub)
         if not coder:
-            return f"Error: Failed to recreate code editor state. {io_stub.get_captured_output()}"
+            return f"Error: Failed to recreate editor state. {io_stub.get_captured_output()}"
             
         try:
             # If there's no git repo, we can't undo commits
@@ -1117,43 +1096,56 @@ class UndoLastEditTool(BaseTool):
         return self._run(args)
 
 class CloseCodeEditorTool(BaseTool):
-    name = "close_code_editor"
-    description = "Closes the code editor session for the current chat, clearing its specific context like added files and edit history. Call this when code editing tasks are fully complete."
+    name: str = "close_ai_editor"
+    description: str = "Closes the AI editor session, clearing its context AND deactivating the 'AI Editor' toolset."
 
     def _run(self, args: str = "") -> str:
-        """Clears the Aider state for the current chat."""
-        from .chat_manager import get_current_chat, get_aider_state, clear_aider_state
-        
+        """Clears the Aider state, deactivates the toolset, and updates the prompt."""
         chat_file = get_current_chat()
         if not chat_file:
             return "Error: No active chat session found to close the editor for."
 
-        # Check if state exists before clearing, though clear_aider_state is safe anyway
-        aider_state = get_aider_state(chat_file)
-        if not aider_state:
-             # Even if no state was found, confirm closure conceptually
-             logger.info("No active Aider state found, but confirming editor closure.")
-             return "Code editor context was already clear or not initialized."
+        toolset_name = "AI Editor"
 
+        # --- Clear Aider Specific State ---
         try:
-            clear_aider_state(chat_file)
-            return "Code editor context cleared successfully."
+            clear_aider_state(chat_file) # Mark aider state as disabled
+            remove_active_coder_state(chat_file) # Remove active coder instance
+            logger.info(f"Aider state cleared and active coder removed for {chat_file}")
         except Exception as e:
             logger.error(f"Error clearing Aider state: {e}")
             logger.error(traceback.format_exc())
-            return f"Error closing code editor: {e}"
+            # Continue to deactivate toolset anyway? Yes.
+
+        # --- Deactivate Toolset and Update Prompt ---
+        current_toolsets = get_active_toolsets(chat_file)
+        toolsets_updated = False
+        if toolset_name in current_toolsets:
+            logger.info(f"Deactivating '{toolset_name}' toolset for chat {chat_file}.")
+            new_toolsets = [ts for ts in current_toolsets if ts != toolset_name]
+            update_active_toolsets(chat_file, new_toolsets) # Save updated list
+
+            # Re-build and update system prompt
+            new_system_prompt = build_prompt(active_toolsets=new_toolsets)
+            _update_message_in_chat(chat_file, 0, {"role": "system", "content": new_system_prompt})
+            toolsets_updated = True
+            logger.info(f"System prompt updated for chat {chat_file} due to toolset deactivation.")
+
+        if toolsets_updated:
+            return f"AI Editor session closed and '{toolset_name}' toolset deactivated."
+        else:
+             # If toolset wasn't active but command was called
+             return "AI Editor session closed (it might have already been inactive)."
 
     async def _arun(self, args: str = "") -> str:
         # Simple enough to run synchronously
         return self._run(args)
 
 class SubmitCodeEditorInputTool(BaseTool):
-    name = "submit_code_editor_input"
-    description = (
-         "Provides the required input (e.g., 'yes', 'no', 'all', 'skip', 'don't ask', or text) "
-         "when the code editor signals '[CODE_EDITOR_INPUT_NEEDED]'."
-         " Sends the input back to the ongoing Aider process."
-         " Will return the next prompt, the final result, or an error."
+    name: str = "submit_editor_input"
+    description: str = (
+         "Use to provide input to input request (e.g., 'yes', 'no', 'all', 'skip', 'don't ask', or text) "
+         "when the AI editor signals '[AI_EDITOR_INPUT_NEEDED]'."
     )
 
     def _run(self, user_response: str) -> str:
@@ -1164,7 +1156,7 @@ class SubmitCodeEditorInputTool(BaseTool):
         state = get_active_coder_state(chat_file)
         if not state:
             # This indicates an agent logic error - trying to submit input when no session active
-            return "Error: No active code editor session to submit input to."
+            return "Error: No active editor session to submit input to."
 
         # Acquire lock for the specific session
         with state.lock:
@@ -1173,7 +1165,7 @@ class SubmitCodeEditorInputTool(BaseTool):
                   # Could happen if thread finished unexpectedly or was closed
                   # Clean up just in case
                   remove_active_coder_state(chat_file)
-                  return "Error: The code editing process is not waiting for input."
+                  return "Error: The editing process is not waiting for input."
 
              # Send the raw user response to the waiting Aider thread
              logger.debug(f"Putting user response on input_q: '{user_response}' for {chat_file}")
@@ -1205,7 +1197,7 @@ class SubmitCodeEditorInputTool(BaseTool):
             default = prompt_data.get('default')
             allow_never = prompt_data.get('allow_never')
 
-            response_guidance = f"Aider requires further input. Please respond using 'submit_code_editor_input'. Prompt: '{question}'"
+            response_guidance = f"Aider requires further input. Please respond using 'submit_editor_input'. Prompt: '{question}'"
             if subject: response_guidance += f" (Regarding: {subject[:100]}{'...' if len(subject)>100 else ''})"
             if default: response_guidance += f" [Default: {default}]"
             if prompt_type == 'confirm':
@@ -1238,14 +1230,31 @@ class SubmitCodeEditorInputTool(BaseTool):
         # Consider running sync in threadpool if needed
         return self._run(user_response)
 
-# Create tool instances for export
-start_code_editor_tool = StartCodeEditorTool()
+# --- Tool Instances ---
+start_code_editor_tool = StartAIEditorTool()
 add_code_file_tool = AddFileTool()
 drop_code_file_tool = DropFileTool()
 list_code_files_tool = ListFilesInEditorTool()
 edit_code_tool = RunCodeEditTool()
+submit_code_editor_input_tool = SubmitCodeEditorInputTool()
 view_diff_tool = ViewDiffTool()
 undo_last_edit_tool = UndoLastEditTool()
 close_code_editor_tool = CloseCodeEditorTool()
-submit_code_editor_input_tool = SubmitCodeEditorInputTool()
+
+# --- List of Aider tools defined in THIS file ---
+aider_tools_in_this_file = [
+    start_code_editor_tool,
+    add_code_file_tool,
+    drop_code_file_tool,
+    list_code_files_tool,
+    edit_code_tool,
+    submit_code_editor_input_tool,
+    view_diff_tool,
+    undo_last_edit_tool,
+    close_code_editor_tool,
+]
+
+# --- Register the Aider tools at the end of the file ---
+register_tools(aider_tools_in_this_file)
+logger.debug(f"Registered {len(aider_tools_in_this_file)} Aider tools.")
 

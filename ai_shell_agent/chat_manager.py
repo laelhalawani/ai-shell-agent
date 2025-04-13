@@ -1,817 +1,486 @@
-# File: ai_shell_agent/chat_manager.py
+"""
+Chat session management module for AI Shell Agent.
+Handles chat sessions, history, and the conversation flow with the LLM.
+"""
+# Standard imports
 import os
 import json
 import uuid
-import traceback  # Add traceback for detailed error reporting
-from typing import Optional, Dict, Any, Tuple, List
+import traceback
+from typing import Dict, List, Optional, Any, Union, Tuple
+from datetime import datetime, timezone
+from pathlib import Path
+import time
 
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
+# External imports
 from langchain_core.messages import (
-    HumanMessage, 
-    AIMessage, 
-    SystemMessage, 
-    ToolMessage,
-    BaseMessage
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    BaseMessage,
+    ToolMessage
 )
-from langchain_core.messages.utils import convert_to_openai_messages
 from langchain_core.utils.function_calling import convert_to_openai_function
-from .tools import tools as all_base_tools, direct_windows_shell_tool  # Import the specific tool we need
-from .aider_integration import get_active_coder_state, aider_tools, start_code_editor_tool, SIGNAL_PROMPT_NEEDED
-from .prompts import default_system_prompt
-from .config_manager import get_current_model, get_model_provider
+
+# Local imports
 from . import logger
+from .config_manager import get_current_model, get_model_provider
 
-# Use installation directory for storing configuration and chat data
-def get_data_dir():
-    """Return the directory where configuration and chat data should be stored."""
-    # Use the package directory as the base
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    data_dir = os.path.join(base_dir, "data")
-    os.makedirs(data_dir, exist_ok=True)
-    return data_dir
+# --- Import necessary components from the state manager ---
+from .chat_state_manager import (
+    get_current_chat,
+    save_session,
+    create_or_load_chat, # Keep for start_temp_chat internal call
+    _read_chat_data,
+    _write_chat_data,
+    get_active_toolsets,
+    # update_active_toolsets, # Not directly called here
+    _get_console_session_id,
+    rename_chat as rename_chat_state,
+    delete_chat as delete_chat_state,
+    flush_temp_chats as flush_temp_chats_state,
+    get_current_chat_title,
+    _update_message_in_chat, # Keep for edit_message internal call
+    _get_chat_messages
+)
 
-# Define file paths relative to data directory
-CHAT_DIR = os.path.join(get_data_dir(), "chats")
-CHAT_MAP_FILE = os.path.join(CHAT_DIR, "chat_map.json")
-SESSION_FILE = os.path.join(get_data_dir(), "session.json")
-CONFIG_FILE = os.path.join(get_data_dir(), "config.json")
+# --- Import ONLY what's needed from aider_integration and the new registry ---
+from .aider_integration import get_active_coder_state, SIGNAL_PROMPT_NEEDED # Removed unused start_code_editor_tool import
+from .tool_registry import get_all_tools_dict, get_all_openai_functions, get_all_tools
 
-# Ensure the chats directory exists.
-os.makedirs(CHAT_DIR, exist_ok=True)
+# --- Import the new LLM and Prompt builders ---
+from .llm import get_llm
 
-def _read_json(file_path: str) -> dict:
-    if os.path.exists(file_path):
-        with open(file_path, "r") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
-    return {}
+# --- Chat Session Management ---
+def get_chat_titles_list():
+    """Prints the list of available chat titles."""
+    # Uses state_manager._read_json internally now via get_current_chat
+    from .chat_state_manager import _read_json, CHAT_MAP_FILE, get_current_chat
+    chat_map = _read_json(CHAT_MAP_FILE, {})
+    current_chat_id = get_current_chat() # Get ID from state manager
 
-def _write_json(file_path: str, data: dict) -> None:
-    with open(file_path, "w") as f:
-        json.dump(data, f, indent=4)
+    if not chat_map:
+        print("No chats found.")
+        return
 
-def _get_console_session_id() -> str:
-    """Returns an identifier for a temporary console session."""
-    return f"temp_{os.getpid()}"
-
-def _read_chat_data(file_path: str) -> Tuple[List[BaseMessage], Dict[str, Any]]:
-    """Read and deserialize agent messages and the full aider_state from JSON file."""
-    agent_messages = []
-    aider_state = {}
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r", encoding='utf-8') as f:  # Specify encoding
-                data = json.load(f)
-
-            # Load agent's messages (unchanged logic)
-            messages_data = data.get("messages", [])
-            for msg_data in messages_data:
-                msg_type = msg_data.get("type")
-                # Ensure 'type' exists before accessing 'model_dump' or specific classes
-                if msg_type:
-                    try:
-                        # Dynamically find the message class based on 'type'
-                        # Assumes message types match class names like HumanMessage, AIMessage, etc.
-                        # Ensure necessary classes are imported at the top of the file
-                        message_class_name = msg_type.capitalize() + "Message"
-                        # Handle potential variations like 'ai' -> 'AIMessage'
-                        if msg_type == "ai": message_class_name = "AIMessage"
-                        if msg_type == "human": message_class_name = "HumanMessage"
-                        if msg_type == "system": message_class_name = "SystemMessage"
-                        if msg_type == "tool": message_class_name = "ToolMessage"
-
-                        # Get the class object (assuming it's imported)
-                        message_class = globals().get(message_class_name)
-
-                        if message_class and issubclass(message_class, BaseMessage):
-                            # Recreate the message object
-                            # We need to handle 'additional_kwargs' which might not be a direct parameter
-                            # Extract standard parameters first
-                            standard_params = {k: v for k, v in msg_data.items() if k in message_class.__fields__}
-                            # Put remaining items into additional_kwargs if the class supports it
-                            if 'additional_kwargs' in message_class.__fields__:
-                                 standard_params['additional_kwargs'] = {k: v for k, v in msg_data.items() if k not in message_class.__fields__}
-                                 # Remove the explicit 'type' if it's not part of the model fields but was in the dump
-                                 if 'type' in standard_params['additional_kwargs'] and 'type' not in message_class.__fields__:
-                                     del standard_params['additional_kwargs']['type']
+    print("\nAvailable Chats:")
+    # Sort by title (value) case-insensitively
+    for chat_id, title in sorted(chat_map.items(), key=lambda item: item[1].lower()):
+        current_marker = " <- Current" if chat_id == current_chat_id else ""
+        print(f"- {title}{current_marker}")
 
 
-                            agent_messages.append(message_class(**standard_params))
-                        else:
-                            logger.warning(f"Could not find or validate message class for type: {msg_type}")
-                    except Exception as e:
-                         logger.error(f"Error deserializing message: {msg_data}. Error: {e}")
-                else:
-                    logger.warning(f"Message data missing 'type' field: {msg_data}")
+def rename_chat(old_title: str, new_title: str) -> None:
+    """Renames a chat session by calling the state manager."""
+    success = rename_chat_state(old_title, new_title) # Delegate persistence
+    if success:
+        print(f"Renamed chat: {old_title} -> {new_title}") # Keep user feedback here
+    # Error message handled within rename_chat_state now, avoid double printing
+    # else:
+    #     print(f"Failed to rename chat: {old_title} -> {new_title}")
 
 
-            # Load the entire aider_state dictionary
-            aider_state = data.get("aider_state", {})
-            # Ensure aider_done_messages is present and a list
-            if "aider_done_messages" not in aider_state:
-                aider_state["aider_done_messages"] = []
-            elif not isinstance(aider_state.get("aider_done_messages"), list):
-                logger.warning(f"aider_done_messages in state (file: {file_path}) is not a list, resetting.")
-                aider_state["aider_done_messages"] = []
+def delete_chat(title: str) -> None:
+    """Deletes a chat session by calling the state manager."""
+    deleted = delete_chat_state(title) # Delegate persistence
+    if deleted:
+        print(f"Deleted chat: {title}")
+    # Error message handled within delete_chat_state now
+    # else:
+    #     print(f"Chat not found: {title}") # Keep user feedback here
 
-            logger.debug(f"Read {len(agent_messages)} agent messages from {file_path}")
-            logger.debug(f"Read aider_state keys: {list(aider_state.keys())} from {file_path}")
-            logger.debug(f"Read {len(aider_state.get('aider_done_messages', []))} aider messages from state in {file_path}")
-
-        except json.JSONDecodeError:
-            logger.error(f"Failed to decode JSON from {file_path}")
-            return [], {} # Return empty on decode error
-        except Exception as e:
-            logger.error(f"Error reading chat data from {file_path}: {e}\n{traceback.format_exc()}")
-            return [], {} # Return empty on other errors
-
-    # Ensure aider_state always contains aider_done_messages list, even if file didn't exist or was empty/corrupt
-    if "aider_done_messages" not in aider_state:
-        aider_state["aider_done_messages"] = []
-
-    return agent_messages, aider_state
-
-def _write_chat_data(file_path: str, messages: List[BaseMessage], aider_state: Dict[str, Any]) -> None:
-    """Write agent messages and the full aider_state to JSON file."""
-    try:
-        # Serialize agent messages
-        messages_data = []
-        for msg in messages:
-            try:
-                # Use model_dump if available (Pydantic v2), otherwise dict()
-                if hasattr(msg, 'model_dump'):
-                    messages_data.append(msg.model_dump())
-                else:
-                    messages_data.append(msg.dict())
-            except Exception as e:
-                logger.error(f"Error serializing message: {msg}. Error: {e}")
-                # Optionally skip the message or add placeholder
-
-        # Ensure aider_done_messages exists in the state being written
-        if "aider_done_messages" not in aider_state:
-            aider_state["aider_done_messages"] = []
-        elif not isinstance(aider_state.get("aider_done_messages"), list):
-            logger.warning(f"aider_done_messages in state (file: {file_path}) is not a list before writing, resetting.")
-            aider_state["aider_done_messages"] = []
-
-        # Filter out None values from the rest of aider_state *before* saving
-        # We explicitly keep aider_done_messages even if empty
-        filtered_aider_state = {
-            k: v for k, v in aider_state.items()
-            if v is not None or k == "aider_done_messages"  # Keep aider_done_messages
-        }
-
-        data_to_write = {
-            "messages": messages_data,
-            "aider_state": filtered_aider_state
-        }
-        logger.debug(f"Writing {len(messages_data)} agent messages to {file_path}")
-        logger.debug(f"Writing aider_state keys: {list(filtered_aider_state.keys())} to {file_path}")
-
-        # Ensure we log how many Aider messages are being saved
-        aider_messages_count = len(filtered_aider_state.get("aider_done_messages", []))
-        logger.debug(f"Writing {aider_messages_count} aider_done_messages to {file_path}")
-
-        # Ensure directory exists before writing
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-        with open(file_path, "w", encoding='utf-8') as f:  # Specify encoding
-            json.dump(data_to_write, f, indent=4, default=str) # Add default=str for non-serializable types
-
-    except TypeError as e:
-         logger.error(f"Serialization error writing to {file_path}: {e}")
-         logger.error(f"Data that failed: {data_to_write}") # Log the problematic data
-    except Exception as e:
-        logger.error(f"Error writing chat data to {file_path}: {e}\n{traceback.format_exc()}")
-
-# Aider state management
-def get_aider_state(chat_file: str) -> Dict[str, Any]:
-    """Loads the aider_state dictionary from the chat file."""
-    if not chat_file or not os.path.exists(chat_file):
-        logger.debug(f"Chat file {chat_file} not found or not specified for get_aider_state.")
-        return {"aider_done_messages": []} # Return default empty state
-    try:
-        _, aider_state = _read_chat_data(chat_file)
-        # Ensure the essential key exists even if read failed partially
-        if "aider_done_messages" not in aider_state:
-             aider_state["aider_done_messages"] = []
-        return aider_state
-    except Exception as e:
-        logger.error(f"Failed to get aider state from {chat_file}: {e}")
-        return {"aider_done_messages": []} # Return default on error
-
-def save_aider_state(chat_file: str, state_dict: Dict[str, Any]):
-    """Saves the aider_state dictionary to the chat file, preserving messages."""
-    if not chat_file:
-         logger.error("Cannot save aider state: chat_file path is empty.")
-         return
-    try:
-        messages, _ = _read_chat_data(chat_file)
-        # Ensure messages is a list even if read failed
-        if not isinstance(messages, list):
-            logger.warning(f"Read invalid messages from {chat_file}, using empty list.")
-            messages = []
-        _write_chat_data(chat_file, messages, state_dict)
-        logger.debug(f"Aider state saved to {chat_file}")
-    except Exception as e:
-        logger.error(f"Failed to save aider state to {chat_file}: {e}\n{traceback.format_exc()}")
-
-def clear_aider_state(chat_file: str):
-    """Clears the aider_state dictionary in the chat file, preserving messages."""
-    if not chat_file:
-         logger.error("Cannot clear aider state: chat_file path is empty.")
-         return
-    try:
-        messages, _ = _read_chat_data(chat_file)
-         # Ensure messages is a list even if read failed
-        if not isinstance(messages, list):
-            logger.warning(f"Read invalid messages from {chat_file} before clearing aider state, using empty list.")
-            messages = []
-        _write_chat_data(chat_file, messages, {}) # Write with an empty aider_state dict
-        logger.info(f"Aider state cleared for chat file: {chat_file}")
-    except Exception as e:
-         logger.error(f"Failed to clear aider state for {chat_file}: {e}\n{traceback.format_exc()}")
-
-# Initialize the LLM based on current model configuration and active tools
-def _get_llm():
-    """Get the LLM instance based on the current model configuration and active tools."""
-    model_name = get_current_model()
-    provider = get_model_provider(model_name)
-    
-    # Determine available tools based on current Aider session state
-    chat_file = get_current_chat()
-    active_state = get_active_coder_state(chat_file) if chat_file else None
-    
-    if active_state:
-        # An Aider session is active, include all tools (base tools + all aider tools)
-        # Tools list already includes aider_tools from imports in tools.py
-        available_tools = all_base_tools
-        logger.debug("Aider session is active, providing all tools including Aider tools")
-    else:
-        # No active Aider session, provide only StartCodeEditorTool + base tools
-        # Filter out aider tools except start_code_editor_tool
-        base_tools_only = [t for t in all_base_tools if t not in aider_tools]
-        available_tools = base_tools_only + [start_code_editor_tool]
-        logger.debug("No active Aider session, providing only start_code_editor_tool with base tools")
-    
-    # Generate tool functions for the selected tools
-    global tools, tools_functions
-    tools = available_tools
-    tools_functions = [convert_to_openai_function(t) for t in tools]
-    
-    if provider == "openai":
-        return ChatOpenAI(model=model_name).bind_tools(tools_functions)
-    else:  # Google
-        return ChatGoogleGenerativeAI(model=model_name).bind_tools(tools_functions)
-
-# ---------------------------
-# Chat Session Management
-# ---------------------------
-def set_current_chat(chat_file: str) -> None:
-    """
-    Sets the current chat session.
-    
-    Parameters:
-      chat_file (str): The filepath of the chat session to set as current.
-    """
-    logger.debug(f"Setting current chat: {chat_file}")
-    _write_json(SESSION_FILE, {"current_chat": chat_file})
-
-def get_current_chat() -> str:
-    """
-    Gets the current chat session.
-    
-    Returns:
-      str: The filepath of the current chat session, or None if not set.
-    """
-    data = _read_json(SESSION_FILE)
-    logger.debug(f"Current chat data: {data}")
-    return data.get("current_chat", None)
-
-def create_or_load_chat(title: str) -> str:
-    """
-    Creates or loads a chat session file based on the title.
-    If a new chat is created, the default system prompt is added as the first message.
-    
-    Parameters:
-      title (str): The chat session title.
-      
-    Returns:
-      str: The filepath of the chat session JSON file.
-    """
-    chat_map = _read_json(CHAT_MAP_FILE)
-    logger.debug(f"Chat map: {chat_map}")
-    if (title in chat_map):
-        chat_id = chat_map[title]
-        logger.debug(f"Loading existing chat session: {title}")
-    else:
-        chat_id = str(uuid.uuid4())
-        chat_map[title] = chat_id
-        _write_json(CHAT_MAP_FILE, chat_map)
-    chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
-    if not os.path.exists(chat_file):
-        logger.info(f"Creating new chat session: {title}")
-        # New chat: add default system prompt
-        config = _read_json(CONFIG_FILE)
-        logger.debug(f"Config: {config}")
-        if "default_system_prompt" not in config:
-            config["default_system_prompt"] = default_system_prompt
-            _write_json(CONFIG_FILE, config)
-        default_prompt = config.get("default_system_prompt", default_system_prompt)
-        initial_messages = [SystemMessage(content=default_prompt)]
-        _write_chat_data(chat_file, initial_messages, {})
-    set_current_chat(chat_file)
-    return chat_file
-
-def get_chat_titles_list() -> list:
-    """Returns a list of all chat session titles."""
-    chat_map = _read_json(CHAT_MAP_FILE)
-    chats = list(chat_map.keys())
-    chats_str = "\n - ".join(chats)
-    logger.info(f"Chats: \n{chats_str}")
-    return chats
-
-def rename_chat(old_title: str, new_title: str) -> bool:
-    """
-    Renames an existing chat session.
-    
-    Parameters:
-      old_title (str): The current chat title.
-      new_title (str): The new chat title.
-      
-    Returns:
-      bool: True if successful, False otherwise.
-    """
-    chat_map = _read_json(CHAT_MAP_FILE)
-    logger.debug(f"Chat map: {chat_map}")
-    if old_title in chat_map:
-        chat_map[new_title] = chat_map.pop(old_title)
-        _write_json(CHAT_MAP_FILE, chat_map)
-        logger.info(f"Chat session renamed: {old_title} -> {new_title}")
-        return True
-    logger.error(f"Chat session not found: {old_title}")
-    return False
-
-def delete_chat(title: str) -> bool:
-    """
-    Deletes a chat session.
-    
-    Parameters:
-      title (str): The title of the chat to delete.
-      
-    Returns:
-      bool: True if successful, False otherwise.
-    """
-    chat_map = _read_json(CHAT_MAP_FILE)
-    logger.debug(f"Chat map: {chat_map}")
-    if title in chat_map:
-        chat_id = chat_map.pop(title)
-        _write_json(CHAT_MAP_FILE, chat_map)
-        chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
-        if os.path.exists(chat_file):
-            os.remove(chat_file)
-            logger.info(f"Chat session deleted: {title}")
-        return True
-    logger.error(f"Chat session not found: {title}")
-    return False
-
-def save_session(chat_file: str) -> None:
-    """
-    Saves the active chat session to session.json.
-    
-    Parameters:
-      chat_file (str): The filepath of the active chat session.
-    """
-    logger.debug(f"Saving session: {chat_file}")
-    _write_json(SESSION_FILE, {"current_chat": chat_file})
-
-def load_session() -> str:
-    """
-    Loads the active chat session from session.json.
-    
-    Returns:
-      str: The filepath of the active chat session, or None if not set.
-    """
-    data = _read_json(SESSION_FILE)
-    logger.debug(f"Loaded session data: {data}")
-    return data.get("current_chat", None)
 
 # ---------------------------
 # Messaging Functions
 # ---------------------------
-def _handle_tool_calls(ai_message: AIMessage) -> list[BaseMessage]:
+def _handle_tool_calls(ai_message: AIMessage, chat_file: str) -> list[BaseMessage]:
     """
-    Handle tool calls from AI response and append tool messages to conversation.
-    It first ensures validity of the tool calls and then invokes the tools or raises an error.
+    Handle tool calls from AI response. Invokes tools and returns ToolMessages.
+    Relies on tools themselves to update state if necessary.
     """
-    logger.debug(f"AI message tool calls: {ai_message.tool_calls}")
+    logger.debug(f"Handling tool calls: {ai_message.tool_calls}")
     if not ai_message.tool_calls:
         return []
-    messages = []
 
-    tools_dict = {tool.name: tool for tool in tools}
-    logger.info(f"AI wants to run commands...")
+    messages: List[BaseMessage] = []
+    tool_registry_dict = get_all_tools_dict() # Get tools from registry
+    logger.info(f"AI wants to run {len(ai_message.tool_calls)} tool(s)...")
+
     for tool_call in ai_message.tool_calls:
-        if tool_call["name"] not in tools_dict:
-            logger.error(f"Unknown tool: {tool_call['name']}")
-            raise ValueError(f"Unknown tool: {tool_call['name']}")
-    for tool_call in ai_message.tool_calls:
-        tool_name = None
+        tool_name = tool_call.get("name")
+        tool_call_id = tool_call.get("id")
+        tool_args = tool_call.get("args", {}) # Get args dict
+
+        if not tool_name or not tool_call_id:
+             logger.error(f"Invalid tool call structure received: {tool_call}")
+             continue
+
         try:
-            tool_name = tool_call["name"]
-            tool_call_id = tool_call["id"]
-            tool = tools_dict[tool_name]
-            tool_response: ToolMessage = tool.invoke(tool_call)
-            tool_response.tool_call_id = tool_call_id
-            
-            # Check if this is an Aider tool response that needs input
+            if tool_name not in tool_registry_dict:
+                logger.error(f"Unknown tool requested: {tool_name}")
+                error_content = f"Error: Tool '{tool_name}' not found or not available."
+                messages.append(ToolMessage(content=error_content, tool_call_id=tool_call_id))
+                continue
+
+            tool = tool_registry_dict[tool_name]
+            logger.debug(f"Invoking tool '{tool_name}' with args: {tool_args}")
+
+            # Invoke the tool with its arguments dictionary
+            tool_result_content = tool.invoke(tool_args)
+
+            # Wrap the raw output in a ToolMessage
+            tool_response = ToolMessage(content=str(tool_result_content), tool_call_id=tool_call_id)
+
+            # Check for Aider input signal post-invocation
             if isinstance(tool_response.content, str) and tool_response.content.startswith(SIGNAL_PROMPT_NEEDED):
-                # Extract the prompt details
                 prompt_details = tool_response.content[len(SIGNAL_PROMPT_NEEDED):].strip()
-                logger.info(f"Aider needs input: {prompt_details}")
-                
-                # We'll add the tool response to messages and let the agent respond in the next call
-                # Note that we're not changing the structure here, but the agent will detect
-                # this signal and respond appropriately in its next turn
-                logger.debug(f"Returning tool response with Aider input request: {tool_response}")
-            
+                logger.info(f"Tool '{tool_name}' indicated Aider needs input: {prompt_details}")
+
             messages.append(tool_response)
+
         except Exception as e:
-            raise Exception(f"Error running tool '{tool_name}': {e}")
+            logger.error(f"Error running tool '{tool_name}' with args {tool_args}: {e}")
+            logger.error(traceback.format_exc())
+            error_content = f"Error executing tool '{tool_name}': {e}"
+            # Use the original tool_call_id for the error message
+            messages.append(ToolMessage(content=error_content, tool_call_id=tool_call_id))
+
+    logger.debug(f"Returning {len(messages)} tool messages.")
     return messages
 
-def _prune_unmatched_tool_calls(messages: list[BaseMessage]) -> list[BaseMessage]:
-    # Find the index of the last AIMessage
-    last_ai_index = -1;
-    for i in range(len(messages) - 1, -1, -1):
-        if isinstance(messages[i], AIMessage):
-            last_ai_index = i
-            break
-    if last_ai_index == -1:
-        return messages  # No AIMessage found
-
-    # Collect subsequent ToolMessages
-    tool_messages = []
-    for j in range(last_ai_index + 1, len(messages)):
-        if isinstance(messages[j], ToolMessage):
-            tool_messages.append(messages[j])
-        else:
-            break
-
-    last_ai_message = messages[last_ai_index]
-    if not getattr(last_ai_message, "tool_calls", None):
-        return messages  # No tool calls to prune
-
-    # Keep tool calls only if matching ToolMessages are found
-    pruned_tool_calls = []
-    for call in last_ai_message.tool_calls:
-        if any(t.tool_call_id == call.get("id") for t in tool_messages):
-            pruned_tool_calls.append(call)
-        else:
-            logger.warning(f"Tool call {call.get('id')} has no matching ToolMessage, pruning...")
-
-    # Replace the AI message with a pruned version
-    pruned_ai_message = AIMessage(
-        content=last_ai_message.content,
-        tool_calls=pruned_tool_calls
-    )
-    messages[last_ai_index] = pruned_ai_message
-    return messages
-
-def send_message(message: str) -> str:
+def _convert_message_dicts_to_langchain(messages: List[Dict]) -> List[BaseMessage]:
     """
-    Handles message sending in two scenarios:
-    1. No current chat: Creates a new temp chat with system prompt
-    2. Existing chat: Appends to existing conversation
+    Converts a list of message dictionaries to LangChain messages.
+    Handles both standard roles (system, human, ai) and tool messages.
+    """
+    lc_messages = []
     
-    Parameters:
-      message (str): The human message.
-      
-    Returns:
-      str: The AI's response.
+    for msg in messages:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        
+        if role == "system":
+            lc_messages.append(SystemMessage(content=content))
+        elif role == "human":
+            lc_messages.append(HumanMessage(content=content))
+        elif role == "ai":
+            # Check for tool calls in the message
+            tool_calls = msg.get("tool_calls", [])
+            
+            # Create AIMessage with tool_calls if present
+            if tool_calls:
+                lc_messages.append(AIMessage(content=content, tool_calls=tool_calls))
+            else:
+                lc_messages.append(AIMessage(content=content))
+        elif role == "tool":
+            # Create a ToolMessage for each tool response
+            tool_call_id = msg.get("tool_call_id", "unknown_tool_call")
+            lc_messages.append(ToolMessage(content=content, tool_call_id=tool_call_id))
+        else:
+            logger.warning(f"Unknown message role: {role}")
+            # Default to human message for unknown roles
+            lc_messages.append(HumanMessage(content=content))
+    
+    return lc_messages
+
+def _convert_langchain_to_message_dicts(messages: List[BaseMessage]) -> List[Dict]:
     """
-    # Get or create chat session
+    Converts LangChain messages back to dictionaries for storage.
+    Handles both standard messages and tool messages.
+    """
+    msg_dicts = []
+    
+    for msg in messages:
+        if isinstance(msg, SystemMessage):
+            msg_dicts.append({"role": "system", "content": msg.content})
+        elif isinstance(msg, HumanMessage):
+            msg_dicts.append({"role": "human", "content": msg.content})
+        elif isinstance(msg, AIMessage):
+            ai_dict = {"role": "ai", "content": msg.content}
+            if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                ai_dict["tool_calls"] = msg.tool_calls
+            msg_dicts.append(ai_dict)
+        elif isinstance(msg, ToolMessage):
+            msg_dicts.append({
+                "role": "tool",
+                "content": msg.content,
+                "tool_call_id": msg.tool_call_id
+            })
+        else:
+            logger.warning(f"Unknown message type: {type(msg)}")
+            # Default to storing as a human message
+            msg_dicts.append({"role": "human", "content": str(msg.content)})
+    
+    return msg_dicts
+
+def send_message(message: str) -> None:
+    """
+    Sends a message to the AI and displays the response.
+    Handles message history, dynamic prompt/tool loading, and tool calls.
+    """
     chat_file = get_current_chat()
-    logger.debug(f"Chat file: {chat_file}")
     if not chat_file:
-        console_session_id = _get_console_session_id()
-        chat_file = create_or_load_chat(console_session_id)
-    
-    # Load existing messages and ensure they exist
-    current_messages, current_aider_state = _read_chat_data(chat_file)
-    current_messages = current_messages or []
-    logger.debug(f"Current messages: {current_messages}")
-    # Ensure system prompt exists at the start
-    if len(current_messages) == 0 or not isinstance(current_messages[0], SystemMessage):
-        config = _read_json(CONFIG_FILE)
-        logger.debug(f"Config: {config}")
-        default_prompt = config.get("default_system_prompt", default_system_prompt)
-        current_messages.insert(0, SystemMessage(content=default_prompt))
-    
-    # Append new human message
-    human_message = HumanMessage(content=message)
-    current_messages.append(human_message)
-    logger.debug(f"Appended human message: {human_message}")
-    # Log human message with correct index
-    human_count = sum(1 for msg in current_messages if isinstance(msg, HumanMessage))
-    logger.info(f"id:{human_count-1}")
-    
-    # Get AI response with complete history
-    llm = _get_llm()
+        logger.warning("No active chat session. Starting temporary session.")
+        start_temp_chat(message)
+        return
 
-    ai_response: AIMessage = None
-    # Process response
-    while True:
-        logger.debug(f"Current messages: {current_messages}")
-        current_messages = _prune_unmatched_tool_calls(current_messages)
-        
-        ai_response = llm.invoke(convert_to_openai_messages(current_messages))
-        logger.debug(f"AI response: {ai_response}")
-        current_messages.append(ai_response)
-        
-        if ai_response.tool_calls and len(ai_response.tool_calls) > 0:
+    # Add human message using state manager helpers
+    timestamp = datetime.now(timezone.utc).isoformat()
+    human_msg_dict = {"role": "human", "content": message, "timestamp": timestamp}
+    current_data = _read_chat_data(chat_file)
+    current_data.setdefault("messages", []).append(human_msg_dict)
+    _write_chat_data(chat_file, current_data)
+    logger.info(f"Human: {message}")
+
+    # --- Prepare for LLM Call ---
+    chat_history_dicts = _get_chat_messages(chat_file)
+    active_toolsets = get_active_toolsets(chat_file)
+    lc_messages = _convert_message_dicts_to_langchain(chat_history_dicts)
+    if lc_messages and lc_messages[0].type == "system":
+        logger.debug(f"System prompt (first message): {lc_messages[0].content[:200]}...") # Log beginning
+    else:
+        logger.warning("No system prompt found as the first message in history.")
+
+    llm_instance = get_llm(active_toolsets=active_toolsets)
+
+    try:
+        # --- Invoke LLM ---
+        ai_response = llm_instance.invoke(lc_messages)
+        logger.info(f"AI Raw Response Content: {ai_response.content}")
+        logger.debug(f"AI Full Response Object: {ai_response}")
+
+        # --- Save AI response ---
+        ai_msg_dict = {
+            "role": "ai",
+            "content": ai_response.content,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        if hasattr(ai_response, "tool_calls") and ai_response.tool_calls:
+            # Ensure tool calls are serializable (should be list of dicts)
             try:
-                tool_messages = _handle_tool_calls(ai_response)
-            except ValueError as e:
-                if "Unknown tool" in str(e):
-                    current_messages = _prune_unmatched_tool_calls(current_messages)
-                    error_message = AIMessage(content=f"Error: {e}")
-                    tool_messages = [error_message]
-                    #this can cause potential infinite loop with costs
-                    #i'm going to hand over to user for now, until depth of recursion is implemented
-                    user = input(f"{e}\nYou can press Enter to let it retry or type 'exit' to break for now.\n\
-                        You will be able to return to this converation execpt for the latest messages.\n User: ")
-                    if user == "exit":
-                        break
-                    else:
-                        pass
-                else:
-                    logger.error(f"Error handling tool calls: {e}")
-                    raise e
-            current_messages.extend(tool_messages)
-        else:
-            logger.info(f"AI: {ai_response.content}")
-            break
-    _write_chat_data(chat_file, current_messages, current_aider_state)
-    return ai_response.content
+                # Langchain tool_calls are typically already serializable list[dict]
+                ai_msg_dict["tool_calls"] = ai_response.tool_calls
+                logger.debug(f"AI response included tool calls: {ai_response.tool_calls}")
+            except TypeError as json_err:
+                logger.error(f"Could not serialize tool_calls: {json_err}. Storing empty list.")
+                ai_msg_dict["tool_calls"] = []
 
-def start_temp_chat(message: str) -> str:
-    """
-    Starts a temporary (in-memory) chat session with the default system prompt,
-    appends the human message and the AI response (powered by ChatOpenAI with bound tools),
-    and returns the final AI response.
-    
-    This function now uses a loop to process tool calls until no further tool calls
-    are returned, ensuring that the final LLM response is obtained.
-    
-    Parameters:
-      message (str): The initial message for the temporary chat.
-      
-    Returns:
-      str: The final AI's response.
-    """
-    console_session_id = _get_console_session_id()
-    logger.debug(f"Console session ID: {console_session_id}")
-    chat_file = create_or_load_chat(console_session_id)
-    logger.debug(f"Chat file: {chat_file}")
-    
-    current_messages, current_aider_state = _read_chat_data(chat_file)
-    logger.debug(f"Messages: {current_messages}")
-    if not any(isinstance(msg, SystemMessage) for msg in current_messages):
-        config = _read_json(CONFIG_FILE)
-        logger.debug(f"Config: {config}")
-        default_prompt = config.get("default_system_prompt", default_system_prompt)
-        current_messages.insert(0, SystemMessage(content=default_prompt))
-    
-    human_message_count = sum(1 for msg in current_messages if isinstance(msg, HumanMessage))
-    human_index = human_message_count + 1
-    
-    current_messages.append(HumanMessage(content=message))
-    logger.debug(f"User[{human_index}]: {message}")
-    
-    llm = _get_llm()
-    logger.debug(f"LLM: {llm}")
-    
-    # Loop to process tool calls until no tool calls are returned
-    while True:
-        ai_response: AIMessage = llm.invoke(convert_to_openai_messages(current_messages))
-        logger.debug(f"AI response: {ai_response}")
-        current_messages.append(ai_response)
-        if ai_response.tool_calls and len(ai_response.tool_calls) > 0:
-            try:
-                tool_messages = _handle_tool_calls(ai_response)
-            except ValueError as e:
-                if "Unknown tool" in str(e):
-                    current_messages = _prune_unmatched_tool_calls(current_messages)
-                    error_message = AIMessage(content=f"Error: {e}")
-                    tool_messages = [error_message]
-                    #this can cause potential infinite loop with costs
-                    #i'm going to hand over to user for now, until depth of recursion is implemented
-                    user = input(f"{e}\nYou can press Enter to let it retry or type 'exit' to break for now.\n\
-                        You will be able to return to this converation execpt for the latest messages.\n User: ")
-                    if user == "exit":
-                        break
-                    else:
-                        pass
-                else:
-                    logger.error(f"Error handling tool calls: {e}")
-                    raise e
-            current_messages.extend(tool_messages)
-        else:
-            logger.info(f"AI: {ai_response.content}")
-            break
-    
-    set_current_chat(chat_file)
-    _write_chat_data(chat_file, current_messages, current_aider_state)
-    return ai_response.content
+        current_data = _read_chat_data(chat_file) # Re-read data before write
+        current_data.setdefault("messages", []).append(ai_msg_dict)
+        _write_chat_data(chat_file, current_data) # Save AI response
 
-def edit_message(index: Optional[int], new_message: str) -> bool:
+        # Print AI response content to user
+        print(ai_response.content) # Print message content regardless of tool calls
+
+        # --- Handle Tool Calls ---
+        if hasattr(ai_response, "tool_calls") and ai_response.tool_calls:
+            tool_messages = _handle_tool_calls(ai_response, chat_file)
+
+            # Save tool messages to chat history and print results
+            if tool_messages: # Only proceed if tool handling produced messages
+                current_data = _read_chat_data(chat_file) # Re-read data again before write
+                tool_message_dicts = []
+                for tool_msg in tool_messages:
+                    tool_msg_dict = {
+                        "role": "tool",
+                        "content": tool_msg.content,
+                        "tool_call_id": tool_msg.tool_call_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    tool_message_dicts.append(tool_msg_dict)
+
+                    # Print tool result/signal
+                    if isinstance(tool_msg.content, str) and tool_msg.content.startswith(SIGNAL_PROMPT_NEEDED):
+                        prompt_details = tool_msg.content[len(SIGNAL_PROMPT_NEEDED):].strip()
+                        print(f"\n[Code Editor Input Required]: {prompt_details}")
+                    else:
+                        tool_name_for_print = next((tc.get("name") for tc in ai_response.tool_calls if tc.get("id") == tool_msg.tool_call_id), "Unknown Tool")
+                        print(f"\n[Tool Result - {tool_name_for_print} ({tool_msg.tool_call_id})]:\n{tool_msg.content}")
+
+
+                current_data.setdefault("messages", []).extend(tool_message_dicts)
+                _write_chat_data(chat_file, current_data) # Save data with tool results
+
+    except Exception as e:
+        logger.error(f"Error during LLM interaction or tool handling: {e}")
+        logger.error(traceback.format_exc())
+        print(f"An error occurred: {e}")
+
+
+def start_temp_chat(message: str) -> None:
     """
-    Edits a previous message at the given index and truncates subsequent messages.
-    If no index is provided, edits the last human message.
-    
-    Parameters:
-      index (int, optional): The index of the message to edit. If None, edits the last human message.
-      new_message (str): The new content for the message.
-      
-    Returns:
-      bool: True if successful, False otherwise.
+    Starts a temporary chat session with the given message.
+    Uses state manager's create_or_load_chat which initializes prompt/toolsets.
     """
-    chat_file = load_session()
-    logger.debug(f"Chat file: {chat_file}")
+    console_id = _get_console_session_id() # For potential future use
+    chat_title = f"Temp Chat {int(time.time())}"
+    logger.info(f"Starting temporary chat: {chat_title}")
+    # create_or_load_chat from state_manager handles initial prompt/toolsets
+    chat_file = create_or_load_chat(chat_title)
+    save_session(chat_file) # Set as current session
+    send_message(message) # Send the initial message
+
+
+def edit_message(index: Optional[int], new_message: str) -> None:
+    """
+    Edits a previous message in the chat using state manager helpers.
+    If index is None, edits the last human message.
+    Truncates history and resends the message.
+    """
+    chat_file = get_current_chat()
     if not chat_file:
-        return False
-        
-    messages, current_aider_state = _read_chat_data(chat_file)
-    logger.debug(f"Messages: {messages}")
-    
+        logger.error("No active chat session to edit.")
+        print("No active chat session. Please create or load a chat first.")
+        return
+
+    # Use state manager helper to get messages
+    chat_messages = _get_chat_messages(chat_file)
+
+    target_index = -1
     if index is None:
-        # Find the last human message
-        for i in reversed(range(len(messages))):
-            if isinstance(messages[i], HumanMessage):
-                index = i
+        # Find the last human message index
+        for i in range(len(chat_messages) - 1, -1, -1):
+            if chat_messages[i].get("role") == "human":
+                target_index = i
                 break
-        if index is None:
-            return False
-    
-    if index < 0 or index >= len(messages):
-        return False
-        
-    # truncate messages removing the edited message and all subsequent messages
-    messages = messages[:index]
-    logger.debug(f"Edited messages: {messages}")
-    _write_chat_data(chat_file, messages, current_aider_state)
-    # Send the new message via send_message to trigger complete processing
+        if target_index == -1:
+            logger.error("No human messages found to edit.")
+            print("No previous human message found to edit.")
+            return
+    else:
+        # Validate provided index
+        if not isinstance(index, int) or not (0 <= index < len(chat_messages)):
+            logger.error(f"Message index {index} out of range (0-{len(chat_messages)-1}).")
+            print(f"Error: Message index {index} is out of range.")
+            return
+        # Ensure it's a human message we're editing
+        if chat_messages[index].get("role") != "human":
+            logger.error(f"Cannot edit non-human message at index {index} (role: {chat_messages[index].get('role')}).")
+            print(f"Error: Cannot edit message at index {index} - it's not a user message.")
+            return
+        target_index = index
+
+    # Edit the message in the list (will be saved below)
+    original_content = chat_messages[target_index].get("content")
+    timestamp = datetime.now(timezone.utc).isoformat()
+    edited_message_dict = {
+        "role": "human",
+        "content": new_message,
+        "timestamp": timestamp,
+        "edited": True,
+        "original_content": original_content # Store original for reference
+    }
+
+    # Update chat data using state manager helpers
+    chat_data = _read_chat_data(chat_file) # Read fresh data
+    chat_data["messages"] = chat_data.get("messages", [])[:target_index] # Messages before edit
+    chat_data["messages"].append(edited_message_dict) # Add edited message
+    num_removed = len(chat_messages) - (target_index + 1)
+
+    _write_chat_data(chat_file, chat_data) # Save truncated + edited history
+
+    logger.info(f"Edited message at index {target_index}. Original: '{original_content}', New: '{new_message}'. Removed {num_removed} subsequent messages.")
+    print(f"Message at index {target_index} edited. Removed {num_removed} subsequent messages.")
+
+    # Resend the message to get a new response from the LLM
     send_message(new_message)
-    return True
+
 
 def flush_temp_chats() -> None:
     """Removes all temporary chat sessions."""
-    chat_map = _read_json(CHAT_MAP_FILE)
-    logger.debug(f"Chat map: {chat_map}")
-    # Identify titles beginning with "temp_"
-    to_remove = [title for title in chat_map if title.startswith("temp_")]
-    for title in to_remove:
-        chat_id = chat_map.pop(title)
-        chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
-        if os.path.exists(chat_file):
-            os.remove(chat_file)
-    logger.debug(f"Updated chat map: {chat_map}")
-    _write_json(CHAT_MAP_FILE, chat_map)
+    removed_count = flush_temp_chats_state() # Delegates to state manager
+    print(f"Removed {removed_count} temporary chats.")
 
-# ---------------------------
-# System Prompt Management
-# ---------------------------
-def set_default_system_prompt(prompt_text: str) -> None:
-    """
-    Sets the default system prompt in config.json.
-    
-    Parameters:
-      prompt_text (str): The default system prompt.
-    """
-    config = _read_json(CONFIG_FILE)
-    logger.debug(f"Config: {config}")
-    config["default_system_prompt"] = prompt_text
-    _write_json(CONFIG_FILE, config)
-    logger.info("Default system prompt saved to config.json")
-
-def update_system_prompt(prompt_text: str) -> None:
-    """
-    Updates the system prompt for the active chat session.
-    
-    Parameters:
-      prompt_text (str): The new system prompt.
-    """
-    chat_file = load_session()
-    logger.debug(f"Chat file: {chat_file}")
-    if not chat_file:
-        logger.warning("No active chat session to update.")
-        return
-        
-    messages, current_aider_state = _read_chat_data(chat_file)
-    logger.debug(f"Messages: {messages}")
-    messages.insert(0, SystemMessage(content=prompt_text))
-    _write_chat_data(chat_file, messages, current_aider_state)
-
+# --- Additional Commands ---
 def execute(command: str) -> str:
-    """
-    Executes a shell command directly and adds both command and output 
-    to chat history as a HumanMessage. Creates a temporary chat if no chat is active.
-    
-    Parameters:
-      command (str): The shell command to execute.
-      
-    Returns:
-      str: The command output.
-    """
-    # Get or create chat session
-    chat_file = get_current_chat()
-    logger.debug(f"Chat file: {chat_file}")
-    if not chat_file:
-        logger.info("No active chat session. Starting temporary chat...")
-        console_session_id = _get_console_session_id()
-        chat_file = create_or_load_chat(console_session_id)
-    
-    # Load existing messages and ensure they exist
-    current_messages, current_aider_state = _read_chat_data(chat_file)
-    current_messages = current_messages or []
-    logger.debug(f"Current messages: {current_messages}")
-    
-    # Ensure system prompt exists
-    if not any(isinstance(msg, SystemMessage) for msg in current_messages):
-        config = _read_json(CONFIG_FILE)
-        logger.debug(f"Config: {config}")
-        default_prompt = config.get("default_system_prompt", default_system_prompt)
-        current_messages.insert(0, SystemMessage(content=default_prompt))
-    
-    # Execute command and get output
-    output = direct_windows_shell_tool.invoke({"command": command})
-    logger.debug(f"Command output: {output}")
-    
-    # Append new command message
-    cmd_message = HumanMessage(content=f"CMD> {command}\n{output}")
-    current_messages.append(cmd_message)
-    logger.debug(f"Appended command message: {cmd_message}")
-    
-    # Save complete updated conversation
-    _write_chat_data(chat_file, current_messages, current_aider_state)
-    return output
+    """Executes a shell command directly using the direct terminal tool."""
+    # Import tool only when needed
+    try:
+        from .tools import direct_terminal_tool
+        logger.info(f"Executing direct command: {command}")
+        # Ensure the tool expects args as a dict
+        output = direct_terminal_tool.invoke({"command": command})
+        print(output) # Print output to console
+        return output
+    except ImportError:
+        logger.error("Could not import direct_terminal_tool.")
+        return "Error: Direct terminal tool not available."
+    except Exception as e:
+        logger.error(f"Error executing direct command '{command}': {e}")
+        error_msg = f"Error executing command: {e}"
+        print(error_msg)
+        return error_msg
 
-def list_messages(chat_title:Optional[str]=None):
-    """
-    Prints the chat history for the given chat title.
-    
-    Parameters:
-      chat_title (str, optional): The title of the chat session
-        to print. If not provided, the current chat is used.
-        
-    """
-    if not chat_title:
-        chat_file = get_current_chat()
-        if not chat_file:
-            logger.error("No active chat session to list messages from.")
-            return
-        # Find corresponding title from chat_map
-        chat_map = _read_json(CHAT_MAP_FILE)
-        for t, cid in chat_map.items():
-            if os.path.join(CHAT_DIR, f"{cid}.json") == chat_file:
-                chat_title = t
-                break
 
-    chat_map = _read_json(CHAT_MAP_FILE)
-    logger.debug(f"Chat map: {chat_map}")
-    chat_id = chat_map.get(chat_title, None)
-    if not chat_id:
-        logger.error(f"Chat session not found: {chat_title}")
-        return
-    chat_file = os.path.join(CHAT_DIR, f"{chat_id}.json")
-    current_messages, aider_state = _read_chat_data(chat_file)
-    logger.debug(f"Chat messages: {current_messages}")
-    user_messages = 0
-    for i, msg in enumerate(current_messages):
-        if isinstance(msg, SystemMessage):
-            logger.debug(f"System: {msg.content}")
-        elif isinstance(msg, HumanMessage):
-            logger.info(f"User[{user_messages}]: {msg.content}")
-            user_messages += 1
-        elif isinstance(msg, AIMessage):
-            logger.info(f"AI: {msg.content}")
-        elif isinstance(msg, ToolMessage):
-            logger.info(f"Tool: {msg.content}")
-            
-def current_chat_title():
-    """
-    Prints the title of the current chat session.
-    """
+def list_messages() -> None:
+    """Lists all messages in the current chat."""
     chat_file = get_current_chat()
     if not chat_file:
-        logger.info("No active chat session, you can use the -lsc flag to list all available chat sessions and -lc to load a chat session.")
+        logger.error("No active chat session to list messages.")
+        print("No active chat session. Please create or load a chat first.")
         return
-    chat_map = _read_json(CHAT_MAP_FILE)
-    for title, chat_id in chat_map.items():
-        if os.path.join(CHAT_DIR, f"{chat_id}.json") == chat_file:
-            logger.info(f"Current chat: {title}")
-            return
+
+    # Use state manager helper
+    chat_messages = _get_chat_messages(chat_file)
+
+    if not chat_messages:
+        print("No messages in the current chat.")
+        return
+
+    print("\n--- Chat History ---")
+    titles = {
+        "system": "System",
+        "human": "Human",
+        "ai": "Assistant",
+        "tool": "Tool",
+    }
+
+    for i, msg in enumerate(chat_messages):
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        timestamp = msg.get("timestamp", "") # Get timestamp if available
+
+        print(f"\n[{i}] {titles.get(role, role.capitalize())} ({timestamp}):") # Display timestamp
+
+        # Handle potential non-string content (e.g., structured tool output if not stringified)
+        if not isinstance(content, str):
+            try:
+                content_str = json.dumps(content, indent=2)
+            except TypeError:
+                content_str = str(content)
+        else:
+            content_str = content
+
+        # Truncate long messages for display only
+        display_content = content_str
+        if len(display_content) > 500:
+            display_content = display_content[:500] + "..."
+
+        print(display_content)
+
+        # Show tool calls if present on AI message
+        if role == "ai" and "tool_calls" in msg:
+            tool_calls = msg.get("tool_calls", [])
+            if tool_calls:
+                print("  [Tool Calls Initiated]:")
+                for tc in tool_calls:
+                    tool_name = tc.get('name', 'unknown_tool')
+                    tool_args = tc.get('args', {})
+                    tool_id = tc.get('id', 'no_id')
+                    print(f"    - Tool: {tool_name}, Args: {tool_args}, ID: {tool_id}")
+        # Show tool call ID if present on Tool message
+        elif role == "tool" and "tool_call_id" in msg:
+            tool_call_id = msg.get("tool_call_id")
+            print(f"  [For Tool Call ID]: {tool_call_id}")
+
+    print("\n--- End of History ---")
+
+
+def current_chat_title() -> None:
+    """Prints the title of the current chat."""
+    # Delegates to state manager
+    title = get_current_chat_title()
+    if title:
+        print(f"Current chat: {title}")
+    else:
+        print("No active chat session.")

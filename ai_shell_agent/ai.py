@@ -104,22 +104,24 @@ def ensure_api_keys_for_coder_models() -> None:
             logger.info(f"API key needed for {weak_model}")
             set_api_key_for_model(weak_model)
 
+# --- Import from chat_manager ---
 from .chat_manager import (
-    create_or_load_chat,
-    get_chat_titles_list,
-    rename_chat,
-    delete_chat,
-    load_session,
-    save_session,
-    send_message,
-    edit_message,
-    start_temp_chat,
-    set_default_system_prompt,
-    update_system_prompt,
-    flush_temp_chats,
-    execute,
-    list_messages,
-    current_chat_title
+    # create_or_load_chat,     # REMOVED - Using state manager version directly
+    get_chat_titles_list,    
+    rename_chat,             
+    delete_chat,             
+    save_session,            # Used to set the active session file
+    send_message,            
+    edit_message,            
+    start_temp_chat,         
+    flush_temp_chats,        
+    execute,                 
+    list_messages,           
+    current_chat_title       
+)
+# --- Import directly from state manager ---
+from .chat_state_manager import (
+    create_or_load_chat as create_or_load_chat_state # Use state manager directly for chat creation/loading
 )
 
 # ---------------------------
@@ -151,10 +153,6 @@ def main():
     parser.add_argument("-lsc", "--list-chats", action="store_true", help="List all available chat sessions")
     parser.add_argument("-rnc", "--rename-chat", nargs=2, metavar=("OLD_TITLE", "NEW_TITLE"), help="Rename a chat session")
     parser.add_argument("-delc", "--delete-chat", help="Delete a chat session with the specified title")
-    
-    # System prompt management
-    parser.add_argument("--default-system-prompt", help="Set the default system prompt for new chats")
-    parser.add_argument("--system-prompt", help="Update the system prompt for the active chat session")
     
     # Messaging commands
     parser.add_argument("-m", "--send-message", help="Send a message to the active chat session")
@@ -221,8 +219,12 @@ def main():
 
     # Chat session management
     if args.chat:
-        chat_file = create_or_load_chat(args.chat)
-        save_session(chat_file)
+        # Use state manager's function directly for creation/loading
+        chat_file = create_or_load_chat_state(args.chat)
+        if chat_file: # Check if creation/load was successful
+             save_session(chat_file) # Set as active session using chat_manager helper
+             print(f"Switched to chat: '{args.chat}'")
+        # else: Error handled within create_or_load_chat_state
         return
     
     if args.current_chat_title:
@@ -230,8 +232,12 @@ def main():
         return
 
     if args.load_chat:
-        chat_file = create_or_load_chat(args.load_chat)
-        save_session(chat_file)
+        # Use state manager's function directly for loading
+        chat_file = create_or_load_chat_state(args.load_chat)
+        if chat_file:
+             save_session(chat_file) # Set as active session
+             print(f"Switched to chat: '{args.load_chat}'")
+        # else: Error handled within create_or_load_chat_state
         return
 
     if args.list_chats:
@@ -245,15 +251,6 @@ def main():
 
     if args.delete_chat:
         delete_chat(args.delete_chat)
-        return
-
-    # System prompt management
-    if args.default_system_prompt:
-        set_default_system_prompt(args.default_system_prompt)
-        return
-
-    if args.system_prompt:
-        update_system_prompt(args.system_prompt)
         return
 
     # Messaging commands
@@ -287,13 +284,13 @@ def main():
     if args.list_messages:
         list_messages()
         return
+        
     # Fallback: if a message is provided without other commands, send it to current chat
     if args.message:
-        # Use send_message which handles chat history properly
         send_message(args.message)
         return
     else:
-        logger.info("No command provided. Use --help for options.")
+        parser.print_help()
         return
 
 if __name__ == "__main__":
