@@ -26,7 +26,7 @@ from .config_manager import (
 from .chat_state_manager import (
     create_or_load_chat, # Updated name
     save_session, get_current_chat, get_enabled_toolsets, update_enabled_toolsets,
-    get_active_toolsets, _update_message_in_chat, # Keep for edit/select-tools
+    get_active_toolsets, # Keep for edit/select-tools
     get_current_chat_title # Updated name
 )
 # --- Import chat manager AFTER state manager ---
