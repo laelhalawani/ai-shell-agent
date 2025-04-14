@@ -1,9 +1,9 @@
 # ai_shell_agent/llm.py
 """
 Handles LLM instantiation, configuration, and dynamic tool binding
-based on active toolsets.
+based on enabled/active toolsets for the current chat.
 """
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage # For type hinting if needed later
@@ -14,122 +14,116 @@ from langchain_core.tools import BaseTool
 
 from . import logger
 from .config_manager import get_current_model, get_model_provider
-from .tool_registry import get_all_tools_dict, get_tool, get_all_tools # Import registry functions
-
-# --- Toolset Definitions ---
-# Tool names MUST match the 'name' attribute of the tool classes
-TOOLSET_MEMBERS: Dict[str, List[str]] = {
-    "Terminal": [
-        "terminal",             # TerminalTool_HITL
-        "python_repl",          # PythonREPLTool
-        # "shell_windows_direct" # Keep internal? Or add if LLM needs direct exec? For now, keep out.
-    ],
-    "File Editor": [
-        "include_file",         # AddFileTool
-        "exclude_file",         # DropFileTool
-        "list_files",           # ListFilesInEditorTool
-        "request_edit",         # RunCodeEditTool
-        "submit_editor_input",  # SubmitCodeEditorInputTool
-        "view_diff",            # ViewDiffTool
-        "undo_last_edit",       # UndoLastEditTool
-        "close_file_editor",    # CloseCodeEditorTool
-    ]
-    # Add more toolsets here (e.g., "FileSystem": ["list_dir", "read_file", ...])
-}
-
-# Maps toolset name to the *name* of its starter tool
-TOOLSET_STARTERS: Dict[str, str] = {
-    "Terminal": "start_terminal",    # To be created
-    "File Editor": "start_file_editor", # Exists in aider_integration.py
-}
+# Import toolset registry and state manager functions
+from .toolsets.toolsets import get_registered_toolsets, ToolsetMetadata # Correct import
+from .chat_state_manager import get_current_chat, get_enabled_toolsets, get_active_toolsets # Correct import
 
 # --- LLM Instantiation and Binding ---
 
-def get_llm(active_toolsets: Optional[List[str]] = None) -> BaseChatModel:
+def get_llm() -> BaseChatModel:
     """
     Get the LLM instance based on the current model configuration,
-    binding tools dynamically based on the active toolsets.
-
-    Args:
-        active_toolsets: A list of names of the currently active toolsets.
+    binding tools dynamically based on the enabled/active toolsets
+    for the *current chat session*.
 
     Returns:
-        A configured LangChain BaseChatModel instance with tools bound.
+        A configured LangChain BaseChatModel instance with appropriate tools bound.
+        Returns LLM without tools if no chat session or no tools applicable.
     """
-    if active_toolsets is None:
-        active_toolsets = []
-        logger.debug("No active toolsets provided, defaulting to empty list")
+    chat_file = get_current_chat()
+    if not chat_file:
+        logger.warning("get_llm called without an active chat session. Returning LLM without tools.")
+        enabled_toolsets_names = []
+        active_toolsets_names = []
     else:
-        logger.info(f"Preparing LLM with active toolsets: {active_toolsets}")
+        # Fetch current state for this specific LLM invocation
+        # Use display names from state manager
+        enabled_toolsets_names = get_enabled_toolsets(chat_file)
+        active_toolsets_names = get_active_toolsets(chat_file)
 
-    # Use set for faster lookups
-    active_toolsets = set(active_toolsets)
+    logger.info(f"Preparing LLM for chat '{chat_file or 'None'}'. Enabled: {enabled_toolsets_names}, Active: {active_toolsets_names}")
 
     model_name = get_current_model()
     provider = get_model_provider(model_name)
-    all_tools_dict = get_all_tools_dict() # Get all registered tools
+    all_registered_toolsets: Dict[str, ToolsetMetadata] = get_registered_toolsets() # Dict[id, ToolsetMetadata]
 
     bound_tools: List[BaseTool] = []
-    bound_tool_names: set[str] = set() # Keep track of added tools
+    bound_tool_names: Set[str] = set() # Track names to avoid duplicates
 
-    logger.debug(f"Available registered tools: {list(all_tools_dict.keys())}")
+    enabled_set = set(enabled_toolsets_names) # Set of display names
+    active_set = set(active_toolsets_names) # Set of display names
 
-    # 1. Add tools from ACTIVE toolsets
-    for toolset_name in active_toolsets:
-        if toolset_name in TOOLSET_MEMBERS:
-            logger.debug(f"Processing active toolset: '{toolset_name}'")
-            for tool_name in TOOLSET_MEMBERS[toolset_name]:
-                tool = all_tools_dict.get(tool_name)
-                if tool and tool_name not in bound_tool_names:
-                    logger.debug(f"Adding active tool: '{tool_name}' from toolset '{toolset_name}'")
-                    bound_tools.append(tool)
-                    bound_tool_names.add(tool_name)
-                elif not tool:
-                    logger.warning(f"Tool '{tool_name}' in active toolset '{toolset_name}' not found in registry.")
+    # Iterate through registered toolsets to decide which tools to bind
+    for toolset_id, metadata in all_registered_toolsets.items():
+        toolset_name = metadata.name # Use display name for checking against state
+        if toolset_name in enabled_set:
+            tools_to_bind_for_this_set = []
+            if toolset_name in active_set:
+                # Toolset is Enabled and Active: Bind its main tools AND the closer tool
+                logger.debug(f"Adding tools for active toolset: '{toolset_name}'")
+                tools_to_bind_for_this_set.extend(metadata.tools) # Add all main tools
+
+                # Add closer tool (convention: close_<toolset_id>) if exists
+                closer_tool_name = f"close_{toolset_id}"
+                # Check if closer tool is in the list of tools for this toolset
+                closer_tool_instance = next((t for t in metadata.tools if t.name == closer_tool_name), None)
+                 # Special case for File Editor closer
+                if metadata.id == "aider": closer_tool_instance = next((t for t in metadata.tools if t.name == "close_file_editor"), None)
+
+                if closer_tool_instance:
+                     # We expect the closer to be *part* of metadata.tools, so it should already be included.
+                     # Log if found, but no need to add again unless it wasn't in the list somehow.
+                     logger.debug(f"  - Closer tool '{closer_tool_instance.name}' identified.")
+                     if closer_tool_instance not in tools_to_bind_for_this_set:
+                          logger.warning(f"  - Adding closer tool {closer_tool_instance.name} explicitly (was missing from tool list?)")
+                          tools_to_bind_for_this_set.append(closer_tool_instance)
                 else:
-                    logger.debug(f"Tool '{tool_name}' already added, skipping duplicate")
-        else:
-            logger.warning(f"Unknown toolset name: '{toolset_name}' (not defined in TOOLSET_MEMBERS)")
+                     logger.debug(f"  - No conventional closer tool found for '{toolset_name}'.")
 
-    # 2. Add STARTER tools for INACTIVE toolsets
-    for toolset_name, starter_tool_name in TOOLSET_STARTERS.items():
-         if toolset_name not in active_toolsets:
-             logger.debug(f"Processing inactive toolset: '{toolset_name}' with starter tool: '{starter_tool_name}'")
-             tool = all_tools_dict.get(starter_tool_name)
-             if tool and starter_tool_name not in bound_tool_names:
-                 logger.debug(f"Adding starter tool: '{starter_tool_name}' for inactive toolset '{toolset_name}'")
-                 bound_tools.append(tool)
-                 bound_tool_names.add(starter_tool_name)
-             elif not tool:
-                 logger.warning(f"Starter tool '{starter_tool_name}' for toolset '{toolset_name}' not found in registry.")
-             else:
-                 logger.debug(f"Starter tool '{starter_tool_name}' already added, skipping duplicate")
+            else:
+                # Toolset is Enabled but Inactive: Bind only its starter tool
+                if metadata.start_tool:
+                    logger.debug(f"Adding starter tool for inactive enabled toolset: '{toolset_name}'")
+                    tools_to_bind_for_this_set.append(metadata.start_tool)
+                else:
+                     logger.debug(f"Toolset '{toolset_name}' is enabled but has no starter tool defined.")
 
-    # Convert selected tools to the format expected by the LLM provider
-    if not bound_tools:
-         logger.warning("No tools could be bound to the LLM based on active/inactive toolsets.")
-         # Decide behavior: return LLM without tools or raise error? Let's return without tools.
-
-    tool_functions = [convert_to_openai_function(t) for t in bound_tools]
-    
-    logger.info(f"Final tools bound to LLM ({len(bound_tools)}): {[t.name for t in bound_tools]}")
+            # Add the selected tools for this set to the main list, checking duplicates
+            for tool in tools_to_bind_for_this_set:
+                if tool.name not in bound_tool_names:
+                    logger.debug(f"  - Binding tool: {tool.name}")
+                    bound_tools.append(tool)
+                    bound_tool_names.add(tool.name)
+                # else: Tool already bound from another set (less likely with this structure)
 
     # Instantiate the LLM
     llm: BaseChatModel
+    temperature = 0.1
     if provider == "openai":
-        logger.debug(f"Using OpenAI provider with model: {model_name}")
-        llm = ChatOpenAI(model=model_name)
+        logger.debug(f"Using OpenAI provider with model: {model_name}, temp={temperature}")
+        llm = ChatOpenAI(model=model_name, temperature=temperature)
     elif provider == "google":
-        logger.debug(f"Using Google provider with model: {model_name}")
-        llm = ChatGoogleGenerativeAI(model=model_name)
+        logger.debug(f"Using Google provider with model: {model_name}, temp={temperature}")
+        llm = ChatGoogleGenerativeAI(model=model_name, convert_system_message_to_human=True, temperature=temperature)
     else:
-        logger.warning(f"Unsupported provider '{provider}' for model '{model_name}'. Defaulting to OpenAI.")
-        llm = ChatOpenAI(model=model_name) # Default fallback
+        logger.warning(f"Unsupported provider '{provider}'. Defaulting to OpenAI.")
+        llm = ChatOpenAI(model=model_name, temperature=temperature)
 
-    # Bind the tools
-    if tool_functions:
-        logger.debug(f"Binding {len(tool_functions)} tools to LLM")
-        return llm.bind_tools(tool_functions)
+    # Bind the selected tools
+    if bound_tools:
+        logger.info(f"Final tools bound to LLM ({len(bound_tools)}): {sorted(list(bound_tool_names))}")
+        try:
+             # Recommended method for models supporting native tool calling
+             return llm.bind_tools(tools=bound_tools)
+        except TypeError as e:
+             logger.error(f"Failed bind_tools (model: {model_name}): {e}. Trying fallback.", exc_info=True)
+             try: # Fallback using older method with OpenAI format tools
+                 from langchain_core.utils.function_calling import convert_to_openai_tool
+                 openai_tools = [convert_to_openai_tool(t) for t in bound_tools]
+                 return llm.bind(tools=openai_tools) # Might work for some models/versions
+             except Exception as bind_e:
+                 logger.error(f"Fallback tool binding failed: {bind_e}. Returning LLM without tools.", exc_info=True)
+                 return llm # Return raw LLM if all binding fails
     else:
-        logger.warning("No tools were bound to the LLM - returning raw LLM instance")
-        return llm # Return LLM without tools if none were selected/found
+        logger.warning("No tools were bound to the LLM for this chat/state.")
+        return llm # Return LLM without tools

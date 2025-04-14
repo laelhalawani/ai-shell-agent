@@ -1,11 +1,12 @@
-# ai_shell_agent/prompts/terminal_prompt.py
+# ai_shell_agent/toolsets/terminal/prompts.py
 """
 Contains prompt fragments related to using the Terminal toolset.
 Includes OS-specific instructions.
+This content is returned as a ToolMessage when the toolset is activated.
 """
 import platform
 
-OS_SYSTEM = platform.system() # Use platform.system() for broader compatibility 
+OS_SYSTEM = platform.system()
 
 TERMINAL_TOOLSET_INTRO = """\
 Terminal allows you to execute commands directly in the user's system.
@@ -134,10 +135,12 @@ Once identified, use the appropriate command syntax for that system.
 Remember to use the `terminal` tool for execution.
 """
 
+
 def get_terminal_guidance() -> str:
     """Returns OS-specific terminal guidance."""
     if OS_SYSTEM == "Windows":
-        return WINDOWS_CMD_GUIDANCE
+        # Provide both CMD and PowerShell hints as Powershell is common
+        return WINDOWS_CMD_GUIDANCE + "\n" + WINDOWS_POWERSHELL_GUIDANCE
     elif OS_SYSTEM == "Linux":
         return LINUX_BASH_GUIDANCE
     elif OS_SYSTEM == "Darwin": # Darwin is the system name for macOS
@@ -145,4 +148,5 @@ def get_terminal_guidance() -> str:
     else:
         return UNKNOWN_SYSTEM_GUIDANCE
 
-TERMINAL_PROMPT_SNIPPET = TERMINAL_TOOLSET_INTRO + get_terminal_guidance()
+# Combine intro with OS-specific guidance for the final message
+TERMINAL_TOOLSET_PROMPT = TERMINAL_TOOLSET_INTRO + "\n" + get_terminal_guidance()
