@@ -6,7 +6,7 @@ import tempfile
 import shutil
 from unittest.mock import patch, MagicMock
 
-from ai_shell_agent.aider_integration import (
+from ai_shell_agent.aider_integration_and_tools import (
     AiderIOStub,
     recreate_coder,
     update_aider_from_coder,

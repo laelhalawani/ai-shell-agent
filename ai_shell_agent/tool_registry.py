@@ -25,6 +25,7 @@ def register_tool(tool: BaseTool):
             _tools_functions.append(convert_to_openai_function(tool))
             # Consider adding logging here if desired
             # print(f"Registered tool: {tool.name}") # DEBUG
+            logger.debug(f"Registered tool: {tool.name}")
 
 def register_tools(tools_list: List[BaseTool]):
     """Registers multiple tools."""
@@ -35,6 +36,7 @@ def register_tools(tools_list: List[BaseTool]):
                 _tools_dict[tool.name] = tool
                 _tools_functions.append(convert_to_openai_function(tool))
                 # print(f"Registered tool: {tool.name}") # DEBUG
+                logger.debug(f"Registered tool: {tool.name}")
 
 def get_tool(name: str) -> BaseTool | None:
     """Gets a tool by name."""

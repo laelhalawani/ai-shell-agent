@@ -7,6 +7,8 @@ AI_EDITOR_TOOLSET_INTRO = """\
 
 You have access to an 'AI Editor' toolset for code and text file manipulation.
 This toolset allows you to add files to a context, request edits using natural language, view changes (diffs), and undo edits.
+It can work with most text files but is especally effective with code files (Python, JavaScript, etc.)
+If you are in a directory containing a git repository, the editor will automatically detect it and use git for version control.
 
 Key Tools & Workflow:
 1.  **`include_file`**: Add a file (using its relative or absolute path) to the editor's context. You MUST include files before editing.

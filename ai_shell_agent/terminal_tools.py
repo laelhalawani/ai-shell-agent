@@ -157,7 +157,7 @@ class TerminalTool_Direct(BaseTool):
 
 # --- Tool instances ---
 start_terminal_tool = StartTerminalTool() # NEW INSTANCE
-python_repl_tool = PythonREPLTool()
+python_repl_tool = PythonREPLTool(name="python_repl")
 interactive_terminal_tool = TerminalTool_HITL()
 direct_terminal_tool = TerminalTool_Direct() # Still useful for direct -x execution maybe
 
@@ -166,7 +166,7 @@ def run_python_code(code: str) -> str:
     return python_repl_tool.invoke({"command": code})
 
 # --- List of base tools defined in THIS file ---
-base_tools_in_this_file = [
+terminal_tools = [
     start_terminal_tool, # ADDED
     interactive_terminal_tool,
     python_repl_tool,
@@ -175,5 +175,5 @@ base_tools_in_this_file = [
 
 # --- Register the base tools at the end of the file ---
 # Ensure this runs after all tool instances are created
-register_tools(base_tools_in_this_file)
-logger.debug(f"Registered {len(base_tools_in_this_file)} base tools from tools.py.")
+register_tools(terminal_tools)
+logger.debug(f"Registered {len(terminal_tools)} base tools from tools.py.")

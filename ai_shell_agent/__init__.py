@@ -4,7 +4,7 @@ import logging
 # Set up logging
 logger = logging.getLogger("ai_shell_agent")
 logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(levelname)s: %(message)s")
+formatter = logging.Formatter("%(levelname)s [%(filename)s:%(funcName)s]: %(message)s")
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)

@@ -3,13 +3,13 @@ Chat session management module for AI Shell Agent.
 Handles chat sessions, history, and the conversation flow with the LLM.
 """
 # Standard imports
-import os
+#import os
 import json
-import uuid
+#import uuid
 import traceback
 from typing import Dict, List, Optional, Any, Union, Tuple
 from datetime import datetime, timezone
-from pathlib import Path
+#from pathlib import Path
 import time
 
 # External imports
@@ -20,11 +20,11 @@ from langchain_core.messages import (
     BaseMessage,
     ToolMessage
 )
-from langchain_core.utils.function_calling import convert_to_openai_function
+#from langchain_core.utils.function_calling import convert_to_openai_function
 
 # Local imports
 from . import logger
-from .config_manager import get_current_model, get_model_provider
+#from .config_manager import get_current_model, get_model_provider
 
 # --- Import necessary components from the state manager ---
 from .chat_state_manager import (
@@ -45,7 +45,7 @@ from .chat_state_manager import (
 )
 
 # --- Import ONLY what's needed from aider_integration and the new registry ---
-from .aider_integration import get_active_coder_state, SIGNAL_PROMPT_NEEDED # Removed unused start_code_editor_tool import
+from .aider_integration_and_tools import get_active_coder_state, SIGNAL_PROMPT_NEEDED # Removed unused start_code_editor_tool import
 from .tool_registry import get_all_tools_dict, get_all_openai_functions, get_all_tools
 
 # --- Import the new LLM and Prompt builders ---
@@ -396,7 +396,7 @@ def execute(command: str) -> str:
     """Executes a shell command directly using the direct terminal tool."""
     # Import tool only when needed
     try:
-        from .tools import direct_terminal_tool
+        from .terminal_tools import direct_terminal_tool
         logger.info(f"Executing direct command: {command}")
         # Ensure the tool expects args as a dict
         output = direct_terminal_tool.invoke({"command": command})
