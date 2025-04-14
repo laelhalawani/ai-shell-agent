@@ -44,52 +44,71 @@ from .prompts.prompts import build_prompt
 # --- Tool Classes ---
 
 class StartTerminalTool(BaseTool):
-    """
-    Activates the 'Terminal' toolset, enabling direct shell command execution tools.
-    This might be called automatically or if the toolset was deactivated.
-    """
     name: str = "start_terminal"
-    description: str = "Activates or ensures the 'Terminal' toolset is active, enabling tools like 'terminal' (execute shell commands) and 'python_repl'."
-
-    def _run(self, args: str = "") -> str:
-        """Activates the Terminal toolset and updates the system prompt."""
-        logger.info("StartTerminalTool called with args: %s", args)
+    description: str = "Start using the terminal. This makes the `terminal` command available, which lets you run shell commands on the system."
+    
+    def _run(self, *args, **kwargs) -> str:
+        """
+        Activate the Terminal toolset, making terminal command available.
+        Handles both positional args (e.g. text command) and v__args
+        """
+        # Extract args from either positional args or v__args wrapping
+        command_args = None
+        if args:
+            command_args = args
+        elif 'v__args' in kwargs:
+            # Handle LangChain's v__args wrapping
+            wrapped_args = kwargs.get('v__args', [])
+            if isinstance(wrapped_args, list) and wrapped_args:
+                command_args = wrapped_args
+        
+        # Convert to string for logging
+        args_str = ''
+        if command_args:
+            if isinstance(command_args, (list, tuple)):
+                args_str = ' '.join(map(str, command_args))
+            else:
+                args_str = str(command_args)
+        
+        logger.info(f"StartTerminalTool called with args: {command_args}")
         
         chat_file = get_current_chat()
         if not chat_file:
-            logger.error("No active chat session found when activating Terminal toolset")
             return "Error: No active chat session found."
-
-        current_toolsets = get_active_toolsets(chat_file)
-        logger.debug(f"Current active toolsets before activation: {current_toolsets}")
         
-        toolset_name = "Terminal" # The name defined in llm.py
-
-        if toolset_name in current_toolsets:
-            logger.debug(f"'{toolset_name}' toolset is already active, no action needed")
-            return f"'{toolset_name}' toolset is already active. Tools like 'terminal' and 'python_repl' are available."
-
-        # Activate the toolset
-        new_toolsets = list(current_toolsets)
-        new_toolsets.append(toolset_name)
-        logger.debug(f"Updating active toolsets to: {new_toolsets}")
-        update_active_toolsets(chat_file, new_toolsets) # Save updated toolsets
-
-        # Re-build the system prompt with the new set of active toolsets
-        logger.debug("Rebuilding system prompt with updated toolsets")
-        new_system_prompt = build_prompt(active_toolsets=new_toolsets)
-
-        # Update the system prompt message in the chat history (message 0)
-        # Use the helper function from state manager for safety
-        logger.debug("Updating system prompt in chat history")
-        _update_message_in_chat(chat_file, 0, {"role": "system", "content": new_system_prompt})
-        logger.info(f"Successfully activated '{toolset_name}' toolset for chat {chat_file}")
-
-        return f"'{toolset_name}' toolset activated. You can now use tools like 'terminal' and 'python_repl'."
-
-    async def _arun(self, args: str = "") -> str:
-        # Simple enough to run synchronously
-        return self._run(args)
+        toolset_name = "Terminal"
+        
+        # Update active toolsets
+        current_toolsets = get_active_toolsets(chat_file)
+        toolsets_updated = False
+        
+        if toolset_name not in current_toolsets:
+            new_toolsets = list(current_toolsets) 
+            new_toolsets.append(toolset_name)
+            update_active_toolsets(chat_file, new_toolsets)
+            
+            # Update system prompt
+            new_system_prompt = build_prompt(active_toolsets=new_toolsets)
+            _update_message_in_chat(chat_file, 0, {"role": "system", "content": new_system_prompt})
+            
+            toolsets_updated = True
+            logger.info(f"Successfully activated '{toolset_name}' toolset for chat {chat_file}")
+        
+        # Run an initial command if provided
+        if command_args and args_str:
+            # If a command was provided as an argument, run it
+            # Get the direct terminal tool without activating again (avoid recursion)
+            if hasattr(direct_terminal_tool, '_run'):
+                result = direct_terminal_tool._run(command=args_str)
+                activation_msg = f"Terminal activated. " if toolsets_updated else ""
+                return f"{activation_msg}Command output:\n{result}"
+        
+        # Default return if no command or tools already active
+        return f"Terminal {'activated' if toolsets_updated else 'is already active'}. Use the `terminal` command to run commands."
+            
+    async def _arun(self, *args, **kwargs) -> str:
+        """Run the tool asynchronously."""
+        return self._run(*args, **kwargs)
 
 class TerminalTool_HITL(BaseTool):
     """
@@ -99,11 +118,31 @@ class TerminalTool_HITL(BaseTool):
     name: str = "terminal"
     description: str = """Executes a command in the system's terminal. Use this for cmd/terminal/console/shell commands such as navigation, checking infromation, changing system settings, creating and previewing files and directories, etc."""
     
-    def _run(self, command: str) -> str:
-        """Execute a command in the Windows shell with human verification."""
+    def _run(self, command: str = None, **kwargs) -> str:
+        """Execute a command in the terminal shell with human verification."""
+        # Handle different argument formats
+        cmd_to_execute = command
+        
+        # Check for v__args format from LangChain
+        if command is None and 'v__args' in kwargs:
+            wrapped_args = kwargs.get('v__args', [])
+            if isinstance(wrapped_args, list) and wrapped_args:
+                if isinstance(wrapped_args[0], str):
+                    cmd_to_execute = wrapped_args[0]
+                else:
+                    cmd_to_execute = str(wrapped_args[0])
+        
+        # If still None, check if command is in kwargs (used by invoke)
+        if cmd_to_execute is None and 'command' in kwargs:
+            cmd_to_execute = kwargs.get('command', '')
+            
+        # Return early if no command provided
+        if not cmd_to_execute:
+            return "No command provided to execute."
+            
         # Show proposed command and allow user to edit it
         print(f"\n[Proposed terminal command]:")
-        edited_command = prompt("(Accept or Edit) > ", default=command)
+        edited_command = prompt("(Accept or Edit) > ", default=cmd_to_execute)
         
         # If user provided an empty command, consider it a cancellation
         if not edited_command.strip():
@@ -149,9 +188,9 @@ class TerminalTool_HITL(BaseTool):
         except Exception as e:
             return f"Error executing command: {str(e)}\n\nAttempted to run: {edited_command}"
     
-    async def _arun(self, command: str) -> str:
+    async def _arun(self, command: str = None, **kwargs) -> str:
         """Async implementation simply calls the sync version."""
-        return self._run(command)
+        return self._run(command, **kwargs)
     
     def invoke(self, args: Dict) -> str:
         """Invoke the tool with the given arguments."""
@@ -220,8 +259,9 @@ class PythonREPLTool_HITL(BaseTool):
     
     def _run(
         self,
-        query: str,
+        query: str = None,
         run_manager: Optional[CallbackManagerForToolRun] = None,
+        **kwargs
     ) -> Any:
         """
         HITL version of the tool that allows user to review and edit code before execution.
@@ -229,16 +269,34 @@ class PythonREPLTool_HITL(BaseTool):
         Args:
             query: Python code string to execute
             run_manager: Optional callback manager
+            **kwargs: Additional arguments including v__args
             
         Returns:
             The output from executing the Python code
         """
+        # Handle different argument formats
+        code_to_execute = query
+        
+        # Check for v__args format from LangChain
+        if query is None and 'v__args' in kwargs:
+            wrapped_args = kwargs.get('v__args', [])
+            if isinstance(wrapped_args, list) and wrapped_args:
+                code_to_execute = wrapped_args[0] if isinstance(wrapped_args[0], str) else str(wrapped_args[0])
+        
+        # Check for 'command' parameter (used in invoke)
+        if code_to_execute is None and 'command' in kwargs:
+            code_to_execute = kwargs.get('command', '')
+        
+        # Return early if no code provided
+        if not code_to_execute:
+            return "No Python code provided to execute."
+            
         if self.sanitize_input:
-            query = sanitize_input(query)
+            code_to_execute = sanitize_input(code_to_execute)
             
         # HITL: Show proposed code and allow user to edit
         print(f"\n[Proposed Python code]:")
-        edited_query = prompt("(Accept or Edit) > ", default=query)
+        edited_query = prompt("(Accept or Edit) > ", default=code_to_execute)
         
         # If user provided an empty command, consider it a cancellation
         if not edited_query.strip():
@@ -252,15 +310,13 @@ class PythonREPLTool_HITL(BaseTool):
             
     async def _arun(
         self,
-        query: str,
+        query: str = None,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+        **kwargs
     ) -> Any:
         """Use the tool asynchronously."""
-        # For now, run synchronously in async context
-        if self.sanitize_input:
-            query = sanitize_input(query)
-            
-        return await run_in_executor(None, self._run, query)
+        # For async execution, delegate to the synchronous implementation
+        return await run_in_executor(None, self._run, query, run_manager, **kwargs)
     
     def invoke(self, args: Dict) -> str:
         """High-level interface used by the agent."""

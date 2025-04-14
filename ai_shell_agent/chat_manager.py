@@ -234,7 +234,7 @@ def send_message(message: str) -> None:
     logger.info(f"Human: {message}")
 
     # ReAct loop - continue until we get an AI response without tool calls
-    max_iterations = 15  # Safety limit to prevent infinite loops
+    max_iterations = 1000  # Safety limit to prevent infinite loops
     iteration = 0
     
     while iteration < max_iterations:

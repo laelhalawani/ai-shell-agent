@@ -24,7 +24,7 @@ CHAT_MAP_FILE = os.path.join(CHATS_DIR, "chat_map.json")
 AIDER_STATE_KEY = "_aider_state"
 # NEW: Metadata key for toolsets
 ACTIVE_TOOLSETS_KEY = "active_toolsets"
-DEFAULT_TOOLSETS = ["Terminal"] # Start with Terminal active by default
+DEFAULT_TOOLSETS = [] # Start with Terminal active by default
 
 # Ensure directories exist
 os.makedirs(CHATS_DIR, exist_ok=True)

@@ -49,7 +49,7 @@ from .tool_registry import register_tools, get_all_tools_dict
 
 # --- Constants ---
 SIGNAL_PROMPT_NEEDED = "[FILE_EDITOR_INPUT_NEEDED]"
-
+TIMEOUT = 10 * 60 
 # --- Custom IO Stub ---
 class AiderIOStubWithQueues(InputOutput):
     """
@@ -309,7 +309,38 @@ def remove_active_coder_state(chat_file: str):
         else:
              logger.debug(f"No active Aider session found to remove for {chat_file}")
 
-# --- Aider Coder Recreation/Update ---
+# --- Helper function to recreate active state if missing ---
+def ensure_active_coder_state(chat_file: str) -> Optional[ActiveCoderState]:
+    """
+    Gets the active coder state, recreating it from persistent state if necessary.
+    Returns the state or None if it cannot be obtained/recreated.
+    """
+    state = get_active_coder_state(chat_file)
+    if (state):
+        logger.debug(f"Found existing active coder state for {chat_file}")
+        return state
+
+    logger.info(f"No active coder state found for {chat_file}, attempting recreation.")
+    aider_state_persistent = get_aider_state(chat_file)
+    if not aider_state_persistent or not aider_state_persistent.get("enabled", False):
+        logger.warning(f"Cannot recreate active state: Persistent Aider state not found or disabled for {chat_file}.")
+        return None
+
+    # Recreate the coder instance from persistent state
+    # Need a temporary IO stub just for recreation process if coder needs it internally
+    temp_io_stub = AiderIOStubWithQueues()
+    recreated_coder = recreate_coder(chat_file, temp_io_stub)
+
+    if not recreated_coder:
+        logger.error(f"Failed to recreate Coder from persistent state for {chat_file}.")
+        return None
+
+    # Create and store the new active state using the recreated coder
+    new_state = create_active_coder_state(chat_file, recreated_coder)
+    logger.info(f"Successfully recreated and stored active coder state for {chat_file}")
+    return new_state
+
+
 def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[Coder]:
     """
     Recreates the Aider Coder instance from saved persistent state.
@@ -318,7 +349,7 @@ def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[C
     try:
         # First check if there's an active coder state for this chat file
         active_state = get_active_coder_state(chat_file)
-        if active_state and active_state.coder:
+        if (active_state and active_state.coder):
             # If we have an active coder instance, just return it
             # But make sure it uses the provided io_stub
             if active_state.coder.io is not io_stub:
@@ -761,85 +792,62 @@ class AddFileTool(BaseTool):
     description: str = "Before the File Editor can edit any file, they need to be included in the editor's context. Argument must be the relative or absolute file path to add."
     
     def _run(self, file_path: str) -> str:
-        """Adds a file to the Aider context."""
-        # Update the imports to use chat_state_manager instead of chat_manager
-        from .chat_state_manager import get_current_chat, get_aider_state, save_aider_state
-        
+        """Adds a file to the Aider context, recreating state if needed."""
         chat_file = get_current_chat()
         if not chat_file:
             return "Error: No active chat session found."
-        
-        # First try to use the active coder state if it exists
-        active_state = get_active_coder_state(chat_file)
-        if active_state and active_state.coder:
-            coder = active_state.coder
-            io_stub = active_state.io_stub
-        else:
-            # If no active coder state, recreate from aider state
-            aider_state = get_aider_state(chat_file)
-            if not aider_state or not aider_state.get("enabled", False):
-                return "Error: Editor not initialized or is closed. Use start_file_editor first."
-                
-            io_stub = AiderIOStubWithQueues()
-            coder = recreate_coder(chat_file, io_stub)
-            if not coder:
-                return f"Error: Failed to recreate editor state. {io_stub.get_captured_output()}"
-            
+
+        # --- Ensure active state exists ---
+        state = ensure_active_coder_state(chat_file)
+        if not state:
+            # If state is None after trying to recreate, it means editor isn't properly initialized
+            return "Error: File Editor not initialized or failed to restore state. Use start_file_editor first."
+        # --- End ensure active state ---
+
+        # Now use the ensured state
+        coder = state.coder
+        io_stub = state.io_stub # Use the IO stub from the active state
+
         try:
             abs_path_to_add = str(Path(file_path).resolve())
-            
-            # *** ADDED CHECKS ***
+
+            # *** Checks (remain the same) ***
             if not os.path.exists(abs_path_to_add):
                 return f"Error: File '{file_path}' (resolved to '{abs_path_to_add}') does not exist."
-                
-            if coder.repo and coder.root != os.getcwd():  # Check only if repo exists and isn't just cwd
-                # Use Path.is_relative_to for robust checking if available (Python 3.9+)
+            if coder.repo and coder.root != os.getcwd():
+                # ... (git root checks remain the same) ...
                 try:
                     if hasattr(Path, 'is_relative_to'):
                         if not Path(abs_path_to_add).is_relative_to(Path(coder.root)):
-                            return f"Error: Cannot add file '{file_path}' as it is outside the project root '{coder.root}' when using git."
+                             return f"Error: Cannot add file '{file_path}' outside project root '{coder.root}'."
                     else:
-                        # Fallback for Python < 3.9
-                        rel_path = os.path.relpath(abs_path_to_add, coder.root)
-                        if rel_path.startswith('..'):
-                            return f"Error: Cannot add file '{file_path}' as it is outside the project root '{coder.root}' when using git."
+                         rel_path_check = os.path.relpath(abs_path_to_add, coder.root)
+                         if rel_path_check.startswith('..'):
+                              return f"Error: Cannot add file '{file_path}' outside project root '{coder.root}'."
                 except ValueError:
-                    # Handle case where files are on different drives in Windows
-                    return f"Error: Cannot add file '{file_path}' as it is on a different drive than the project root '{coder.root}'."
-            # *** END CHECKS ***
-            
-            # Get relative path for better output
+                     return f"Error: Cannot add file '{file_path}' on a different drive than project root '{coder.root}'."
+            # *** End Checks ***
+
             rel_path = coder.get_rel_fname(abs_path_to_add)
-            # Now safe to add
-            coder.add_rel_fname(rel_path)
-            
-            # Create or update the active coder state if it doesn't exist
-            if not active_state:
-                logger.info(f"Creating new active coder state for {chat_file}")
-                active_state = create_active_coder_state(chat_file, coder)
-            
-            # Ensure the coder's absf_fnames and active_state have the file
-            if abs_path_to_add not in coder.abs_fnames:
-                logger.warning(f"File {abs_path_to_add} not in coder.abs_fnames after add_rel_fname. Adding manually.")
-                coder.abs_fnames.add(abs_path_to_add)
-            
-            # Update the aider state to persist the change
+            coder.add_rel_fname(rel_path) # This modifies coder.abs_fnames internally
+
+            # Update persistent state to reflect the added file
             update_aider_state_from_coder(chat_file, coder)
-            logger.info(f"Added file {rel_path} and updated both active coder state and persistent state")
-            
-            # Verify the file was properly added
-            aider_state = get_aider_state(chat_file)
-            if aider_state and abs_path_to_add in aider_state.get("abs_fnames", []):
-                return f"Successfully added {rel_path}.\n{io_stub.get_captured_output()}"
+            logger.info(f"Added file {rel_path} and updated persistent state for {chat_file}")
+
+            # Simple verification based on coder's internal state
+            if abs_path_to_add in coder.abs_fnames:
+                return f"Successfully added {rel_path}. {io_stub.get_captured_output()}"
             else:
-                logger.error(f"Failed to verify file {abs_path_to_add} was added to aider state")
-                return f"Warning: File {rel_path} may not have been properly added to persistent state.\n{io_stub.get_captured_output()}"
-            
+                logger.error(f"File {abs_path_to_add} not found in coder.abs_fnames after adding.")
+                return f"Warning: Failed to confirm {rel_path} was added successfully."
+
         except Exception as e:
             logger.error(f"Error in AddFileTool: {e}")
             logger.error(traceback.format_exc())
-            return f"Error adding file {file_path}: {e}.\n{io_stub.get_captured_output()}"
-            
+            # Pass io_stub output along with error
+            return f"Error adding file {file_path}: {e}. {io_stub.get_captured_output()}"
+
     async def _arun(self, file_path: str) -> str:
         return self._run(file_path)
 
@@ -950,9 +958,12 @@ class RunCodeEditTool(BaseTool):
         if not chat_file:
             return "Error: No active chat session found."
 
-        state = get_active_coder_state(chat_file)
+        # --- Ensure active state exists ---
+        state = ensure_active_coder_state(chat_file)
         if not state:
-            return "Error: File Editor not initialized. Use start_file_editor first."
+            # If state is None after trying to recreate, it means editor isn't properly initialized
+            return "Error: File Editor not initialized or failed to restore state. Use start_file_editor first."
+        # --- End ensure active state ---
 
         if not state.coder.abs_fnames:
              return "Error: No files have been added to the editing session. Use include_file first."
@@ -963,9 +974,6 @@ class RunCodeEditTool(BaseTool):
             # Check if a thread is already running for this session
             if state.thread and state.thread.is_alive():
                 logger.warning(f"An edit is already in progress for {chat_file}. Please wait or submit input if needed.")
-                # Optionally return a specific message indicating it's busy
-                # return "[FILE_EDITOR_BUSY] An edit is already in progress."
-                # Or just let the agent figure it out from the lack of progress
                 return "Error: An edit is already in progress for this session."
 
             # Ensure the coder's IO is the correct stub instance from the state
@@ -978,7 +986,7 @@ class RunCodeEditTool(BaseTool):
             state.thread = threading.Thread(
                 target=_run_aider_in_thread,
                 args=(state.coder, instruction, state.output_q),
-                daemon=True, # Make thread daemon so it doesn't block program exit if stuck
+                daemon=True, 
                 name=f"AiderWorker-{chat_file[:8]}"
             )
             state.thread.start()
@@ -991,7 +999,7 @@ class RunCodeEditTool(BaseTool):
         # Wait for the *first* response from the Aider thread
         logger.debug(f"Main thread waiting for initial message from output_q for {chat_file}...")
         try:
-             message = state.output_q.get(timeout=300) # Add a timeout (e.g., 5 minutes)
+             message = state.output_q.get(timeout=TIMEOUT) # Add a timeout (e.g., 5 minutes)
              logger.debug(f"Main thread received initial message: {message.get('type')}")
         except queue.Empty:
              logger.error(f"Timeout waiting for initial Aider response ({chat_file}).")
@@ -1265,10 +1273,12 @@ class SubmitCodeEditorInputTool(BaseTool):
         if not chat_file:
             return "Error: No active chat session found."
 
-        state = get_active_coder_state(chat_file)
+        # --- Ensure active state exists ---
+        state = ensure_active_coder_state(chat_file)
         if not state:
-            # This indicates an agent logic error - trying to submit input when no session active
-            return "Error: No active editor session to submit input to."
+            # If state is None after trying to recreate, it means editor isn't properly initialized
+            return "Error: No active editor session found or state could not be restored."
+        # --- End ensure active state ---
             
         # HITL: Allow the user to review and edit the response before submitting
         print(f"\n[Proposed response to File Editor]:")
@@ -1295,7 +1305,7 @@ class SubmitCodeEditorInputTool(BaseTool):
         logger.debug(f"Main thread waiting for *next* message from output_q for {chat_file}...")
         try:
             # Wait for the Aider thread's *next* action (could be another prompt, result, or error)
-             message = state.output_q.get() # Blocks here
+             message = state.output_q.get(timeout=TIMEOUT) # Added timeout here too
              logger.debug(f"Main thread received message from output_q: {message.get('type')}")
         except queue.Empty:
              logger.error(f"Timeout or queue error waiting for Aider response ({chat_file}).")
@@ -1317,6 +1327,10 @@ class SubmitCodeEditorInputTool(BaseTool):
             default = prompt_data.get('default')
             allow_never = prompt_data.get('allow_never')
 
+            # Update the state before returning the prompt
+            with state.lock:
+                update_aider_state_from_coder(chat_file, state.coder)
+
             response_guidance = f"Aider requires further input. Please respond using 'submit_editor_input'. Prompt: '{question}'"
             if subject: response_guidance += f" (Regarding: {subject[:100]}{'...' if len(subject)>100 else ''})"
             if default: response_guidance += f" [Default: {default}]"
@@ -1334,15 +1348,31 @@ class SubmitCodeEditorInputTool(BaseTool):
              with state.lock: # Re-acquire lock
                   update_aider_state_from_coder(chat_file, state.coder)
                   state.thread = None
-             return f"Edit completed. Output:\n{message.get('content', 'No output captured.')}"
+             return f"Edit completed. {message.get('content', 'No output captured.')}"
 
         elif message_type == 'error':
              logger.error(f"Aider edit failed for {chat_file} after input.")
              error_content = message.get('message', 'Unknown error')
+             
+             # Even on error, try to update state to preserve any partial changes
+             try:
+                 with state.lock:
+                     update_aider_state_from_coder(chat_file, state.coder)
+             except Exception:
+                 pass  # Ignore errors during final state update
+                 
              remove_active_coder_state(chat_file)
              return f"Error during edit:\n{error_content}"
         else:
              logger.error(f"Received unknown message type from Aider thread: {message_type}")
+             
+             # Try to update state before cleanup
+             try:
+                 with state.lock:
+                     update_aider_state_from_coder(chat_file, state.coder)
+             except Exception:
+                 pass  # Ignore errors during final state update
+                 
              remove_active_coder_state(chat_file)
              return f"Error: Unknown response type '{message_type}' from Aider process."
 

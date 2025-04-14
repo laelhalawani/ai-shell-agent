@@ -27,4 +27,5 @@ IMPORTANT:
 - You can add files to the context if they are relevant to the task at hand, even if they don't strictly need to be edited.
 - Ocassionally adtional clarifiation might be requested via `[FILE_EDITOR_INPUT_NEEDED]` signals, in such cases immidiately verify the request and respond directly using `submit_editor_input`.
 - Use `close_file_editor` when the editing task is fully complete to free up resources and context, ensure the user won't need to continue editing these files before closing the editor, otherwise you will need to re-configure the context and describe the task to the editor again.
+- Autonomously all the necessary operations before reporing back to the user.
 """
