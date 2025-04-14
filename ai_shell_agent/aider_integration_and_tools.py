@@ -48,7 +48,7 @@ from .prompts.prompts import build_prompt
 from .tool_registry import register_tools, get_all_tools_dict
 
 # --- Constants ---
-SIGNAL_PROMPT_NEEDED = "[AI_EDITOR_INPUT_NEEDED]"
+SIGNAL_PROMPT_NEEDED = "[FILE_EDITOR_INPUT_NEEDED]"
 
 # --- Custom IO Stub ---
 class AiderIOStubWithQueues(InputOutput):
@@ -564,12 +564,12 @@ def _run_aider_in_thread(coder: Coder, instruction: str, output_q: queue.Queue):
 
 # --- Tool Definitions ---
 class StartAIEditorTool(BaseTool):
-    name: str = "start_ai_editor"
-    description: str = "Activates the 'AI Editor' toolset, enabling tools for code/file editing (include_file, request_edit, etc.). Call this before attempting any file edits."
+    name: str = "start_file_editor"
+    description: str = "Use this to start the file editor, whenever asked to edit contents of any file. The editor works for any text file including advanced code editing. You operate it using natural language commands. More information will be present upon startup."
 
     def _run(self, **kwargs) -> str:
         """
-        Initializes the Aider state, activates the 'AI Editor' toolset,
+        Initializes the Aider state, activates the 'File Editor' toolset,
         and updates the system prompt.
         
         Handles both direct args and v__args wrapper format from LangChain.
@@ -594,7 +594,7 @@ class StartAIEditorTool(BaseTool):
         if not chat_file:
             return "Error: No active chat session found."
 
-        toolset_name = "AI Editor" # The name defined in llm.py
+        toolset_name = "File Editor" # The name defined in llm.py
 
         # --- Toolset Activation & Prompt Update ---
         current_toolsets = get_active_toolsets(chat_file)
@@ -630,14 +630,14 @@ class StartAIEditorTool(BaseTool):
              try:
                  coder = recreate_coder(chat_file, temp_io_stub)
                  if coder:
-                     logger.info(f"Resuming AI Editor session for {chat_file} from persistent state.")
+                     logger.info(f"Resuming File Editor session for {chat_file} from persistent state.")
                      state = create_active_coder_state(chat_file, coder)
                      update_aider_state_from_coder(chat_file, coder) # Update state after recreation
                      recreation_output = temp_io_stub.get_captured_output()
                      if recreation_output: logger.warning(f"Output during coder recreation: {recreation_output}")
 
                      activation_message = f"'{toolset_name}' toolset activated. " if toolsets_updated else ""
-                     return activation_message + f"Resumed existing AI Editor session. Files in context: {', '.join(coder.get_rel_fnames()) or 'None'}. Ready for edits."
+                     return activation_message + f"Resumed existing File Editor session. Files in context: {', '.join(coder.get_rel_fnames()) or 'None'}. Ready for edits."
 
              except Exception as e:
                  logger.error(f"Error attempting to resume Aider session: {e}")
@@ -646,7 +646,7 @@ class StartAIEditorTool(BaseTool):
 
         # Start fresh if no state, or resume failed
         if not coder:
-            logger.info(f"Starting fresh AI Editor session for {chat_file}.")
+            logger.info(f"Starting fresh File Editor session for {chat_file}.")
             clear_aider_state(chat_file) # Clear any invalid old state first
 
             # Determine initial settings using config overrides
@@ -656,7 +656,7 @@ class StartAIEditorTool(BaseTool):
             edit_format = get_aider_edit_format()
             
             if not main_model_name:
-                return "Error: Could not determine the main model for the agent or AI Editor config."
+                return "Error: Could not determine the main model for the agent or File Editor config."
             
             # Ensure API key for the main model
             api_key, env_var = get_api_key_for_model(main_model_name)
@@ -725,7 +725,7 @@ class StartAIEditorTool(BaseTool):
                 update_aider_state_from_coder(chat_file, fresh_coder)
 
                 activation_message = f"'{toolset_name}' toolset activated. " if toolsets_updated else ""
-                return activation_message + "New AI Editor session started. Please add files using 'include_file' before requesting edits."
+                return activation_message + "New File Editor session started. Please add files using 'include_file' before requesting edits."
 
             except Exception as e:
                 logger.error(f"Failed to create new Coder instance for {chat_file}: {e}")
@@ -733,7 +733,7 @@ class StartAIEditorTool(BaseTool):
                 clear_aider_state(chat_file) # Clear state on failure
                 remove_active_coder_state(chat_file) # Remove active state
                 # Should we deactivate the toolset again on failure? Probably not.
-                return f"Error: Failed to initialize AI Editor. {e}. '{toolset_name}' toolset is active but unusable."
+                return f"Error: Failed to initialize File Editor. {e}. '{toolset_name}' toolset is active but unusable."
 
         # This part should ideally not be reached if logic above is correct
         return "Error: Unexpected state in StartAIEditorTool."
@@ -744,7 +744,7 @@ class StartAIEditorTool(BaseTool):
 
 class AddFileTool(BaseTool):
     name: str = "include_file"
-    description: str = "Before the AI editor can adit any file, they need to be included in the editor's context. Argument must be the relative or absolute file path to add."
+    description: str = "Before the editor can adit any file, they need to be included in the editor's context. Argument must be the relative or absolute file path to add, do not use placeholders, only regular path strings."
     
     def _run(self, file_path: str) -> str:
         """Adds a file to the Aider context."""
@@ -757,7 +757,7 @@ class AddFileTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Editor not initialized or is closed. Use start_ai_editor first."
+            return "Error: Editor not initialized or is closed. Use start_file_editor first."
             
         io_stub = AiderIOStubWithQueues()
         coder = recreate_coder(chat_file, io_stub)
@@ -807,7 +807,7 @@ class AddFileTool(BaseTool):
 
 class DropFileTool(BaseTool):
     name: str = "exclude_file"
-    description: str = "Removes a file from the AI editor's context. Argument must be the relative or absolute file path that was previously added."
+    description: str = "Removes a file from the File Editor's context. Argument must be the relative or absolute file path that was previously added."
     
     def _run(self, file_path: str) -> str:
         """Removes a file from the Aider context."""
@@ -850,7 +850,7 @@ class DropFileTool(BaseTool):
 
 class ListFilesInEditorTool(BaseTool):
     name: str = "list_files"
-    description: str = "Lists all files currently in the AI editor's context."
+    description: str = "Lists all files currently in the File Editor's context."
     
     def _run(self, **kwargs) -> str:
         """Lists all files in the Aider context."""
@@ -873,7 +873,7 @@ class ListFilesInEditorTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Editor not initialized. Use start_ai_editor first."
+            return "Error: Editor not initialized. Use start_file_editor first."
             
         try:
             files = aider_state.get("abs_fnames", [])
@@ -914,7 +914,7 @@ class RunCodeEditTool(BaseTool):
 
         state = get_active_coder_state(chat_file)
         if not state:
-            return "Error: AI editor not initialized. Use start_ai_editor first."
+            return "Error: File Editor not initialized. Use start_file_editor first."
 
         if not state.coder.abs_fnames:
              return "Error: No files have been added to the editing session. Use include_file first."
@@ -926,7 +926,7 @@ class RunCodeEditTool(BaseTool):
             if state.thread and state.thread.is_alive():
                 logger.warning(f"An edit is already in progress for {chat_file}. Please wait or submit input if needed.")
                 # Optionally return a specific message indicating it's busy
-                # return "[AI_EDITOR_BUSY] An edit is already in progress."
+                # return "[FILE_EDITOR_BUSY] An edit is already in progress."
                 # Or just let the agent figure it out from the lack of progress
                 return "Error: An edit is already in progress for this session."
 
@@ -1036,7 +1036,7 @@ class ViewDiffTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Editor not initialized or is closed. Use start_ai_editor first."
+            return "Error: Editor not initialized or is closed. Use start_file_editor first."
             
         io_stub = AiderIOStubWithQueues()
         coder = recreate_coder(chat_file, io_stub)
@@ -1077,7 +1077,7 @@ class ViewDiffTool(BaseTool):
 
 class UndoLastEditTool(BaseTool):
     name: str = "undo_last_edit"
-    description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the AI editor."
+    description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the File Editor."
     
     def _run(self, **kwargs) -> str:
         """Undoes the last edit commit made by Aider."""
@@ -1101,7 +1101,7 @@ class UndoLastEditTool(BaseTool):
             
         aider_state = get_aider_state(chat_file)
         if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Editor not initialized. Use start_ai_editor first."
+            return "Error: Editor not initialized. Use start_file_editor first."
             
         io_stub = AiderIOStubWithQueues()
         coder = recreate_coder(chat_file, io_stub)
@@ -1144,8 +1144,8 @@ class UndoLastEditTool(BaseTool):
         return self._run(**kwargs)
 
 class CloseCodeEditorTool(BaseTool):
-    name: str = "close_ai_editor"
-    description: str = "Closes the AI editor session, clearing its context AND deactivating the 'AI Editor' toolset."
+    name: str = "close_file_editor"
+    description: str = "Closes the File Editor session, clearing its context AND deactivating the 'File Editor' toolset."
 
     def _run(self, **kwargs) -> str:
         """Clears the Aider state, deactivates the toolset, and updates the prompt."""
@@ -1164,7 +1164,7 @@ class CloseCodeEditorTool(BaseTool):
         if not chat_file:
             return "Error: No active chat session found to close the editor for."
 
-        toolset_name = "AI Editor"
+        toolset_name = "File Editor"
 
         # --- Clear Aider Specific State ---
         try:
@@ -1191,10 +1191,10 @@ class CloseCodeEditorTool(BaseTool):
             logger.info(f"System prompt updated for chat {chat_file} due to toolset deactivation.")
 
         if toolsets_updated:
-            return f"AI Editor session closed and '{toolset_name}' toolset deactivated."
+            return f"File Editor session closed and '{toolset_name}' toolset deactivated."
         else:
              # If toolset wasn't active but command was called
-             return "AI Editor session closed (it might have already been inactive)."
+             return "File Editor session closed (it might have already been inactive)."
 
     async def _arun(self, **kwargs) -> str:
         # Simple enough to run synchronously
@@ -1204,7 +1204,7 @@ class SubmitCodeEditorInputTool(BaseTool):
     name: str = "submit_editor_input"
     description: str = (
          "Use to provide input to input request (e.g., 'yes', 'no', 'all', 'skip', 'don't ask', or text) "
-         "when the AI editor signals '[AI_EDITOR_INPUT_NEEDED]'."
+         "when the File Editor signals '[FILE_EDITOR_INPUT_NEEDED]'."
     )
 
     def _run(self, user_response: str) -> str:
@@ -1218,7 +1218,7 @@ class SubmitCodeEditorInputTool(BaseTool):
             return "Error: No active editor session to submit input to."
             
         # HITL: Allow the user to review and edit the response before submitting
-        print(f"\n[Proposed response to AI editor]:")
+        print(f"\n[Proposed response to File Editor]:")
         edited_response = prompt("(Accept or Edit) > ", default=user_response)
         
         # If the user provided an empty response, treat it as a cancellation

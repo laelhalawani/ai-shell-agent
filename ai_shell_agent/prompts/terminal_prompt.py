@@ -5,13 +5,21 @@ Includes OS-specific instructions.
 """
 import platform
 
-OS_SYSTEM = platform.system() # Use platform.system() for broader compatibility
+OS_SYSTEM = platform.system() # Use platform.system() for broader compatibility 
 
 TERMINAL_TOOLSET_INTRO = """\
-
-You have access to a 'Terminal' toolset which allows you to execute commands directly in the user's system shell.
+Terminal allows you to execute commands directly in the user's system.
 Use the `terminal` tool to run commands.
 Use this tool for operations like file management, system information retrieval, software installation, and network diagnostics, among others.
+
+ALWAYS BEGIN by running information-gathering commands to understand the environment and file structure.
+
+Examples of good information-gathering commands:
+- For location awareness: `pwd` or `cd` (to see current directory)
+- For file context: `dir` or `ls` (to see available files)
+- For system context: `systeminfo`, `uname -a`, or other OS-specific commands
+
+DO NOT proceed directly to task-specific commands without first performing these information-gathering steps.
 The terminal supports various commands as listed below.
 """
 
@@ -33,6 +41,55 @@ When asked for technical support or to perform system tasks, run the necessary c
 Only provide explanations after executing the commands, using their output.
 Do not ask for confirmation before running commands unless the user explicitly requests it or the action is potentially destructive.
 """
+
+WINDOWS_POWERSHELL_GUIDANCE = """\
+You are interacting with a Windows system using PowerShell.
+Key Commands:
+- List directory: `Get-ChildItem` or `ls`
+- Change directory: `Set-Location <path>` or `cd <path>`
+- Show current directory: `Get-Location`
+- Create directory: `New-Item -ItemType Directory -Path <path>`
+- Delete file or directory: `Remove-Item <path> [-Recurse -Force]`
+- System info: `Get-ComputerInfo`
+- OS info: `Get-CimInstance -ClassName Win32_OperatingSystem`
+- Running processes: `Get-Process`
+- Kill process: `Stop-Process -Name <name>` or `Stop-Process -Id <pid>`
+- Start application: `Start-Process <program>`
+- Services list: `Get-Service`
+- Start/Stop service: `Start-Service <name>` / `Stop-Service <name>`
+- Network config: `Get-NetIPConfiguration`
+- Test connection: `Test-Connection <host>`
+- DNS lookup: `Resolve-DnsName <host>`
+- Environment variables: `$env:VARNAME`
+- Set env variable: `$env:VARNAME = "value"`
+- Variables: `$var = "value"`
+- Print output: `Write-Output $var`
+- If condition: `if (<condition>) { <commands> }`
+- Loop: `foreach ($i in 1..5) { <commands> }`
+- Function: `function Name { param($x); <commands> }`
+- Export to CSV: `Get-Process | Export-Csv <file> -NoTypeInformation`
+- Import CSV: `Import-Csv <file>`
+- Filter output: `Where-Object { $_.Property -eq "value" }`
+- Sort output: `Sort-Object <property>`
+- Format table: `Format-Table -AutoSize`
+- Combine commands: `;` (e.g. `Get-Process; Get-Service`)
+- Help: `Get-Help <cmdlet>` or `Get-Help <cmdlet> -Detailed`
+- Script execution policy: `Set-ExecutionPolicy RemoteSigned`
+- Error handling:
+  ```
+  try {
+      <command>
+  } catch {
+      Write-Error $_
+  }
+  ```
+
+Always use PowerShell syntax. Prefer full cmdlet names, but aliases like `ls`, `cd`, `rm` are allowed.
+When asked for technical support or to perform system tasks, run the necessary commands directly.
+Only provide explanations after executing the commands, using their output.
+Do not ask for confirmation before running commands unless the user explicitly requests it or the action is potentially destructive.
+"""
+
 
 LINUX_BASH_GUIDANCE = """\
 You are interacting with a Linux system using a Bash-like shell.

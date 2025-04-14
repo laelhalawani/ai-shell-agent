@@ -24,7 +24,7 @@ TOOLSET_MEMBERS: Dict[str, List[str]] = {
         "python_repl",          # PythonREPLTool
         # "shell_windows_direct" # Keep internal? Or add if LLM needs direct exec? For now, keep out.
     ],
-    "AI Editor": [
+    "File Editor": [
         "include_file",         # AddFileTool
         "exclude_file",         # DropFileTool
         "list_files",           # ListFilesInEditorTool
@@ -32,7 +32,7 @@ TOOLSET_MEMBERS: Dict[str, List[str]] = {
         "submit_editor_input",  # SubmitCodeEditorInputTool
         "view_diff",            # ViewDiffTool
         "undo_last_edit",       # UndoLastEditTool
-        "close_ai_editor",      # CloseCodeEditorTool
+        "close_file_editor",      # CloseCodeEditorTool
     ]
     # Add more toolsets here (e.g., "FileSystem": ["list_dir", "read_file", ...])
 }
@@ -40,7 +40,7 @@ TOOLSET_MEMBERS: Dict[str, List[str]] = {
 # Maps toolset name to the *name* of its starter tool
 TOOLSET_STARTERS: Dict[str, str] = {
     "Terminal": "start_terminal",    # To be created
-    "AI Editor": "start_ai_editor", # Exists in aider_integration.py
+    "File Editor": "start_file_editor", # Exists in aider_integration.py
 }
 
 # --- LLM Instantiation and Binding ---

@@ -166,7 +166,7 @@ class TerminalTool_Direct(BaseTool):
     This is used for internal commands that don't need user confirmation.
     """
     name: str = "shell_windows_direct"
-    description: str = """Executes a command in the system's terminal. Use this for cmd/terminal/console/shell commands."""
+    description: str = """Executes a command in the system's terminal. Use this for cmd/terminal/console/shell commands. First run commands to gather information."""
     
     def _run(self, command: str) -> str:
         """Execute a command in the Windows shell directly."""

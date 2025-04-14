@@ -234,7 +234,7 @@ def send_message(message: str) -> None:
     logger.info(f"Human: {message}")
 
     # ReAct loop - continue until we get an AI response without tool calls
-    max_iterations = 100  # Safety limit to prevent infinite loops
+    max_iterations = 15  # Safety limit to prevent infinite loops
     iteration = 0
     
     while iteration < max_iterations:
@@ -243,8 +243,50 @@ def send_message(message: str) -> None:
         
         # --- Prepare for LLM Call ---
         chat_history_dicts = _get_chat_messages(chat_file)
+        
+        # Validate messages before sending to the LLM to prevent OpenAI errors
+        # Track which AI tool calls have matching tool responses
+        validated_messages = []
+        tool_call_ids_with_responses = set()
+        
+        # First pass: identify which tool call IDs have responses
+        for msg in chat_history_dicts:
+            if msg.get("role") == "tool" and "tool_call_id" in msg:
+                tool_call_ids_with_responses.add(msg.get("tool_call_id"))
+        
+        # Second pass: filter out AI messages with tool calls that don't have matching responses
+        for msg in chat_history_dicts:
+            if (msg.get("role") == "ai" and 
+                "tool_calls" in msg and 
+                msg["tool_calls"]):
+                
+                # Check if all tool calls in this AI message have responses
+                all_tool_calls_have_responses = True
+                for tool_call in msg["tool_calls"]:
+                    if tool_call.get("id") not in tool_call_ids_with_responses:
+                        all_tool_calls_have_responses = False
+                        logger.warning(f"Found AI message with tool call ID {tool_call.get('id')} without response. Filtering out tool calls.")
+                        
+                # If not all tool calls have responses, create a new message without tool_calls
+                if not all_tool_calls_have_responses:
+                    # Clone the message but without tool_calls
+                    filtered_msg = {
+                        "role": msg["role"],
+                        "content": msg["content"],
+                        "timestamp": msg.get("timestamp", "")
+                    }
+                    validated_messages.append(filtered_msg)
+                else:
+                    # Keep the original message with tool_calls
+                    validated_messages.append(msg)
+            else:
+                # Keep all other messages unchanged
+                validated_messages.append(msg)
+        
+        # Use the validated messages for the LLM call
         active_toolsets = get_active_toolsets(chat_file)
-        lc_messages = _convert_message_dicts_to_langchain(chat_history_dicts)
+        lc_messages = _convert_message_dicts_to_langchain(validated_messages)
+        
         if lc_messages and lc_messages[0].type == "system":
             logger.debug(f"System prompt (first message): {lc_messages[0].content[:200]}...") # Log beginning
         else:
@@ -313,6 +355,10 @@ def send_message(message: str) -> None:
 
                     current_data.setdefault("messages", []).extend(tool_message_dicts)
                     _write_chat_data(chat_file, current_data) # Save data with tool results
+                else:
+                    # If tool execution failed completely, mark all tool calls as having no valid responses
+                    logger.warning("Tool execution failed to produce any tool messages. Breaking ReAct loop to prevent API errors.")
+                    has_tool_calls = False  # Force exit from the loop as there are no tool responses
                 
                 # Break the loop if there are no tool calls or if Aider needs input
                 if not has_tool_calls:

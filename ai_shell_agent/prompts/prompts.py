@@ -7,12 +7,13 @@ from typing import List, Optional
 from .. import logger
 from .default_prompt import BASE_SYSTEM_PROMPT
 from .terminal_prompt import TERMINAL_PROMPT_SNIPPET
-from .ai_editor_prompt import AI_EDITOR_TOOLSET_INTRO
+from .file_editor_prompt import FILE_EDITOR_TOOLSET_INTRO
+from .additional_prompt import FINAL_WORDS
 
 # Define mapping from toolset names to their prompt snippets
 TOOLSET_PROMPTS = {
     "Terminal": TERMINAL_PROMPT_SNIPPET,
-    "AI Editor": AI_EDITOR_TOOLSET_INTRO,
+    "File Editor": FILE_EDITOR_TOOLSET_INTRO,
     # Add other toolsets here if needed
 }
 
@@ -20,7 +21,7 @@ TOOLSET_PROMPTS = {
 # This duplicates info from llm.py, maybe centralize later?
 TOOLSET_STARTERS_NAMES = {
      "Terminal": "start_terminal",
-     "AI Editor": "start_ai_editor",
+     "File Editor": "start_file_editor",
 }
 
 def build_prompt(active_toolsets: Optional[List[str]] = None) -> str:
@@ -47,37 +48,40 @@ def build_prompt(active_toolsets: Optional[List[str]] = None) -> str:
         logger.debug("Removed duplicate toolsets from active_toolsets")
 
     prompt_parts = [BASE_SYSTEM_PROMPT]
-    prompt_parts.append("\n--- ACTIVE TOOLSETS ---")
+    prompt_parts.append("\nActive Toolsets:")
 
     # Add snippets for active toolsets
     if active_toolsets:
         for toolset_name in active_toolsets:
             if toolset_name in TOOLSET_PROMPTS:
                 logger.debug(f"Adding prompt snippet for active toolset: {toolset_name}")
-                prompt_parts.append(f"\n# TOOLSET: {toolset_name}\n{TOOLSET_PROMPTS[toolset_name]}")
+                prompt_parts.append(f"\n# {toolset_name}:\n{TOOLSET_PROMPTS[toolset_name]}")
             else:
                 logger.warning(f"No prompt snippet found for toolset: {toolset_name}")
-                prompt_parts.append(f"\n# TOOLSET: {toolset_name} (No specific instructions available)")
+                prompt_parts.append(f"\n# {toolset_name}")
     else:
         logger.debug("No active toolsets, adding placeholder message")
-        prompt_parts.append("\nNo specific toolsets are currently active.")
+        prompt_parts.append("\nYou can activate toolsets using their respective starting tools.")
 
     # Mention available starter tools for inactive sets
     inactive_sets = [name for name in TOOLSET_PROMPTS if name not in active_toolsets]
     if inactive_sets:
         logger.debug(f"Adding information about {len(inactive_sets)} inactive toolsets")
-        prompt_parts.append("\n--- AVAILABLE TOOLSETS (Activate to Use) ---")
+        prompt_parts.append("\nInactive Toolsets (activate as needed):")
         for name in inactive_sets:
             starter = TOOLSET_STARTERS_NAMES.get(name)
             if starter:
-                prompt_parts.append(f"- {name}: Activate using the `{starter}` tool.")
+                prompt_parts.append(f"- {name}: can be started using `{starter}`")
             else:
                 logger.warning(f"No starter tool defined for toolset: {name}")
-                prompt_parts.append(f"- {name}: (No specific starter tool defined)")
+                prompt_parts.append(f"- {name}: (No specific starter method defined)")
 
-    prompt_parts.append("\n-------------------------\n") # Footer separator
+   #prompt_parts.append("\n-------------------------\n") # Footer separator
     prompt_parts.append("Remember to use the available tools corresponding to the ACTIVE toolsets.")
+
+    prompt_parts.append(FINAL_WORDS)  # Add final words for caution
 
     final_prompt = "\n".join(prompt_parts).strip()
     logger.debug(f"Built system prompt ({len(final_prompt)} chars) with {len(active_toolsets)} active toolsets")
+
     return final_prompt
