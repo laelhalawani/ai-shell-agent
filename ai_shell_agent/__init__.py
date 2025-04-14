@@ -1,25 +1,30 @@
+"""
+AI Shell Agent package.
+
+Provides AI-powered command line tools integration.
+"""
 import os
 import logging
+import sys
+from pathlib import Path
 
 # Set up logging
-logger = logging.getLogger("ai_shell_agent")
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(levelname)s [%(filename)s:%(funcName)s]: %(message)s")
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s [%(filename)s:%(funcName)s]: %(message)s',
+)
+logger = logging.getLogger('ai_shell_agent')
 
-# Create data directory in the installation directory
-def ensure_data_directories():
-    """Ensure that the necessary data directories exist."""
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    data_dir = os.path.join(base_dir, "data")
-    chat_dir = os.path.join(data_dir, "chats")
-    
-    os.makedirs(data_dir, exist_ok=True)
-    os.makedirs(chat_dir, exist_ok=True)
-    
-    return data_dir, chat_dir
+# Import key modules to ensure they are initialized early
+# This ensures tool registrations happen in the correct order
+from . import tool_registry
+from . import terminal_tools  # Import terminal_tools early to register its tools
+from . import aider_integration_and_tools  # Also import aider tools early
 
-# Initialize directories
-ensure_data_directories()
+# Get the root directory
+ROOT_DIR = Path(__file__).parent.parent
+DATA_DIR = ROOT_DIR / 'data'
+CHATS_DIR = DATA_DIR / 'chats'
+
+# Create necessary directories if not exist
+os.makedirs(CHATS_DIR, exist_ok=True)

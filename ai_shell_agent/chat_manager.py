@@ -217,6 +217,7 @@ def send_message(message: str) -> None:
     """
     Sends a message to the AI and displays the response.
     Handles message history, dynamic prompt/tool loading, and tool calls.
+    Implements ReAct logic to automatically continue agent execution after tool calls.
     """
     chat_file = get_current_chat()
     if not chat_file:
@@ -232,79 +233,109 @@ def send_message(message: str) -> None:
     _write_chat_data(chat_file, current_data)
     logger.info(f"Human: {message}")
 
-    # --- Prepare for LLM Call ---
-    chat_history_dicts = _get_chat_messages(chat_file)
-    active_toolsets = get_active_toolsets(chat_file)
-    lc_messages = _convert_message_dicts_to_langchain(chat_history_dicts)
-    if lc_messages and lc_messages[0].type == "system":
-        logger.debug(f"System prompt (first message): {lc_messages[0].content[:200]}...") # Log beginning
-    else:
-        logger.warning("No system prompt found as the first message in history.")
+    # ReAct loop - continue until we get an AI response without tool calls
+    max_iterations = 100  # Safety limit to prevent infinite loops
+    iteration = 0
+    
+    while iteration < max_iterations:
+        iteration += 1
+        logger.debug(f"ReAct iteration {iteration}/{max_iterations}")
+        
+        # --- Prepare for LLM Call ---
+        chat_history_dicts = _get_chat_messages(chat_file)
+        active_toolsets = get_active_toolsets(chat_file)
+        lc_messages = _convert_message_dicts_to_langchain(chat_history_dicts)
+        if lc_messages and lc_messages[0].type == "system":
+            logger.debug(f"System prompt (first message): {lc_messages[0].content[:200]}...") # Log beginning
+        else:
+            logger.warning("No system prompt found as the first message in history.")
 
-    llm_instance = get_llm(active_toolsets=active_toolsets)
+        llm_instance = get_llm(active_toolsets=active_toolsets)
 
-    try:
-        # --- Invoke LLM ---
-        ai_response = llm_instance.invoke(lc_messages)
-        logger.info(f"AI Raw Response Content: {ai_response.content}")
-        logger.debug(f"AI Full Response Object: {ai_response}")
+        try:
+            # --- Invoke LLM ---
+            ai_response = llm_instance.invoke(lc_messages)
+            logger.info(f"AI Raw Response Content: {ai_response.content}")
+            logger.debug(f"AI Full Response Object: {ai_response}")
 
-        # --- Save AI response ---
-        ai_msg_dict = {
-            "role": "ai",
-            "content": ai_response.content,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        if hasattr(ai_response, "tool_calls") and ai_response.tool_calls:
-            # Ensure tool calls are serializable (should be list of dicts)
-            try:
-                # Langchain tool_calls are typically already serializable list[dict]
-                ai_msg_dict["tool_calls"] = ai_response.tool_calls
-                logger.debug(f"AI response included tool calls: {ai_response.tool_calls}")
-            except TypeError as json_err:
-                logger.error(f"Could not serialize tool_calls: {json_err}. Storing empty list.")
-                ai_msg_dict["tool_calls"] = []
+            # --- Save AI response ---
+            ai_msg_dict = {
+                "role": "ai",
+                "content": ai_response.content,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            if hasattr(ai_response, "tool_calls") and ai_response.tool_calls:
+                # Ensure tool calls are serializable (should be list of dicts)
+                try:
+                    # Langchain tool_calls are typically already serializable list[dict]
+                    ai_msg_dict["tool_calls"] = ai_response.tool_calls
+                    logger.debug(f"AI response included tool calls: {ai_response.tool_calls}")
+                except TypeError as json_err:
+                    logger.error(f"Could not serialize tool_calls: {json_err}. Storing empty list.")
+                    ai_msg_dict["tool_calls"] = []
 
-        current_data = _read_chat_data(chat_file) # Re-read data before write
-        current_data.setdefault("messages", []).append(ai_msg_dict)
-        _write_chat_data(chat_file, current_data) # Save AI response
+            current_data = _read_chat_data(chat_file) # Re-read data before write
+            current_data.setdefault("messages", []).append(ai_msg_dict)
+            _write_chat_data(chat_file, current_data) # Save AI response
 
-        # Print AI response content to user
-        print(ai_response.content) # Print message content regardless of tool calls
+            # If this is the first response or the response doesn't have tool calls, print it to user
+            if iteration == 1 or not (hasattr(ai_response, "tool_calls") and ai_response.tool_calls):
+                print(ai_response.content) # Print message content to user
 
-        # --- Handle Tool Calls ---
-        if hasattr(ai_response, "tool_calls") and ai_response.tool_calls:
-            tool_messages = _handle_tool_calls(ai_response, chat_file)
+            # --- Handle Tool Calls ---
+            has_tool_calls = hasattr(ai_response, "tool_calls") and ai_response.tool_calls
+            if has_tool_calls:
+                logger.info(f"AI made {len(ai_response.tool_calls)} tool call(s) - executing and continuing ReAct loop")
+                tool_messages = _handle_tool_calls(ai_response, chat_file)
 
-            # Save tool messages to chat history and print results
-            if tool_messages: # Only proceed if tool handling produced messages
-                current_data = _read_chat_data(chat_file) # Re-read data again before write
-                tool_message_dicts = []
-                for tool_msg in tool_messages:
-                    tool_msg_dict = {
-                        "role": "tool",
-                        "content": tool_msg.content,
-                        "tool_call_id": tool_msg.tool_call_id,
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }
-                    tool_message_dicts.append(tool_msg_dict)
+                # Save tool messages to chat history and print results
+                if tool_messages: # Only proceed if tool handling produced messages
+                    current_data = _read_chat_data(chat_file) # Re-read data again before write
+                    tool_message_dicts = []
+                    for tool_msg in tool_messages:
+                        tool_msg_dict = {
+                            "role": "tool",
+                            "content": tool_msg.content,
+                            "tool_call_id": tool_msg.tool_call_id,
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }
+                        tool_message_dicts.append(tool_msg_dict)
 
-                    # Print tool result/signal
-                    if isinstance(tool_msg.content, str) and tool_msg.content.startswith(SIGNAL_PROMPT_NEEDED):
-                        prompt_details = tool_msg.content[len(SIGNAL_PROMPT_NEEDED):].strip()
-                        print(f"\n[Code Editor Input Required]: {prompt_details}")
-                    else:
-                        tool_name_for_print = next((tc.get("name") for tc in ai_response.tool_calls if tc.get("id") == tool_msg.tool_call_id), "Unknown Tool")
-                        print(f"\n[Tool Result - {tool_name_for_print} ({tool_msg.tool_call_id})]:\n{tool_msg.content}")
+                        # Print tool result/signal
+                        if isinstance(tool_msg.content, str) and tool_msg.content.startswith(SIGNAL_PROMPT_NEEDED):
+                            prompt_details = tool_msg.content[len(SIGNAL_PROMPT_NEEDED):].strip()
+                            print(f"\n[Code Editor Input Required]: {prompt_details}")
+                            # Exit ReAct loop on Aider input signal - needs human intervention
+                            has_tool_calls = False  # Set to false to exit the loop
+                        else:
+                            tool_name_for_print = next((tc.get("name") for tc in ai_response.tool_calls if tc.get("id") == tool_msg.tool_call_id), "Unknown Tool")
+                            print(f"\n[Tool Result - {tool_name_for_print} ({tool_msg.tool_call_id})]:\n{tool_msg.content}")
 
+                    current_data.setdefault("messages", []).extend(tool_message_dicts)
+                    _write_chat_data(chat_file, current_data) # Save data with tool results
+                
+                # Break the loop if there are no tool calls or if Aider needs input
+                if not has_tool_calls:
+                    logger.info("Breaking ReAct loop - no more tool calls or input needed")
+                    break
+                
+                # Continue the loop to let the agent react to the tool output
+                continue
+            
+            # No tool calls, break the ReAct loop
+            logger.info("AI response has no tool calls, ReAct loop complete")
+            break
 
-                current_data.setdefault("messages", []).extend(tool_message_dicts)
-                _write_chat_data(chat_file, current_data) # Save data with tool results
-
-    except Exception as e:
-        logger.error(f"Error during LLM interaction or tool handling: {e}")
-        logger.error(traceback.format_exc())
-        print(f"An error occurred: {e}")
+        except Exception as e:
+            logger.error(f"Error during LLM interaction or tool handling: {e}")
+            logger.error(traceback.format_exc())
+            print(f"An error occurred: {e}")
+            break
+    
+    # Log if we hit the iteration limit
+    if iteration >= max_iterations:
+        logger.warning(f"ReAct loop hit maximum iterations ({max_iterations}), terminating")
+        print(f"\n[Warning: Reached maximum number of tool calls ({max_iterations}). Process terminated.]")
 
 
 def start_temp_chat(message: str) -> None:
@@ -394,11 +425,9 @@ def flush_temp_chats() -> None:
 # --- Additional Commands ---
 def execute(command: str) -> str:
     """Executes a shell command directly using the direct terminal tool."""
-    # Import tool only when needed
     try:
         from .terminal_tools import direct_terminal_tool
         logger.info(f"Executing direct command: {command}")
-        # Ensure the tool expects args as a dict
         output = direct_terminal_tool.invoke({"command": command})
         print(output) # Print output to console
         return output

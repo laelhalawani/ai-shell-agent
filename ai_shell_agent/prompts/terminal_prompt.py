@@ -11,6 +11,8 @@ TERMINAL_TOOLSET_INTRO = """\
 
 You have access to a 'Terminal' toolset which allows you to execute commands directly in the user's system shell.
 Use the `terminal` tool to run commands.
+Use this tool for operations like file management, system information retrieval, software installation, and network diagnostics, among others.
+The terminal supports various commands as listed below.
 """
 
 WINDOWS_CMD_GUIDANCE = """\

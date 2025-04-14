@@ -86,7 +86,7 @@ class TerminalTool_HITL(BaseTool):
     This tool is safer as it requires user confirmation before execution.
     """
     name: str = "terminal"
-    description: str = """Executes a command in the system's terminal. Use this for cmd/terminal/console/shell commands."""
+    description: str = """Executes a command in the system's terminal. Use this for cmd/terminal/console/shell commands such as navigation, checking infromation, changing system settings, creating and previewing files and directories, etc."""
     
     def _run(self, command: str) -> str:
         """Execute a command in the Windows shell with confirmation."""
@@ -104,9 +104,13 @@ class TerminalTool_HITL(BaseTool):
                 text=True,
                 encoding='utf-8'
             )
-            return f"Return Code: {result.returncode}\nOutput:\n{result.stdout}\nError:\n{result.stderr}"
+            return f"Return Code: {result.returncode} {result.stdout} {result.stderr}".strip()
         except Exception as e:
             return f"Error executing command: {str(e)}"
+    
+    async def _arun(self, command: str) -> str:
+        """Async implementation simply calls the sync version."""
+        return self._run(command)
     
     def invoke(self, args: Dict) -> str:
         """Invoke the tool with the given arguments."""
@@ -114,7 +118,6 @@ class TerminalTool_HITL(BaseTool):
         if not command:
             return "No command provided."
         return self._run(command)
-
 
 class TerminalTool_Direct(BaseTool):
     """
@@ -156,24 +159,26 @@ class TerminalTool_Direct(BaseTool):
         return self._run(command)
 
 # --- Tool instances ---
-start_terminal_tool = StartTerminalTool() # NEW INSTANCE
+start_terminal_tool = StartTerminalTool()
 python_repl_tool = PythonREPLTool(name="python_repl")
-interactive_terminal_tool = TerminalTool_HITL()
-direct_terminal_tool = TerminalTool_Direct() # Still useful for direct -x execution maybe
+terminal_tool = TerminalTool_HITL()
+direct_terminal_tool = TerminalTool_Direct()
+
+# Register tools with the registry
+from .tool_registry import register_tools
+
+# Register all tools in this module
+register_tools([
+    start_terminal_tool,
+    python_repl_tool,
+    terminal_tool,
+    # Don't register direct_terminal_tool in normal tools list
+    # as it's only for internal use
+])
 
 def run_python_code(code: str) -> str:
     """Helper function to execute Python code."""
     return python_repl_tool.invoke({"command": code})
 
-# --- List of base tools defined in THIS file ---
-terminal_tools = [
-    start_terminal_tool, # ADDED
-    interactive_terminal_tool,
-    python_repl_tool,
-    # direct_terminal_tool, # Should this be exposed to LLM? Probably not by default.
-]
-
-# --- Register the base tools at the end of the file ---
-# Ensure this runs after all tool instances are created
-register_tools(terminal_tools)
-logger.debug(f"Registered {len(terminal_tools)} base tools from tools.py.")
+# Log registration
+logger.debug(f"Registered terminal tools: start_terminal, python_repl, terminal")

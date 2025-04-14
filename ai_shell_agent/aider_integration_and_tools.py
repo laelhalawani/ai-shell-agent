@@ -566,15 +566,28 @@ class StartAIEditorTool(BaseTool):
     name: str = "start_ai_editor"
     description: str = "Activates the 'AI Editor' toolset, enabling tools for code/file editing (include_file, request_edit, etc.). Call this before attempting any file edits."
 
-    def _run(self, args: str = "") -> str:
+    def _run(self, **kwargs) -> str:
         """
         Initializes the Aider state, activates the 'AI Editor' toolset,
         and updates the system prompt.
+        
+        Handles both direct args and v__args wrapper format from LangChain.
         """
+        # Extract real args if wrapped in v__args (for compatibility with some LLM bindings)
+        args = kwargs.get("v__args", [])
+        if isinstance(args, list) and len(args) > 0:
+            # If we have positional args in v__args, use the first one
+            args = args[0] if args else ""
+        elif "args" in kwargs:
+            # Try direct 'args' parameter
+            args = kwargs.get("args", "")
+        else:
+            # Otherwise use empty string
+            args = ""
+            
         # from .chat_manager import get_current_chat, clear_aider_state, save_aider_state # Already imported via state_manager
         # from .config_manager import get_current_model, get_api_key_for_model # Already imported globally
         from .ai import ensure_api_keys_for_coder_models
-        import traceback
 
         chat_file = get_current_chat()
         if not chat_file:
@@ -966,7 +979,7 @@ class RunCodeEditTool(BaseTool):
             with state.lock: # Re-acquire lock briefly
                 update_aider_state_from_coder(chat_file, state.coder)
                 state.thread = None # Clear the thread reference as it's done
-            return f"Edit completed. Output:\n{message.get('content', 'No output captured.')}"
+            return f"Edit completed. {message.get('content', 'No output captured.')}"
 
         elif message_type == 'error':
             # Aider encountered an error immediately
@@ -1015,7 +1028,7 @@ class ViewDiffTool(BaseTool):
             if hasattr(coder, 'commands') and coder.commands:
                 coder.commands.raw_cmd_diff("")  # Pass empty args for default diff behavior
                 captured = io_stub.get_captured_output()
-                return f"Diff output:\n{captured}" if captured else "No changes detected in tracked files."
+                return f"Diff:\n{captured}" if captured else "No changes detected in tracked files."
             else:
                 # Fallback to direct repo method if commands not available
                 diff = coder.repo.get_unstaged_changes()
@@ -1028,7 +1041,7 @@ class ViewDiffTool(BaseTool):
         except ANY_GIT_ERROR as e:
             logger.error(f"Git error during diff: {e}")
             logger.error(traceback.format_exc())
-            return f"Error viewing diff: {e}. Captured output:\n{io_stub.get_captured_output()}"
+            return f"Error viewing diff: {e}. {io_stub.get_captured_output()}".strip()
             
         except Exception as e:
             logger.error(f"Error in ViewDiffTool: {e}")
@@ -1080,17 +1093,17 @@ class UndoLastEditTool(BaseTool):
             from .chat_manager import save_aider_state
             save_aider_state(chat_file, aider_state)
             
-            return f"Undo attempt finished. Output:\n{io_stub.get_captured_output()}"
+            return f"Undo attempt finished. {io_stub.get_captured_output()}".strip()
             
         except ANY_GIT_ERROR as e:
             logger.error(f"Git error during undo: {e}")
             logger.error(traceback.format_exc())
-            return f"Error during undo: {e}. Captured output:\n{io_stub.get_captured_output()}"
+            return f"Error during undo: {e}. {io_stub.get_captured_output()}".strip()
             
         except Exception as e:
             logger.error(f"Unexpected error during undo: {e}")
             logger.error(traceback.format_exc())
-            return f"Error during undo: {e}. Captured output:\n{io_stub.get_captured_output()}"
+            return f"Error during undo: {e}. {io_stub.get_captured_output()}".strip()
             
     async def _arun(self, args: str = "") -> str:
         return self._run(args)
@@ -1214,7 +1227,7 @@ class SubmitCodeEditorInputTool(BaseTool):
              with state.lock: # Re-acquire lock
                   update_aider_state_from_coder(chat_file, state.coder)
                   state.thread = None
-             return f"Edit completed. Output:\n{message.get('content', 'No output captured.')}"
+             return f"Edit completed. {message.get('content', 'No output captured.')}".strip()
 
         elif message_type == 'error':
              logger.error(f"Aider edit failed for {chat_file} after input.")
