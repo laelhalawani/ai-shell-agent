@@ -14,7 +14,8 @@ import json
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Set, Tuple, Union
-
+# External imports
+from prompt_toolkit import prompt
 from aider.coders import Coder
 from aider.models import Model
 from aider.repo import GitRepo, ANY_GIT_ERROR
@@ -598,7 +599,7 @@ class StartAIEditorTool(BaseTool):
         # --- Toolset Activation & Prompt Update ---
         current_toolsets = get_active_toolsets(chat_file)
         toolsets_updated = False
-        if toolset_name not in current_toolsets:
+        if (toolset_name not in current_toolsets):
             logger.info(f"Activating '{toolset_name}' toolset for chat {chat_file}.")
             new_toolsets = list(current_toolsets)
             new_toolsets.append(toolset_name)
@@ -747,7 +748,8 @@ class AddFileTool(BaseTool):
     
     def _run(self, file_path: str) -> str:
         """Adds a file to the Aider context."""
-        from .chat_manager import get_current_chat, get_aider_state, save_aider_state
+        # Update the imports to use chat_state_manager instead of chat_manager
+        from .chat_state_manager import get_current_chat, get_aider_state
         
         chat_file = get_current_chat()
         if not chat_file:
@@ -809,7 +811,7 @@ class DropFileTool(BaseTool):
     
     def _run(self, file_path: str) -> str:
         """Removes a file from the Aider context."""
-        from .chat_manager import get_current_chat, get_aider_state
+        from .chat_state_manager import get_current_chat, get_aider_state
         
         chat_file = get_current_chat()
         if not chat_file:
@@ -850,9 +852,20 @@ class ListFilesInEditorTool(BaseTool):
     name: str = "list_files"
     description: str = "Lists all files currently in the AI editor's context."
     
-    def _run(self, args: str = "") -> str:
+    def _run(self, **kwargs) -> str:
         """Lists all files in the Aider context."""
-        from .chat_manager import get_current_chat, get_aider_state
+        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
+        args = kwargs.get("v__args", [])
+        if isinstance(args, list) and len(args) > 0:
+            args = args[0]
+        elif "args" in kwargs:
+            # Try direct 'args' parameter
+            args = kwargs.get("args", "")
+        else:
+            # Otherwise use empty string
+            args = ""
+            
+        from .chat_state_manager import get_current_chat, get_aider_state
         
         chat_file = get_current_chat()
         if not chat_file:
@@ -886,8 +899,8 @@ class ListFilesInEditorTool(BaseTool):
             logger.error(traceback.format_exc())
             return f"Error listing files: {e}"
             
-    async def _arun(self, args: str = "") -> str:
-        return self._run(args)
+    async def _arun(self, **kwargs) -> str:
+        return self._run(**kwargs)
 
 class RunCodeEditTool(BaseTool):
     name: str = "request_edit"
@@ -1001,9 +1014,20 @@ class ViewDiffTool(BaseTool):
     name: str = "view_diff"
     description: str = "Shows the git diff of changes made by the 'request_edit' tool in the current session. This is useful to see what changes have been made to the files."
     
-    def _run(self, args: str = "") -> str:
+    def _run(self, **kwargs) -> str:
         """Shows the diff of changes made by Aider."""
-        from .chat_manager import get_current_chat, get_aider_state
+        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
+        args = kwargs.get("v__args", [])
+        if isinstance(args, list) and len(args) > 0:
+            args = args[0] if args else ""
+        elif "args" in kwargs:
+            # Try direct 'args' parameter
+            args = kwargs.get("args", "")
+        else:
+            # Otherwise use empty string
+            args = ""
+            
+        from .chat_state_manager import get_current_chat, get_aider_state
         from aider.repo import ANY_GIT_ERROR
         
         chat_file = get_current_chat()
@@ -1048,16 +1072,28 @@ class ViewDiffTool(BaseTool):
             logger.error(traceback.format_exc())
             return f"Error viewing diff: {e}. {io_stub.get_captured_output()}"
             
-    async def _arun(self, args: str = "") -> str:
-        return self._run(args)
+    async def _arun(self, **kwargs) -> str:
+        return self._run(**kwargs)
 
 class UndoLastEditTool(BaseTool):
     name: str = "undo_last_edit"
     description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the AI editor."
     
-    def _run(self, args: str = "") -> str:
+    def _run(self, **kwargs) -> str:
         """Undoes the last edit commit made by Aider."""
-        from .chat_manager import get_current_chat, get_aider_state
+        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
+        args = kwargs.get("v__args", [])
+        if isinstance(args, list) and len(args) > 0:
+            args = args[0] if args else ""
+        elif "args" in kwargs:
+            # Try direct 'args' parameter
+            args = kwargs.get("args", "")
+        else:
+            # Otherwise use empty string
+            args = ""
+            
+        from .chat_state_manager import get_current_chat, get_aider_state, save_aider_state
+        from aider.repo import ANY_GIT_ERROR
         
         chat_file = get_current_chat()
         if not chat_file:
@@ -1090,7 +1126,6 @@ class UndoLastEditTool(BaseTool):
             
             # Update the commit hashes in the state
             aider_state["aider_commit_hashes"] = list(coder.aider_commit_hashes)
-            from .chat_manager import save_aider_state
             save_aider_state(chat_file, aider_state)
             
             return f"Undo attempt finished. {io_stub.get_captured_output()}".strip()
@@ -1105,15 +1140,26 @@ class UndoLastEditTool(BaseTool):
             logger.error(traceback.format_exc())
             return f"Error during undo: {e}. {io_stub.get_captured_output()}".strip()
             
-    async def _arun(self, args: str = "") -> str:
-        return self._run(args)
+    async def _arun(self, **kwargs) -> str:
+        return self._run(**kwargs)
 
 class CloseCodeEditorTool(BaseTool):
     name: str = "close_ai_editor"
     description: str = "Closes the AI editor session, clearing its context AND deactivating the 'AI Editor' toolset."
 
-    def _run(self, args: str = "") -> str:
+    def _run(self, **kwargs) -> str:
         """Clears the Aider state, deactivates the toolset, and updates the prompt."""
+        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
+        args = kwargs.get("v__args", [])
+        if isinstance(args, list) and len(args) > 0:
+            args = args[0] if args else ""
+        elif "args" in kwargs:
+            # Try direct 'args' parameter
+            args = kwargs.get("args", "")
+        else:
+            # Otherwise use empty string
+            args = ""
+            
         chat_file = get_current_chat()
         if not chat_file:
             return "Error: No active chat session found to close the editor for."
@@ -1150,9 +1196,9 @@ class CloseCodeEditorTool(BaseTool):
              # If toolset wasn't active but command was called
              return "AI Editor session closed (it might have already been inactive)."
 
-    async def _arun(self, args: str = "") -> str:
+    async def _arun(self, **kwargs) -> str:
         # Simple enough to run synchronously
-        return self._run(args)
+        return self._run(**kwargs)
 
 class SubmitCodeEditorInputTool(BaseTool):
     name: str = "submit_editor_input"
@@ -1170,6 +1216,14 @@ class SubmitCodeEditorInputTool(BaseTool):
         if not state:
             # This indicates an agent logic error - trying to submit input when no session active
             return "Error: No active editor session to submit input to."
+            
+        # HITL: Allow the user to review and edit the response before submitting
+        print(f"\n[Proposed response to AI editor]:")
+        edited_response = prompt("(Accept or Edit) > ", default=user_response)
+        
+        # If the user provided an empty response, treat it as a cancellation
+        if not edited_response.strip():
+            return "Input submission cancelled by user."
 
         # Acquire lock for the specific session
         with state.lock:
@@ -1180,9 +1234,9 @@ class SubmitCodeEditorInputTool(BaseTool):
                   remove_active_coder_state(chat_file)
                   return "Error: The editing process is not waiting for input."
 
-             # Send the raw user response to the waiting Aider thread
-             logger.debug(f"Putting user response on input_q: '{user_response}' for {chat_file}")
-             state.input_q.put(user_response)
+             # Send the edited user response to the waiting Aider thread
+             logger.debug(f"Putting user response on input_q: '{edited_response}' for {chat_file}")
+             state.input_q.put(edited_response)
 
         # Release lock before waiting on queue
         logger.debug(f"Main thread waiting for *next* message from output_q for {chat_file}...")
@@ -1227,7 +1281,7 @@ class SubmitCodeEditorInputTool(BaseTool):
              with state.lock: # Re-acquire lock
                   update_aider_state_from_coder(chat_file, state.coder)
                   state.thread = None
-             return f"Edit completed. {message.get('content', 'No output captured.')}".strip()
+             return f"Edit completed. Output:\n{message.get('content', 'No output captured.')}"
 
         elif message_type == 'error':
              logger.error(f"Aider edit failed for {chat_file} after input.")

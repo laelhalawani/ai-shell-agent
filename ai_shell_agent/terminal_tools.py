@@ -12,6 +12,17 @@ from pathlib import Path
 # Langchain imports
 from langchain.tools import BaseTool
 from langchain_experimental.tools.python.tool import PythonREPLTool
+# Add missing imports from the original tool.py file
+from langchain_experimental.utilities.python import PythonREPL
+from langchain_core.callbacks.manager import (
+    AsyncCallbackManagerForToolRun,
+    CallbackManagerForToolRun,
+)
+from langchain_core.runnables.config import run_in_executor
+from pydantic import Field
+
+# Import the sanitize_input function directly from the module
+from langchain_experimental.tools.python.tool import sanitize_input, _get_default_python_repl
 
 # External imports
 from prompt_toolkit import prompt
@@ -89,24 +100,54 @@ class TerminalTool_HITL(BaseTool):
     description: str = """Executes a command in the system's terminal. Use this for cmd/terminal/console/shell commands such as navigation, checking infromation, changing system settings, creating and previewing files and directories, etc."""
     
     def _run(self, command: str) -> str:
-        """Execute a command in the Windows shell with confirmation."""
-        print(f"\n[Command to execute]: {command}")
-        confirmation = prompt("[Execute? (y/n)]: ").lower()
-        if confirmation != 'y':
-            return "Command cancelled by user."
+        """Execute a command in the Windows shell with human verification."""
+        # Show proposed command and allow user to edit it
+        print(f"\n[Proposed terminal command]:")
+        edited_command = prompt("(Accept or Edit) > ", default=command)
         
+        # If user provided an empty command, consider it a cancellation
+        if not edited_command.strip():
+            return "Command cancelled by user."
+            
         try:
             # Use subprocess with shell=True for Windows shell commands
             result = subprocess.run(
-                command, 
+                edited_command, 
                 shell=True,
                 capture_output=True,
                 text=True,
                 encoding='utf-8'
             )
-            return f"Return Code: {result.returncode} {result.stdout} {result.stderr}".strip()
+            
+            # Format the output in a cleaner way
+            output_parts = []
+            
+            # Only add return code if it's not 0 (indicating an error)
+            if result.returncode != 0:
+                output_parts.append(f"Command completed with exit code {result.returncode}")
+            
+            # Combine stdout and stderr into a single output string
+            if result.stdout and result.stdout.strip():
+                output_parts.append(result.stdout.strip())
+            
+            if result.stderr and result.stderr.strip():
+                # If we have both stdout and stderr, add a small separator
+                if output_parts and result.stdout and result.stdout.strip():
+                    output_parts.append("---")
+                output_parts.append(result.stderr.strip())
+            
+            # If no output was captured but command succeeded
+            if not output_parts and result.returncode == 0:
+                output_parts.append("Command completed successfully.")
+                
+            # Add command info to help with debugging
+            command_info = f"Executed: {edited_command}"
+            output_parts.append(f"\n({command_info})")
+                
+            return "\n".join(output_parts)
+            
         except Exception as e:
-            return f"Error executing command: {str(e)}"
+            return f"Error executing command: {str(e)}\n\nAttempted to run: {edited_command}"
     
     async def _arun(self, command: str) -> str:
         """Async implementation simply calls the sync version."""
@@ -158,9 +199,79 @@ class TerminalTool_Direct(BaseTool):
             return "No command provided."
         return self._run(command)
 
+class PythonREPLTool_HITL(BaseTool):
+    """
+    Human-in-the-loop wrapper for Python REPL execution.
+    Allows the user to review and modify Python code before execution.
+    """
+    name: str = "python_repl"
+    description: str = (
+        "A Python shell. Use this to execute Python commands. "
+        "Input should be a valid Python command. "
+        "If you want to see the output of a value, you should print it out "
+        "with `print(...)`."
+    )
+    
+    # Create the attributes that match the original PythonREPLTool
+    python_repl: PythonREPL = Field(default_factory=_get_default_python_repl)
+    sanitize_input: bool = True
+    
+    # No need for original_tool now that we directly use python_repl
+    
+    def _run(
+        self,
+        query: str,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> Any:
+        """
+        HITL version of the tool that allows user to review and edit code before execution.
+        
+        Args:
+            query: Python code string to execute
+            run_manager: Optional callback manager
+            
+        Returns:
+            The output from executing the Python code
+        """
+        if self.sanitize_input:
+            query = sanitize_input(query)
+            
+        # HITL: Show proposed code and allow user to edit
+        print(f"\n[Proposed Python code]:")
+        edited_query = prompt("(Accept or Edit) > ", default=query)
+        
+        # If user provided an empty command, consider it a cancellation
+        if not edited_query.strip():
+            return "Code execution cancelled by user."
+            
+        # Execute the edited code using the python_repl
+        try:
+            return self.python_repl.run(edited_query)
+        except Exception as e:
+            return f"Error executing Python code: {str(e)}"
+            
+    async def _arun(
+        self,
+        query: str,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> Any:
+        """Use the tool asynchronously."""
+        # For now, run synchronously in async context
+        if self.sanitize_input:
+            query = sanitize_input(query)
+            
+        return await run_in_executor(None, self._run, query)
+    
+    def invoke(self, args: Dict) -> str:
+        """High-level interface used by the agent."""
+        command = args.get("command", "")
+        if not command:
+            return "No Python code provided."
+        return self._run(command)
+
 # --- Tool instances ---
 start_terminal_tool = StartTerminalTool()
-python_repl_tool = PythonREPLTool(name="python_repl")
+python_repl_tool = PythonREPLTool_HITL() # Use our new HITL version
 terminal_tool = TerminalTool_HITL()
 direct_terminal_tool = TerminalTool_Direct()
 
