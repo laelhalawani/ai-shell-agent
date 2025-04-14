@@ -105,15 +105,6 @@ def get_llm(active_toolsets: Optional[List[str]] = None) -> BaseChatModel:
              else:
                  logger.debug(f"Starter tool '{starter_tool_name}' already added, skipping duplicate")
 
-    # 3. Add any 'base' tools that are always available (optional)
-    # Example:
-    # base_tools_names = ["some_always_on_tool"]
-    # for tool_name in base_tools_names:
-    #    tool = all_tools_dict.get(tool_name)
-    #    if tool and tool_name not in bound_tool_names:
-    #        bound_tools.append(tool)
-    #        bound_tool_names.add(tool_name)
-
     # Convert selected tools to the format expected by the LLM provider
     if not bound_tools:
          logger.warning("No tools could be bound to the LLM based on active/inactive toolsets.")

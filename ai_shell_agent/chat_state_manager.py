@@ -150,7 +150,7 @@ def create_or_load_chat(title: str) -> str:
 
     if title in title_to_id:
         chat_file = title_to_id[title]
-        logger.info(f"Loading existing chat: {title} ({chat_file})")
+        logger.debug(f"Loading existing chat: {title} ({chat_file})")
         # Ensure existing chats have the toolset key and valid system prompt
         chat_data = _read_chat_data(chat_file)
         metadata = chat_data.get("metadata", {})
@@ -172,8 +172,7 @@ def create_or_load_chat(title: str) -> str:
                  logger.warning(f"Chat '{title}' missing system prompt at index 0. Prepending.")
                  messages.insert(0, {"role": "system", "content": new_system_prompt})
              else: # Update existing system prompt
-                 logger.info(f"Updating system prompt for chat '{title}' based on toolsets.")
-                 messages[0]["content"] = new_system_prompt
+                 logger.debug(f"Updating system prompt for chat '{title}' based on toolsets.")
              needs_update = True
 
         if needs_update:
@@ -186,7 +185,7 @@ def create_or_load_chat(title: str) -> str:
         chat_file = str(uuid.uuid4())
         chat_map[chat_file] = title
         _write_chat_map(chat_map)
-        logger.info(f"Creating new chat: {title} ({chat_file})")
+        logger.debug(f"Creating new chat: {title} ({chat_file})")
 
         # Initialize chat data
         initial_toolsets = list(DEFAULT_TOOLSETS)
@@ -204,7 +203,7 @@ def create_or_load_chat(title: str) -> str:
             }
         }
         _write_chat_data(chat_file, chat_data)
-        logger.info(f"Created new chat {title} with toolsets {initial_toolsets}.")
+        logger.debug(f"Created new chat {title} with toolsets {initial_toolsets}.")
 
     # Save this as the current session
     save_session(chat_file)
@@ -292,7 +291,7 @@ def flush_temp_chats() -> int:
         chat_path = os.path.join(CHATS_DIR, f"{chat_id}.json")
         try:
             os.remove(chat_path)
-            logger.info(f"Removed temporary chat: {title} ({chat_id})")
+            logger.debug(f"Removed temporary chat: {title} ({chat_id})")
             removed_count += 1
             if current_session == chat_id:
                  clear_current = True
@@ -303,7 +302,7 @@ def flush_temp_chats() -> int:
     if clear_current:
         save_session(None) # Clear current session if it was a temp one
 
-    logger.info(f"Flushed {removed_count} temporary chats.")
+    logger.debug(f"Flushed {removed_count} temporary chats.")
     return removed_count
 
 # --- Active Toolsets Management ---
@@ -333,7 +332,7 @@ def update_active_toolsets(chat_file: str, toolsets: List[str]) -> None:
     # Ensure unique toolsets
     unique_toolsets = sorted(list(set(toolsets)))
     _update_metadata_in_chat(chat_file, ACTIVE_TOOLSETS_KEY, unique_toolsets)
-    logger.info(f"Active toolsets updated for chat {chat_file}: {unique_toolsets}")
+    logger.debug(f"Active toolsets updated for chat {chat_file}: {unique_toolsets}")
 
 # --- Message Access Functions ---
 def _get_chat_messages(chat_file: str) -> List[Dict]:

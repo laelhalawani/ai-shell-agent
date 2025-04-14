@@ -104,7 +104,6 @@ def _handle_tool_calls(ai_message: AIMessage, chat_file: str) -> list[BaseMessag
 
     messages: List[BaseMessage] = []
     tool_registry_dict = get_all_tools_dict() # Get tools from registry
-    logger.info(f"AI wants to run {len(ai_message.tool_calls)} tool(s)...")
 
     for tool_call in ai_message.tool_calls:
         tool_name = tool_call.get("name")
@@ -123,6 +122,7 @@ def _handle_tool_calls(ai_message: AIMessage, chat_file: str) -> list[BaseMessag
                 continue
 
             tool = tool_registry_dict[tool_name]
+            logger.info(f"Tool Call: {tool_name}")
             logger.debug(f"Invoking tool '{tool_name}' with args: {tool_args}")
 
             # Invoke the tool with its arguments dictionary
@@ -134,7 +134,7 @@ def _handle_tool_calls(ai_message: AIMessage, chat_file: str) -> list[BaseMessag
             # Check for Aider input signal post-invocation
             if isinstance(tool_response.content, str) and tool_response.content.startswith(SIGNAL_PROMPT_NEEDED):
                 prompt_details = tool_response.content[len(SIGNAL_PROMPT_NEEDED):].strip()
-                logger.info(f"Tool '{tool_name}' indicated Aider needs input: {prompt_details}")
+                logger.info(f"Tool '{tool_name}' indicated Aider needs input")
 
             messages.append(tool_response)
 
@@ -297,7 +297,7 @@ def send_message(message: str) -> None:
         try:
             # --- Invoke LLM ---
             ai_response = llm_instance.invoke(lc_messages)
-            logger.info(f"AI Raw Response Content: {ai_response.content}")
+            logger.debug(f"AI Raw Response Content: {ai_response.content}")
             logger.debug(f"AI Full Response Object: {ai_response}")
 
             # --- Save AI response ---
@@ -320,14 +320,18 @@ def send_message(message: str) -> None:
             current_data.setdefault("messages", []).append(ai_msg_dict)
             _write_chat_data(chat_file, current_data) # Save AI response
 
-            # If this is the first response or the response doesn't have tool calls, print it to user
-            if iteration == 1 or not (hasattr(ai_response, "tool_calls") and ai_response.tool_calls):
-                print(ai_response.content) # Print message content to user
+            has_tool_calls = hasattr(ai_response, "tool_calls") and ai_response.tool_calls
+
+            # Print final AI message only if no tool calls, or on first loop iteration
+            if not has_tool_calls or iteration == 1:
+                print(f"\n[AI]: {ai_response.content}")
+                # Only log the AI full message if this is the final one or the first iteration
+                if not has_tool_calls or iteration == 1:
+                    logger.info(f"AI: {ai_response.content}")
 
             # --- Handle Tool Calls ---
-            has_tool_calls = hasattr(ai_response, "tool_calls") and ai_response.tool_calls
             if has_tool_calls:
-                logger.info(f"AI made {len(ai_response.tool_calls)} tool call(s) - executing and continuing ReAct loop")
+                logger.info(f"AI requesting {len(ai_response.tool_calls)} tool call(s)...")
                 tool_messages = _handle_tool_calls(ai_response, chat_file)
 
                 # Save tool messages to chat history and print results
@@ -343,21 +347,22 @@ def send_message(message: str) -> None:
                         }
                         tool_message_dicts.append(tool_msg_dict)
 
-                        # Print tool result/signal
+                        # Print tool result/signal with improved formatting
                         if isinstance(tool_msg.content, str) and tool_msg.content.startswith(SIGNAL_PROMPT_NEEDED):
                             prompt_details = tool_msg.content[len(SIGNAL_PROMPT_NEEDED):].strip()
-                            print(f"\n[Code Editor Input Required]: {prompt_details}")
-                            # Exit ReAct loop on Aider input signal - needs human intervention
-                            has_tool_calls = False  # Set to false to exit the loop
+                            print(f"\n[File Editor Input Required]: {prompt_details}")
+                            has_tool_calls = False # Stop loop on input needed
                         else:
                             tool_name_for_print = next((tc.get("name") for tc in ai_response.tool_calls if tc.get("id") == tool_msg.tool_call_id), "Unknown Tool")
-                            print(f"\n[Tool Result - {tool_name_for_print} ({tool_msg.tool_call_id})]:\n{tool_msg.content}")
+                            # FORMATTED PRINT - Header + Content indented slightly for readability
+                            print(f"\n[Tool Result - {tool_name_for_print}]:")
+                            print(f"  {tool_msg.content.replace(chr(10), chr(10)+'  ')}")
 
                     current_data.setdefault("messages", []).extend(tool_message_dicts)
                     _write_chat_data(chat_file, current_data) # Save data with tool results
                 else:
                     # If tool execution failed completely, mark all tool calls as having no valid responses
-                    logger.warning("Tool execution failed to produce any tool messages. Breaking ReAct loop to prevent API errors.")
+                    logger.warning("Tool execution failed to produce any tool messages. Breaking ReAct loop.")
                     has_tool_calls = False  # Force exit from the loop as there are no tool responses
                 
                 # Break the loop if there are no tool calls or if Aider needs input
@@ -369,20 +374,19 @@ def send_message(message: str) -> None:
                 continue
             
             # No tool calls, break the ReAct loop
-            logger.info("AI response has no tool calls, ReAct loop complete")
+            logger.debug("AI response has no tool calls, ReAct loop complete")
             break
 
         except Exception as e:
             logger.error(f"Error during LLM interaction or tool handling: {e}")
             logger.error(traceback.format_exc())
-            print(f"An error occurred: {e}")
+            print(f"\n[Error]: An error occurred: {e}")
             break
     
     # Log if we hit the iteration limit
     if iteration >= max_iterations:
         logger.warning(f"ReAct loop hit maximum iterations ({max_iterations}), terminating")
-        print(f"\n[Warning: Reached maximum number of tool calls ({max_iterations}). Process terminated.]")
-
+        print(f"\n[Warning]: Reached maximum number of tool calls ({max_iterations}). Process terminated.")
 
 def start_temp_chat(message: str) -> None:
     """

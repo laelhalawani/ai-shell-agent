@@ -645,7 +645,7 @@ class StartAIEditorTool(BaseTool):
         current_toolsets = get_active_toolsets(chat_file)
         toolsets_updated = False
         if (toolset_name not in current_toolsets):
-            logger.info(f"Activating '{toolset_name}' toolset for chat {chat_file}.")
+            logger.debug(f"Activating '{toolset_name}' toolset for chat {chat_file}.")
             new_toolsets = list(current_toolsets)
             new_toolsets.append(toolset_name)
             update_active_toolsets(chat_file, new_toolsets) # Save updated toolsets list
@@ -656,7 +656,7 @@ class StartAIEditorTool(BaseTool):
             # Update the system prompt message in the chat history (message 0)
             _update_message_in_chat(chat_file, 0, {"role": "system", "content": new_system_prompt})
             toolsets_updated = True
-            logger.info(f"System prompt updated for chat {chat_file} due to toolset activation.")
+            logger.debug(f"System prompt updated for chat {chat_file} due to toolset activation.")
         # --- End Toolset Activation ---
 
         # --- Aider Initialization Logic (largely unchanged) ---

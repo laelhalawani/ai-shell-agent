@@ -11,7 +11,6 @@ from pathlib import Path
 
 # Langchain imports
 from langchain.tools import BaseTool
-from langchain_experimental.tools.python.tool import PythonREPLTool
 # Add missing imports from the original tool.py file
 from langchain_experimental.utilities.python import PythonREPL
 from langchain_core.callbacks.manager import (
@@ -19,7 +18,8 @@ from langchain_core.callbacks.manager import (
     CallbackManagerForToolRun,
 )
 from langchain_core.runnables.config import run_in_executor
-from pydantic import Field
+# Fix the Pydantic imports - Field should include default_factory
+from pydantic import BaseModel, Field
 
 # Import the sanitize_input function directly from the module
 from langchain_experimental.tools.python.tool import sanitize_input, _get_default_python_repl
@@ -45,13 +45,10 @@ from .prompts.prompts import build_prompt
 
 class StartTerminalTool(BaseTool):
     name: str = "start_terminal"
-    description: str = "Start using the terminal. This makes the `terminal` command available, which lets you run shell commands on the system."
+    description: str = "Starts a terminal session and enables executing commands on the user's system."
     
-    def _run(self, *args, **kwargs) -> str:
-        """
-        Activate the Terminal toolset, making terminal command available.
-        Handles both positional args (e.g. text command) and v__args
-        """
+    def _run(self, args: str = "", **kwargs) -> str:
+        """Start the command shell by activating the 'Terminal' toolset."""
         # Extract args from either positional args or v__args wrapping
         command_args = None
         if args:
@@ -78,33 +75,24 @@ class StartTerminalTool(BaseTool):
         
         toolset_name = "Terminal"
         
-        # Update active toolsets
+        # --- Toolset Activation & Prompt Update ---
         current_toolsets = get_active_toolsets(chat_file)
-        toolsets_updated = False
-        
-        if toolset_name not in current_toolsets:
-            new_toolsets = list(current_toolsets) 
-            new_toolsets.append(toolset_name)
-            update_active_toolsets(chat_file, new_toolsets)
+        if toolset_name in current_toolsets:
+            logger.debug(f"'{toolset_name}' toolset is already active, no action needed")
+            return f"'{toolset_name}' toolset is already active."
             
-            # Update system prompt
-            new_system_prompt = build_prompt(active_toolsets=new_toolsets)
-            _update_message_in_chat(chat_file, 0, {"role": "system", "content": new_system_prompt})
-            
-            toolsets_updated = True
-            logger.info(f"Successfully activated '{toolset_name}' toolset for chat {chat_file}")
+        new_toolsets = list(current_toolsets)
+        new_toolsets.append(toolset_name)
+        update_active_toolsets(chat_file, new_toolsets) # Save updated toolsets list
         
-        # Run an initial command if provided
-        if command_args and args_str:
-            # If a command was provided as an argument, run it
-            # Get the direct terminal tool without activating again (avoid recursion)
-            if hasattr(direct_terminal_tool, '_run'):
-                result = direct_terminal_tool._run(command=args_str)
-                activation_msg = f"Terminal activated. " if toolsets_updated else ""
-                return f"{activation_msg}Command output:\n{result}"
+        # Re-build the system prompt with the new set of active toolsets
+        new_system_prompt = build_prompt(active_toolsets=new_toolsets)
         
-        # Default return if no command or tools already active
-        return f"Terminal {'activated' if toolsets_updated else 'is already active'}. Use the `terminal` command to run commands."
+        # Update the system prompt message in the chat history (message 0)
+        _update_message_in_chat(chat_file, 0, {"role": "system", "content": new_system_prompt})
+        
+        logger.debug(f"Successfully activated '{toolset_name}' toolset for chat {chat_file}")
+        return f"'{toolset_name}' toolset activated. Use the `terminal` command to run commands."
             
     async def _arun(self, *args, **kwargs) -> str:
         """Run the tool asynchronously."""
@@ -116,7 +104,7 @@ class TerminalTool_HITL(BaseTool):
     This tool is safer as it requires user confirmation before execution.
     """
     name: str = "terminal"
-    description: str = """Executes a command in the system's terminal. Use this for cmd/terminal/console/shell commands such as navigation, checking infromation, changing system settings, creating and previewing files and directories, etc."""
+    description: str = """Executes a command in the system's terminal."""
     
     def _run(self, command: str = None, **kwargs) -> str:
         """Execute a command in the terminal shell with human verification."""
@@ -245,10 +233,7 @@ class PythonREPLTool_HITL(BaseTool):
     """
     name: str = "python_repl"
     description: str = (
-        "A Python shell. Use this to execute Python commands. "
-        "Input should be a valid Python command. "
-        "If you want to see the output of a value, you should print it out "
-        "with `print(...)`."
+        "Evaluates Python code in a REPL environment. "
     )
     
     # Create the attributes that match the original PythonREPLTool
@@ -260,7 +245,7 @@ class PythonREPLTool_HITL(BaseTool):
     def _run(
         self,
         query: str = None,
-        run_manager: Optional[CallbackManagerForToolRun] = None,
+        #run_manager: Optional[CallbackManagerForToolRun] = None,
         **kwargs
     ) -> Any:
         """

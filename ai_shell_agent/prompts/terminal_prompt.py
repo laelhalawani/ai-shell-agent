@@ -9,11 +9,9 @@ OS_SYSTEM = platform.system() # Use platform.system() for broader compatibility
 
 TERMINAL_TOOLSET_INTRO = """\
 Terminal allows you to execute commands directly in the user's system.
-Use the `terminal` tool to run commands.
-Use this tool for operations like file management, system information retrieval, software installation, and network diagnostics, among others.
+Use the `terminal` for operations like settings, system information retrieval, software installation, and network diagnostics, among others.
 
 ALWAYS BEGIN by running information-gathering commands to understand the environment and file structure.
-
 Examples of good information-gathering commands:
 - For location awareness: `pwd` or `cd` (to see current directory)
 - For file context: `dir` or `ls` (to see available files)
