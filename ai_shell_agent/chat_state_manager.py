@@ -1,6 +1,6 @@
 """
 Manages persistent state related to chat sessions, including
-session tracking, chat file I/O, Aider state, chat mapping, toolsets.
+session tracking, chat file I/O, chat mapping, toolsets.
 """
 import os
 import json
@@ -10,342 +10,525 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 import time
 from datetime import datetime, timezone
+import shutil # Import shutil for directory removal
 
 # Local imports
-from . import logger
-# Import the prompt builder (needed for initial prompt)
-from .prompts.prompts import system_prompt
+from . import logger, DATA_DIR, CHATS_DIR # Import from __init__
+# Import JSON utility functions from utils
+from .utils import read_json, write_json
+# Import the static system prompt (now using static prompt)
+from .prompts.prompts import SYSTEM_PROMPT
 # Import toolset registry functions to get available toolsets
-# This import depends on toolsets.toolsets running its discovery first
-from .toolsets.toolsets import get_toolset_ids
+from .toolsets.toolsets import get_toolset_ids, get_toolset_names  # Added get_toolset_names
 
 # --- Constants ---
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-CHATS_DIR = os.path.join(DATA_DIR, "chats")
-SESSION_FILE = os.path.join(DATA_DIR, "session.json")
-CHAT_MAP_FILE = os.path.join(CHATS_DIR, "chat_map.json")
-AIDER_STATE_KEY = "_aider_state" # Internal key name
-# Use simple keys for metadata storage
+SESSION_FILE = Path(DATA_DIR) / "session.json"
+CHAT_MAP_FILE = Path(CHATS_DIR) / "chat_map.json"
+# Removed: AIDER_STATE_KEY
+# Metadata keys within chat config.json
+MODEL_KEY = "agent_model" # Optional override for the agent model per chat
 ACTIVE_TOOLSETS_KEY = "active_toolsets"
 ENABLED_TOOLSETS_KEY = "enabled_toolsets"
+TITLE_KEY = "title"
+CREATED_AT_KEY = "created_at"
 
 # --- Default Toolsets ---
 # Active toolsets start empty, must be activated by LLM or user
-DEFAULT_ACTIVE_TOOLSETS = []
+DEFAULT_ACTIVE_TOOLSETS_NAMES = []
 
 # Enabled toolsets default to all discovered toolsets
 # This relies on discovery having run in toolsets/toolsets.py via the __init__ import chain
 try:
-    DEFAULT_ENABLED_TOOLSETS = get_toolset_ids()
-    logger.info(f"Default enabled toolsets initialized: {DEFAULT_ENABLED_TOOLSETS}")
+    DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names() # Use names for user display/selection
+    logger.info(f"Default enabled toolsets (names) initialized: {DEFAULT_ENABLED_TOOLSETS_NAMES}")
 except Exception as e:
     logger.error(f"Failed to get toolset names for defaults at init: {e}. Falling back.")
-    DEFAULT_ENABLED_TOOLSETS = ["terminal"] # Basic fallback
+    # Fallback might need adjustment based on toolset names vs IDs
+    DEFAULT_ENABLED_TOOLSETS_NAMES = ["Terminal"] # Basic fallback with display name
 
 # Ensure directories exist
 os.makedirs(CHATS_DIR, exist_ok=True)
 
-# --- Low-Level JSON Helpers (Keep _read_json, _write_json as before) ---
-def _read_json(file_path: str, default_value=None) -> Any:
-    """Reads a JSON file or returns a default value if not found."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        if isinstance(e, FileNotFoundError):
-            logger.debug(f"File not found: {file_path}. Returning default.")
-        else:
-            logger.error(f"Error parsing JSON from {file_path}: {e}. Returning default.")
-        return json.loads(json.dumps(default_value)) if default_value is not None else {}
+# --- Low-Level JSON Helpers ---
+# These functions have been moved to utils.py
+# Using aliases for backward compatibility
+def _read_json(file_path: Path, default_value=None) -> Any:
+    """Alias for read_json from utils."""
+    return read_json(file_path, default_value)
 
-def _write_json(file_path: str, data: Any) -> None:
-    """Writes data to a JSON file, creating directories if needed."""
-    try:
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        tmp_path = f"{file_path}.tmp.{uuid.uuid4()}"
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-        os.replace(tmp_path, file_path)
-    except Exception as e:
-        logger.error(f"Error writing JSON to {file_path}: {e}", exc_info=True)
-        if os.path.exists(tmp_path):
-            try: os.remove(tmp_path)
-            except Exception as rm_e: logger.error(f"Failed to remove temporary file {tmp_path}: {rm_e}")
+def _write_json(file_path: Path, data: Any) -> None:
+    """Alias for write_json from utils."""
+    write_json(file_path, data)
 
-# --- Chat File Data Helpers ---
-def _read_chat_data(chat_file: str) -> Dict:
-    """Reads the data for a specific chat session file, applying defaults."""
-    if not chat_file:
-         logger.error("Attempted to read chat data with empty chat_file.")
-         return {"messages": [], "metadata": {
-             ACTIVE_TOOLSETS_KEY: list(DEFAULT_ACTIVE_TOOLSETS),
-             ENABLED_TOOLSETS_KEY: list(DEFAULT_ENABLED_TOOLSETS)
-         }}
-    chat_path = os.path.join(CHATS_DIR, f"{chat_file}.json")
-    # Provide current defaults when reading
-    default_data = {"messages": [], "metadata": {
-        ACTIVE_TOOLSETS_KEY: list(DEFAULT_ACTIVE_TOOLSETS),
-        ENABLED_TOOLSETS_KEY: list(DEFAULT_ENABLED_TOOLSETS)
-    }}
-    data = _read_json(chat_path, default_data)
-    # Ensure metadata keys exist even if file exists but lacks them
-    if "metadata" not in data: data["metadata"] = {}
-    if ACTIVE_TOOLSETS_KEY not in data["metadata"]: data["metadata"][ACTIVE_TOOLSETS_KEY] = list(DEFAULT_ACTIVE_TOOLSETS)
-    if ENABLED_TOOLSETS_KEY not in data["metadata"]: data["metadata"][ENABLED_TOOLSETS_KEY] = list(DEFAULT_ENABLED_TOOLSETS)
-    return data
+# --- Path Helper Functions ---
+def _get_chat_dir_path(chat_id: str) -> Path:
+    """Gets the Path object for a chat's directory."""
+    if not chat_id: raise ValueError("chat_id cannot be empty")
+    return Path(CHATS_DIR) / chat_id
 
-def _write_chat_data(chat_file: str, data: Dict) -> None:
-    """Writes data for a specific chat session file."""
-    if not chat_file:
-         logger.error("Attempted to write chat data with empty chat_file.")
-         return
-    # Ensure essential keys exist before writing (already handled by _read_chat_data defaults)
-    if "metadata" not in data: data["metadata"] = {}
-    if ACTIVE_TOOLSETS_KEY not in data["metadata"]: data["metadata"][ACTIVE_TOOLSETS_KEY] = list(DEFAULT_ACTIVE_TOOLSETS)
-    if ENABLED_TOOLSETS_KEY not in data["metadata"]: data["metadata"][ENABLED_TOOLSETS_KEY] = list(DEFAULT_ENABLED_TOOLSETS)
+def _get_chat_messages_path(chat_id: str) -> Path:
+    """Gets the Path object for a chat's messages file."""
+    return _get_chat_dir_path(chat_id) / "chat.json"
 
-    chat_path = os.path.join(CHATS_DIR, f"{chat_file}.json")
-    _write_json(chat_path, data)
+def _get_chat_config_path(chat_id: str) -> Path:
+    """Gets the Path object for a chat's config file."""
+    return _get_chat_dir_path(chat_id) / "config.json"
 
-def _get_chat_metadata(chat_file: str, key: Optional[str] = None, default: Any = None) -> Any:
-    """Gets metadata, returning default if key not found."""
-    if not chat_file: return default if key else {}
-    chat_data = _read_chat_data(chat_file)
-    metadata = chat_data.get("metadata", {})
-    if key is None: return metadata
-    return metadata.get(key, default)
+def get_toolset_data_path(chat_id: str, toolset_id: str) -> Path:
+    """Gets the Path object for a toolset's data file within a chat."""
+    if not toolset_id: raise ValueError("toolset_id cannot be empty")
+    toolsets_dir = _get_chat_dir_path(chat_id) / "toolsets"
+    toolsets_dir.mkdir(exist_ok=True) # Ensure it exists when path is requested
+    return toolsets_dir / f"{toolset_id}.json"
 
-def _update_metadata_in_chat(chat_file: str, key: str, value: Any) -> None:
-    """Updates a metadata value."""
-    if not chat_file:
-         logger.error(f"Attempted to update metadata '{key}' with empty chat_file.")
-         return
-    chat_data = _read_chat_data(chat_file)
-    if "metadata" not in chat_data: chat_data["metadata"] = {}
-    chat_data["metadata"][key] = value
-    _write_chat_data(chat_file, chat_data)
+# --- Chat Data Access ---
+def _read_chat_messages(chat_id: str) -> List[Dict]:
+    """Reads the messages for a specific chat session file."""
+    if not chat_id:
+        logger.error("Attempted to read chat messages with empty chat_id.")
+        return []
+    messages_path = _get_chat_messages_path(chat_id)
+    # Default to empty list if file not found or invalid
+    data = _read_json(messages_path, {"messages": []})
+    return data.get("messages", [])
 
-# --- Chat Map Helpers (Unchanged) ---
-def _read_chat_map() -> Dict[str, str]: return _read_json(CHAT_MAP_FILE, {})
-def _write_chat_map(chat_map: Dict[str, str]) -> None: _write_json(CHAT_MAP_FILE, chat_map)
+def _write_chat_messages(chat_id: str, messages: List[Dict]) -> None:
+    """Writes messages for a specific chat session file."""
+    if not chat_id:
+        logger.error("Attempted to write chat messages with empty chat_id.")
+        return
+    messages_path = _get_chat_messages_path(chat_id)
+    _write_json(messages_path, {"messages": messages})
 
-# --- Session Management (Unchanged) ---
-def get_current_chat() -> Optional[str]: return _read_json(SESSION_FILE, {}).get("current_chat")
-def save_session(chat_file: Optional[str]) -> None: _write_json(SESSION_FILE, {"current_chat": chat_file} if chat_file else {})
+def _read_chat_config(chat_id: str) -> Dict:
+    """Reads the config for a specific chat session, applying defaults."""
+    if not chat_id:
+        logger.error("Attempted to read chat config with empty chat_id.")
+        return {} # Return empty dict, let caller handle defaults
+    config_path = _get_chat_config_path(chat_id)
+    # Provide DEFAULTS structure when reading
+    defaults = {
+        MODEL_KEY: None, # Default to global model
+        ENABLED_TOOLSETS_KEY: list(DEFAULT_ENABLED_TOOLSETS_NAMES),
+        ACTIVE_TOOLSETS_KEY: list(DEFAULT_ACTIVE_TOOLSETS_NAMES),
+        TITLE_KEY: "Untitled Chat",
+        CREATED_AT_KEY: datetime.now(timezone.utc).isoformat()
+    }
+    config = _read_json(config_path, default_value=defaults)
+    # Ensure all default keys exist
+    needs_update = False
+    for key, default_val in defaults.items():
+        if key not in config:
+            config[key] = default_val
+            needs_update = True # If a key was missing, write back the complete default structure
+    
+    # Validate toolset lists
+    registered_names = get_toolset_names()
+    current_enabled = config.get(ENABLED_TOOLSETS_KEY, [])
+    valid_enabled = [name for name in current_enabled if name in registered_names]
+    if set(valid_enabled) != set(current_enabled):
+         logger.warning(f"Correcting enabled toolsets for chat '{chat_id}': {valid_enabled}")
+         config[ENABLED_TOOLSETS_KEY] = valid_enabled
+         needs_update = True
 
-# --- Helper Functions (Unchanged) ---
-def _get_console_session_id() -> str: return "console_" + str(uuid.uuid4())
+    current_active = config.get(ACTIVE_TOOLSETS_KEY, [])
+    # Active must also be currently enabled
+    valid_active = [name for name in current_active if name in valid_enabled]
+    if set(valid_active) != set(current_active):
+         logger.warning(f"Correcting active toolsets for chat '{chat_id}': {valid_active}")
+         config[ACTIVE_TOOLSETS_KEY] = valid_active
+         needs_update = True
 
-# --- Aider State Management (Unchanged) ---
-def get_aider_state(chat_file: str) -> Optional[Dict]:
-    if not chat_file: return None
-    return _get_chat_metadata(chat_file, AIDER_STATE_KEY)
+    if needs_update:
+         logger.debug(f"Updating chat config {config_path} with defaults/corrections.")
+         _write_chat_config(chat_id, config)
 
-def save_aider_state(chat_file: str, state: Dict) -> None:
-    if not chat_file: logger.error("Cannot save Aider state: No active chat session."); return
-    _update_metadata_in_chat(chat_file, AIDER_STATE_KEY, state)
+    return config
 
-def clear_aider_state(chat_file: str) -> None:
-    if not chat_file: logger.error("Cannot clear Aider state: No active chat session."); return
-    current_state = get_aider_state(chat_file) or {}
-    current_state['enabled'] = False
-    current_state.pop('aider_done_messages', None)
-    current_state.pop('abs_fnames', None)
-    current_state.pop('abs_read_only_fnames', None)
-    _update_metadata_in_chat(chat_file, AIDER_STATE_KEY, current_state)
-    logger.info(f"Cleared Aider state for chat {chat_file}")
+def _write_chat_config(chat_id: str, config: Dict) -> None:
+    """Writes config for a specific chat session file."""
+    if not chat_id:
+        logger.error("Attempted to write chat config with empty chat_id.")
+        return
+    config_path = _get_chat_config_path(chat_id)
+    _write_json(config_path, config)
+
+def get_chat_config_value(chat_id: str, key: str, default: Any = None) -> Any:
+    """Reads a specific configuration value for a chat."""
+    config = _read_chat_config(chat_id) # Reads with defaults/validation
+    return config.get(key, default)
+
+def update_chat_config_value(chat_id: str, key: str, value: Any) -> None:
+    """Updates a specific configuration value for a chat."""
+    if not chat_id:
+        logger.error(f"Attempted to update config key '{key}' with empty chat_id.")
+        return
+    # Read existing config to update it safely
+    config = _read_chat_config(chat_id)
+    config[key] = value
+    _write_chat_config(chat_id, config)
+
+# --- Chat Map Helpers ---
+def _read_chat_map() -> Dict[str, str]: 
+    return _read_json(CHAT_MAP_FILE, {})
+
+def _write_chat_map(chat_map: Dict[str, str]) -> None: 
+    _write_json(CHAT_MAP_FILE, chat_map)
+
+# --- Session Management ---
+def get_current_chat() -> Optional[str]: 
+    return _read_json(SESSION_FILE, {}).get("current_chat")
+
+def save_session(chat_id: Optional[str]) -> None: 
+    _write_json(SESSION_FILE, {"current_chat": chat_id} if chat_id else {})
+
+# --- Helper Functions ---
+def _get_console_session_id() -> str: 
+    return "console_" + str(uuid.uuid4())
 
 # --- Toolset Management ---
-def get_active_toolsets(chat_file: str) -> List[str]:
-    """Gets the list of *active* toolsets for a specific chat session."""
-    return _get_chat_metadata(chat_file, ACTIVE_TOOLSETS_KEY, default=list(DEFAULT_ACTIVE_TOOLSETS))
+def get_enabled_toolsets(chat_id: str) -> List[str]:
+    """Gets the list of *enabled* toolset names for a specific chat session."""
+    global DEFAULT_ENABLED_TOOLSETS_NAMES
+    try: 
+        DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names()
+    except Exception: 
+        pass # Ignore errors here, default already set
+    return get_chat_config_value(chat_id, ENABLED_TOOLSETS_KEY, default=list(DEFAULT_ENABLED_TOOLSETS_NAMES))
 
-def update_active_toolsets(chat_file: str, toolsets: List[str]) -> None:
-    """Updates the list of *active* toolsets. Ensures they are valid and enabled."""
-    if not chat_file: logger.error("update_active_toolsets called with empty chat_file."); return
-    enabled = get_enabled_toolsets(chat_file)
-    valid_active = [ts for ts in toolsets if ts in enabled]
-    invalid_attempt = [ts for ts in toolsets if ts not in enabled]
-    if invalid_attempt:
-        logger.warning(f"Attempted to activate non-enabled toolsets for chat {chat_file}: {invalid_attempt}. Ignoring.")
-    unique_toolsets = sorted(list(set(valid_active)))
-    _update_metadata_in_chat(chat_file, ACTIVE_TOOLSETS_KEY, unique_toolsets)
-    logger.debug(f"Active toolsets updated for chat {chat_file}: {unique_toolsets}")
+def update_enabled_toolsets(chat_id: str, toolset_names: List[str]) -> None:
+    """Updates the list of *enabled* toolset names. Deactivates any no longer enabled."""
+    if not chat_id: 
+        logger.error("update_enabled_toolsets called with empty chat_id.")
+        return
 
-def get_enabled_toolsets(chat_file: str) -> List[str]:
-    """Gets the list of *enabled* toolsets for a specific chat session."""
-    # Refresh default value in case discovery was delayed
-    global DEFAULT_ENABLED_TOOLSETS
-    try: DEFAULT_ENABLED_TOOLSETS = get_toolset_ids()
-    except Exception: pass # Ignore errors here, default already set at top level
-    return _get_chat_metadata(chat_file, ENABLED_TOOLSETS_KEY, default=list(DEFAULT_ENABLED_TOOLSETS))
-
-def update_enabled_toolsets(chat_file: str, toolsets: List[str]) -> None:
-    """Updates the list of *enabled* toolsets. Deactivates any no longer enabled."""
-    if not chat_file: logger.error("update_enabled_toolsets called with empty chat_file."); return
-    # Validate against registered toolsets
-    registered_names = get_toolset_ids()
-    valid_toolsets = [ts for ts in toolsets if ts in registered_names]
-    invalid_toolsets = [ts for ts in toolsets if ts not in registered_names]
+    registered_names = get_toolset_names() # Use display names
+    valid_toolsets = [name for name in toolset_names if name in registered_names]
+    invalid_toolsets = [name for name in toolset_names if name not in registered_names]
     if invalid_toolsets:
-         logger.warning(f"Attempted to enable invalid toolsets for chat {chat_file}: {invalid_toolsets}. Ignoring.")
+        logger.warning(f"Attempted to enable invalid toolsets for chat {chat_id}: {invalid_toolsets}. Ignoring.")
+
     unique_toolsets = sorted(list(set(valid_toolsets)))
-    _update_metadata_in_chat(chat_file, ENABLED_TOOLSETS_KEY, unique_toolsets)
-    logger.info(f"Enabled toolsets updated for chat {chat_file}: {unique_toolsets}")
+    update_chat_config_value(chat_id, ENABLED_TOOLSETS_KEY, unique_toolsets)
+    logger.info(f"Enabled toolsets updated for chat {chat_id}: {unique_toolsets}")
+
     # Deactivate any currently active toolsets that are no longer enabled
-    current_active = get_active_toolsets(chat_file)
-    new_active = [ts for ts in current_active if ts in unique_toolsets]
-    if len(new_active) != len(current_active):
-         logger.info(f"Deactivating toolsets no longer enabled: {list(set(current_active) - set(new_active))}")
-         update_active_toolsets(chat_file, new_active) # This calls _update_metadata_in_chat again
+    current_active = get_active_toolsets(chat_id)
+    new_active = [name for name in current_active if name in unique_toolsets]
+    if set(new_active) != set(current_active):
+        logger.info(f"Deactivating toolsets no longer enabled: {list(set(current_active) - set(new_active))}")
+        update_active_toolsets(chat_id, new_active) # This calls update_chat_config_value again
+
+    # Trigger config check for newly enabled toolsets
+    newly_enabled = set(unique_toolsets) - set(current_active)
+    if newly_enabled:
+        logger.info(f"Checking configuration for newly enabled toolsets: {newly_enabled}")
+        for toolset_name in newly_enabled:
+            check_and_configure_toolset(chat_id, toolset_name)
+
+def get_active_toolsets(chat_id: str) -> List[str]:
+    """Gets the list of *active* toolset names for a specific chat session."""
+    return get_chat_config_value(chat_id, ACTIVE_TOOLSETS_KEY, default=list(DEFAULT_ACTIVE_TOOLSETS_NAMES))
+
+def update_active_toolsets(chat_id: str, toolset_names: List[str]) -> None:
+    """Updates the list of *active* toolsets. Ensures they are valid and enabled."""
+    if not chat_id: 
+        logger.error("update_active_toolsets called with empty chat_id.")
+        return
+    enabled = get_enabled_toolsets(chat_id) # Gets current enabled names
+    valid_active = [name for name in toolset_names if name in enabled]
+    invalid_attempt = [name for name in toolset_names if name not in enabled]
+    if invalid_attempt:
+        logger.warning(f"Attempted to activate non-enabled toolsets for chat {chat_id}: {invalid_attempt}. Ignoring.")
+    unique_toolsets = sorted(list(set(valid_active)))
+    update_chat_config_value(chat_id, ACTIVE_TOOLSETS_KEY, unique_toolsets)
+    logger.debug(f"Active toolsets updated for chat {chat_id}: {unique_toolsets}")
+
+def check_and_configure_toolset(chat_id: str, toolset_name: str):
+    """Checks if a toolset is configured for a chat, runs config if not."""
+    logger.debug(f"Checking configuration for toolset '{toolset_name}' in chat {chat_id}")
+    
+    # Import inside function to avoid circular imports
+    from .toolsets.toolsets import get_registered_toolsets
+    
+    registered_toolsets = get_registered_toolsets()
+    target_metadata = None
+    target_id = None
+    
+    for ts_id, meta in registered_toolsets.items():
+        if meta.name == toolset_name:
+             target_metadata = meta
+             target_id = ts_id
+             break
+
+    if not target_metadata or not target_id:
+        logger.error(f"Cannot check configuration: Toolset '{toolset_name}' not found in registry.")
+        return
+
+    if not target_metadata.configure_func:
+         logger.debug(f"Toolset '{toolset_name}' has no configuration function. Skipping check.")
+         return # Nothing to configure
+
+    toolset_data_path = get_toolset_data_path(chat_id, target_id)
+    current_config = _read_json(toolset_data_path, default_value=None) # Read toolset's file
+
+    # Basic check: Does the file exist and is it a dictionary?
+    # More robust check: Are all keys from config_defaults present?
+    is_configured = False
+    if isinstance(current_config, dict):
+         # If defaults are defined, check if all keys exist in current config
+         if target_metadata.config_defaults:
+             is_configured = all(key in current_config for key in target_metadata.config_defaults)
+         else:
+             # If no defaults, assume any existing dict means configured
+             is_configured = True
+
+    if not is_configured:
+         print(f"\nNOTICE: Toolset '{toolset_name}' needs configuration for this chat.")
+         logger.info(f"Toolset '{toolset_name}' (ID: {target_id}) needs configuration for chat {chat_id}. Running configure function.")
+         try:
+             # Run the configuration function
+             target_metadata.configure_func(toolset_data_path, current_config if isinstance(current_config, dict) else None)
+             logger.info(f"Configuration function completed for {toolset_name}.")
+         except (EOFError, KeyboardInterrupt):
+              logger.warning(f"Configuration cancelled by user for {toolset_name}. Toolset may not work.")
+              print(f"\nConfiguration for '{toolset_name}' cancelled. It may not function correctly.")
+         except Exception as e:
+              logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
+              print(f"\nError configuring '{toolset_name}': {e}. It may not function correctly.")
+    else:
+         logger.debug(f"Toolset '{toolset_name}' already configured for chat {chat_id}.")
 
 # --- Chat Creation/Management ---
 def create_or_load_chat(title: str) -> Optional[str]:
-    """Creates/Loads chat, ensuring metadata keys and valid toolsets."""
+    """Creates/Loads chat directory, ensuring structure and base config/messages."""
     chat_map = _read_chat_map()
     title_to_id = {v: k for k, v in chat_map.items()}
-    chat_file: Optional[str] = None
-    needs_save = False
+    chat_id: Optional[str] = None
 
     # Refresh default enabled toolsets value
-    global DEFAULT_ENABLED_TOOLSETS
-    try: DEFAULT_ENABLED_TOOLSETS = get_toolset_ids()
-    except Exception: pass
+    global DEFAULT_ENABLED_TOOLSETS_NAMES
+    try: 
+        DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names()
+    except Exception: 
+        pass
 
     if title in title_to_id:
-        chat_file = title_to_id[title]
-        logger.debug(f"Loading existing chat: {title} ({chat_file})")
-        chat_data = _read_chat_data(chat_file) # Reads with current defaults
-        metadata = chat_data.get("metadata", {})
-        messages = chat_data.get("messages", [])
+        chat_id = title_to_id[title]
+        chat_dir = _get_chat_dir_path(chat_id)
+        logger.debug(f"Loading existing chat: {title} ({chat_id})")
 
-        current_enabled = metadata.get(ENABLED_TOOLSETS_KEY, list(DEFAULT_ENABLED_TOOLSETS))
-        registered_names = get_toolset_ids()
-        valid_enabled = [ts for ts in current_enabled if ts in registered_names]
-        if set(valid_enabled) != set(current_enabled):
-            logger.warning(f"Correcting enabled toolsets for chat '{title}': {valid_enabled}")
-            metadata[ENABLED_TOOLSETS_KEY] = valid_enabled; needs_save = True
-            current_enabled = valid_enabled
+        if not chat_dir.is_dir():
+            logger.error(f"Chat directory not found for existing chat {title} ({chat_id}). Removing from map.")
+            del chat_map[chat_id]
+            _write_chat_map(chat_map)
+            # Force creation below
+            chat_id = None # Reset chat_id to trigger creation logic
+        else:
+            # Directory exists, ensure files and validate config
+            config = _read_chat_config(chat_id) # Reads/validates/updates config.json
+            messages = _read_chat_messages(chat_id) # Reads chat.json
 
-        current_active = metadata.get(ACTIVE_TOOLSETS_KEY, list(DEFAULT_ACTIVE_TOOLSETS))
-        valid_active = [ts for ts in current_active if ts in current_enabled]
-        if set(valid_active) != set(current_active):
-            logger.warning(f"Correcting active toolsets for chat '{title}': {valid_active}")
-            metadata[ACTIVE_TOOLSETS_KEY] = valid_active; needs_save = True
-            current_active = valid_active
+            # Check/Rebuild system prompt ONLY IF necessary
+            if not messages or messages[0].get("role") != "system" or messages[0].get("content") != SYSTEM_PROMPT:
+                new_sys_msg = {"role": "system", "content": SYSTEM_PROMPT, "timestamp": datetime.now(timezone.utc).isoformat()}
+                if not messages or messages[0].get("role") != "system":
+                    logger.warning(f"Prepending missing/invalid system prompt for chat '{title}'.")
+                    messages.insert(0, new_sys_msg)
+                else:
+                    logger.debug(f"Updating system prompt content for chat '{title}'.")
+                    messages[0] = new_sys_msg
+                _write_chat_messages(chat_id, messages) # Write updated messages
 
-        # Check/Rebuild system prompt ONLY IF necessary
-        prompt_needs_update = False
-        expected_prompt = system_prompt(enabled_toolsets=current_enabled, active_toolsets=current_active)
-        if not messages or messages[0].get("role") != "system" or messages[0].get("content") != expected_prompt:
-            prompt_needs_update = True
+            # Check toolset configuration status for all enabled toolsets
+            enabled_names = config.get(ENABLED_TOOLSETS_KEY, [])
+            logger.debug(f"Chat {chat_id} loaded. Checking config for enabled toolsets: {enabled_names}")
+            for toolset_name in enabled_names:
+                check_and_configure_toolset(chat_id, toolset_name)
 
-        if prompt_needs_update:
-            new_sys_msg = {"role": "system", "content": expected_prompt, "timestamp": datetime.now(timezone.utc).isoformat()}
-            if not messages or messages[0].get("role") != "system":
-                 logger.warning(f"Prepending missing/invalid system prompt for chat '{title}'.")
-                 messages.insert(0, new_sys_msg)
-            else:
-                 logger.debug(f"Updating system prompt content for chat '{title}'.")
-                 messages[0] = new_sys_msg
-            needs_save = True
-
-        # Ensure other metadata
-        if "title" not in metadata: metadata["title"] = title; needs_save = True
-        if "created_at" not in metadata: metadata["created_at"] = datetime.now(timezone.utc).isoformat(); needs_save = True
-
-        if needs_save:
-             chat_data["metadata"] = metadata
-             chat_data["messages"] = messages
-             _write_chat_data(chat_file, chat_data)
-
-    else:
-        # Create a new chat
-        chat_file = str(uuid.uuid4())
-        chat_map[chat_file] = title
+    # If chat_id is still None, it means we need to create it
+    if chat_id is None:
+        chat_id = str(uuid.uuid4())
+        chat_map[chat_id] = title
         _write_chat_map(chat_map)
-        logger.debug(f"Creating new chat: {title} ({chat_file})")
+        logger.debug(f"Creating new chat: {title} ({chat_id})")
 
-        initial_enabled = list(DEFAULT_ENABLED_TOOLSETS)
-        initial_active = list(DEFAULT_ACTIVE_TOOLSETS)
-        initial_system_prompt = system_prompt(enabled_toolsets=initial_enabled, active_toolsets=initial_active)
-        chat_data = {
-            "messages": [{"role": "system", "content": initial_system_prompt, "timestamp": datetime.now(timezone.utc).isoformat()}],
-            "metadata": {
-                ENABLED_TOOLSETS_KEY: initial_enabled,
-                ACTIVE_TOOLSETS_KEY: initial_active,
-                AIDER_STATE_KEY: {"enabled": False},
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "title": title
-            }
+        # Create directory structure
+        chat_dir = _get_chat_dir_path(chat_id)
+        toolsets_subdir = chat_dir / "toolsets"
+        try:
+            chat_dir.mkdir(parents=True, exist_ok=True)
+            toolsets_subdir.mkdir(exist_ok=True)
+        except OSError as e:
+            logger.error(f"Failed to create directory structure for chat {chat_id}: {e}")
+            # Clean up map entry
+            del chat_map[chat_id]
+            _write_chat_map(chat_map)
+            return None
+
+        # Write initial config.json
+        initial_enabled = list(DEFAULT_ENABLED_TOOLSETS_NAMES)
+        initial_active = list(DEFAULT_ACTIVE_TOOLSETS_NAMES)
+        initial_config = {
+            MODEL_KEY: None, # Use global default initially
+            ENABLED_TOOLSETS_KEY: initial_enabled,
+            ACTIVE_TOOLSETS_KEY: initial_active,
+            TITLE_KEY: title,
+            CREATED_AT_KEY: datetime.now(timezone.utc).isoformat()
         }
-        _write_chat_data(chat_file, chat_data)
+        _write_chat_config(chat_id, initial_config)
+
+        # Write initial chat.json with static system prompt
+        initial_messages = [{"role": "system", "content": SYSTEM_PROMPT, "timestamp": datetime.now(timezone.utc).isoformat()}]
+        _write_chat_messages(chat_id, initial_messages)
+
         logger.debug(f"Created new chat '{title}' with enabled={initial_enabled}, active={initial_active}.")
 
-    if chat_file: save_session(chat_file); return chat_file
-    else: logger.error(f"Failed to create or load chat '{title}'."); return None
+        # For new chats, check configuration for any default-enabled toolsets
+        if initial_enabled:  # This would be empty by default, but just in case
+            logger.debug(f"Chat {chat_id} created. Checking config for default enabled toolsets: {initial_enabled}")
+            for toolset_name in initial_enabled:
+                check_and_configure_toolset(chat_id, toolset_name)
 
-# --- Rename/Delete/List Chats (Largely unchanged) ---
+    if chat_id:
+        save_session(chat_id)
+        return chat_id
+    else:
+        logger.error(f"Failed to create or load chat '{title}'.")
+        return None
+
 def rename_chat(old_title: str, new_title: str) -> bool:
     chat_map = _read_chat_map()
     title_to_id = {v: k for k, v in chat_map.items()}
-    if old_title not in title_to_id: logger.error(f"Chat '{old_title}' not found."); print(f"Error: Chat '{old_title}' not found."); return False
-    chat_file = title_to_id[old_title]
-    if new_title in title_to_id and title_to_id[new_title] != chat_file: logger.error(f"Chat '{new_title}' already exists."); print(f"Error: Chat '{new_title}' already exists."); return False
-    chat_map[chat_file] = new_title; _write_chat_map(chat_map)
-    _update_metadata_in_chat(chat_file, "title", new_title)
-    logger.info(f"Renamed chat: {old_title} -> {new_title}"); return True
+    if old_title not in title_to_id: 
+        logger.error(f"Chat '{old_title}' not found.")
+        print(f"Error: Chat '{old_title}' not found.")
+        return False
+    chat_id = title_to_id[old_title]
+    if new_title in title_to_id and title_to_id[new_title] != chat_id: 
+        logger.error(f"Chat '{new_title}' already exists.")
+        print(f"Error: Chat '{new_title}' already exists.")
+        return False
+    
+    chat_map[chat_id] = new_title
+    _write_chat_map(chat_map)
+    # Update title within the chat's config file
+    update_chat_config_value(chat_id, TITLE_KEY, new_title)
+    logger.info(f"Renamed chat: {old_title} -> {new_title}")
+    return True
 
 def delete_chat(title: str) -> bool:
-    chat_map = _read_chat_map(); title_to_id = {v: k for k, v in chat_map.items()}
-    if title not in title_to_id: logger.error(f"Chat '{title}' not found."); print(f"Error: Chat '{title}' not found."); return False
-    chat_file = title_to_id[title]; del chat_map[chat_file]; _write_chat_map(chat_map)
-    chat_path = os.path.join(CHATS_DIR, f"{chat_file}.json")
-    try:
-        if os.path.exists(chat_path): os.remove(chat_path)
-        logger.info(f"Deleted chat: {title}");
-        if get_current_chat() == chat_file: save_session(None); logger.info("Cleared current session.")
-        return True
-    except Exception as e: logger.warning(f"Could not delete chat file {chat_path}: {e}"); print(f"Warning: Chat '{title}' removed, but could not delete file: {e}"); return False
+    chat_map = _read_chat_map()
+    title_to_id = {v: k for k, v in chat_map.items()}
+    if title not in title_to_id: 
+        logger.error(f"Chat '{title}' not found.")
+        print(f"Error: Chat '{title}' not found.")
+        return False
+    
+    chat_id = title_to_id[title]
+    chat_dir_path = _get_chat_dir_path(chat_id)
 
-def get_chat_titles() -> Dict[str, str]: return _read_chat_map()
+    # Remove from map first
+    del chat_map[chat_id]
+    _write_chat_map(chat_map)
+
+    try:
+        if chat_dir_path.exists() and chat_dir_path.is_dir():
+            shutil.rmtree(chat_dir_path) # Remove the whole directory
+            logger.info(f"Deleted chat directory: {chat_dir_path}")
+        else:
+            logger.warning(f"Chat directory not found during delete: {chat_dir_path}")
+
+        if get_current_chat() == chat_id: 
+            save_session(None)
+            logger.info("Cleared current session.")
+        return True
+    except Exception as e: 
+        logger.error(f"Could not delete chat directory {chat_dir_path}: {e}", exc_info=True)
+        print(f"Error: Failed to delete chat '{title}' directory: {e}")
+        # We won't add the chat back to the map, as it might be in an inconsistent state
+        return False
+
+def get_chat_titles() -> Dict[str, str]: 
+    return _read_chat_map()
 
 def get_current_chat_title() -> Optional[str]:
-    chat_file = get_current_chat();
-    if not chat_file: return None
-    title = _get_chat_metadata(chat_file, "title")
-    return title if title else _read_chat_map().get(chat_file) # Fallback
+    chat_id = get_current_chat()
+    if not chat_id: 
+        return None
+    # Read title directly from config.json
+    title = get_chat_config_value(chat_id, TITLE_KEY)
+    # Fallback to map only if config read fails (which shouldn't happen with _read_chat_config)
+    return title if title else _read_chat_map().get(chat_id)
 
 def flush_temp_chats() -> int:
-    chat_map = _read_chat_map(); removed_count = 0
+    chat_map = _read_chat_map()
+    removed_count = 0
     temp_chats_to_remove = {cid: t for cid, t in chat_map.items() if t.startswith("Temp Chat ")}
-    if not temp_chats_to_remove: return 0
-    current_session = get_current_chat(); clear_current = False
+    if not temp_chats_to_remove: 
+        return 0
+    
+    current_session = get_current_chat()
+    clear_current = False
+    ids_removed_from_map = []
+    
     for chat_id, title in temp_chats_to_remove.items():
-        if chat_id in chat_map: del chat_map[chat_id]
-        else: logger.warning(f"Temp chat ID {chat_id} ('{title}') not in map during flush."); continue
-        chat_path = os.path.join(CHATS_DIR, f"{chat_id}.json")
+        chat_dir_path = _get_chat_dir_path(chat_id)
         try:
-            if os.path.exists(chat_path): os.remove(chat_path); removed_count += 1; logger.debug(f"Removed temp chat: {title}")
-            else: logger.warning(f"Temp chat file {chat_path} not found during flush.")
-            if current_session == chat_id: clear_current = True
-        except OSError as e: logger.warning(f"Could not delete temp chat file {chat_path}: {e}")
-    if temp_chats_to_remove: _write_chat_map(chat_map)
-    if clear_current: save_session(None)
-    logger.debug(f"Flushed {removed_count} temporary chats."); return removed_count
+            if chat_dir_path.exists() and chat_dir_path.is_dir():
+                shutil.rmtree(chat_dir_path)
+                removed_count += 1
+                logger.debug(f"Removed temp chat dir: {title}")
+            else:
+                logger.warning(f"Temp chat dir {chat_dir_path} not found during flush.")
+
+            # Only remove from map if deletion was attempted (successful or not)
+            ids_removed_from_map.append(chat_id)
+            if current_session == chat_id: 
+                clear_current = True
+        except OSError as e:
+            logger.warning(f"Could not delete temp chat dir {chat_dir_path}: {e}")
+            # Keep it in the map if deletion failed
+
+    if ids_removed_from_map:
+        for chat_id in ids_removed_from_map:
+            if chat_id in chat_map: 
+                del chat_map[chat_id]
+        _write_chat_map(chat_map)
+        
+    if clear_current: 
+        save_session(None)
+        
+    logger.info(f"Flushed {removed_count} temporary chats.")
+    return removed_count
 
 # --- Message Access/Update Functions ---
-def _get_chat_messages(chat_file: str) -> List[Dict]:
-    if not chat_file: logger.error("Cannot get messages: No chat file specified."); return []
-    return _read_chat_data(chat_file).get("messages", [])
+def get_chat_messages(chat_id: str) -> List[Dict]:
+    """Gets all messages for a chat."""
+    if not chat_id: 
+        logger.error("Cannot get messages: No chat_id specified.")
+        return []
+    return _read_chat_messages(chat_id)
 
-def _update_message_in_chat(chat_file: str, index: int, message: Dict) -> bool:
-    """Updates a specific message in the chat history (used by --edit)."""
-    if not chat_file: logger.error("Cannot update message: No chat file specified."); return False
+def _update_message_in_chat(chat_id: str, index: int, message: Dict) -> bool:
+    """Updates a specific message in the chat history."""
+    if not chat_id: 
+        logger.error("Cannot update message: No chat_id specified.")
+        return False
+        
     try:
-        chat_data = _read_chat_data(chat_file); messages = chat_data.get("messages", [])
-        if not (0 <= index < len(messages)): logger.error(f"Index {index} out of bounds for chat {chat_file}."); return False
-        if "timestamp" not in message: message["timestamp"] = datetime.now(timezone.utc).isoformat()
-        messages[index] = message; chat_data["messages"] = messages; _write_chat_data(chat_file, chat_data)
-        logger.debug(f"Updated message at index {index} in chat {chat_file}"); return True
-    except Exception as e: logger.error(f"Error updating message {index} in chat {chat_file}: {e}", exc_info=True); return False
+        messages = _read_chat_messages(chat_id)
+        if not (0 <= index < len(messages)): 
+            logger.error(f"Index {index} out of bounds for chat {chat_id}.")
+            return False
+            
+        if "timestamp" not in message: 
+            message["timestamp"] = datetime.now(timezone.utc).isoformat()
+            
+        messages[index] = message
+        _write_chat_messages(chat_id, messages) # Pass full list
+        logger.debug(f"Updated message at index {index} in chat {chat_id}")
+        return True
+    except Exception as e: 
+        logger.error(f"Error updating message {index} in chat {chat_id}: {e}", exc_info=True)
+        return False

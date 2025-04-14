@@ -4,6 +4,7 @@ Defines the tools and metadata for the Terminal toolset.
 """
 import subprocess
 from typing import Dict, List, Optional, Any, Union
+from pathlib import Path # Import Path
 
 # Langchain imports
 from langchain_core.tools import BaseTool
@@ -28,6 +29,7 @@ from ...chat_state_manager import (
     get_current_chat,
     get_active_toolsets,
     update_active_toolsets,
+    _write_json # Import helper for configuration
     # No need for _update_message_in_chat here anymore
 )
 # Import the prompt content to be returned by the start tool
@@ -36,6 +38,23 @@ from .prompts import TERMINAL_TOOLSET_PROMPT
 # --- Toolset Metadata ---
 toolset_name = "Terminal"
 toolset_description = "Provides tools to execute shell commands and Python code."
+
+# --- Configuration ---
+toolset_config_defaults = {} # No specific config needed yet
+
+def configure_toolset(config_path: Path, current_config: Optional[Dict]) -> Dict:
+    """Configuration function for the Terminal toolset."""
+    # Terminal currently needs no configuration.
+    # We still write an empty config file to mark it as configured.
+    logger.info(f"Terminal toolset requires no specific configuration for path: {config_path}")
+    new_config = {} # Empty config
+    try:
+        _write_json(config_path, new_config)
+        logger.debug(f"Wrote empty config for Terminal toolset to {config_path}")
+    except Exception as e:
+         logger.error(f"Failed to write empty config for Terminal toolset to {config_path}: {e}")
+         # Return current_config or empty dict if write fails? Let's return new_config anyway.
+    return new_config # Return the (empty) config that was intended
 
 # --- Tool Classes (Migrated from terminal_tools.py) ---
 

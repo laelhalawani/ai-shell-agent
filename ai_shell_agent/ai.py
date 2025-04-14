@@ -15,21 +15,19 @@ load_dotenv(env_path)
 # Setup logger early
 from . import logger
 
-# Config manager imports
+# Config manager imports - removed aider-specific imports
 from .config_manager import (
     get_current_model, set_model, prompt_for_model_selection,
     ensure_api_key_for_current_model, get_api_key_for_model, set_api_key_for_model,
-    get_model_provider, check_if_first_run, prompt_for_edit_mode_selection,
-    prompt_for_coder_models_selection, get_aider_main_model, get_aider_editor_model,
-    get_aider_weak_model, set_aider_main_model, set_aider_editor_model, set_aider_weak_model
+    get_model_provider, check_if_first_run
 )
 
-# --- Import state manager FIRST ---
+# --- Import state manager functions with updated names ---
 from .chat_state_manager import (
-    create_or_load_chat as create_or_load_chat_state,
+    create_or_load_chat, # Updated name
     save_session, get_current_chat, get_enabled_toolsets, update_enabled_toolsets,
     get_active_toolsets, _update_message_in_chat, # Keep for edit/select-tools
-    get_current_chat_title as get_current_chat_title_state
+    get_current_chat_title # Updated name
 )
 # --- Import chat manager AFTER state manager ---
 from .chat_manager import (
@@ -49,53 +47,22 @@ def first_time_setup():
         if selected_model: set_model(selected_model)
         else: logger.critical("No model selected during first run. Exiting."); sys.exit(1)
         if not ensure_api_key(): logger.critical("API Key not provided. Exiting."); sys.exit(1)
-
-        registered_ts = get_toolset_names()
-        if "File Editor" in registered_ts:
-            logger.info("Configure AI Code Editor (File Editor Toolset) models now?")
-            try:
-                setup_coder = input("Configure AI Code Editor models? (y/n, default: y): ").strip().lower()
-                if not setup_coder or setup_coder.startswith('y'):
-                    if not get_aider_main_model(): set_aider_main_model(selected_model)
-                    if not get_aider_editor_model(): set_aider_editor_model("gpt-4o-mini")
-                    if not get_aider_weak_model(): set_aider_weak_model("gpt-4o-mini")
-                    prompt_for_coder_models_selection()
-                    ensure_api_keys_for_coder_models()
-            except (EOFError, KeyboardInterrupt): logger.warning("Coder model setup skipped.")
-        else: logger.info("File Editor toolset not available. Skipping coder model setup.")
         logger.info("First-time setup complete.")
 
 def ensure_api_key() -> bool:
+    # Only ensures key for the main agent model
     return ensure_api_key_for_current_model()
-
-def ensure_api_keys_for_coder_models() -> None:
-    logger.debug("Ensuring API keys for configured Coder models.")
-    if "File Editor" not in get_toolset_names(): return
-    checked_models = {get_current_model()}
-    models_to_check = {
-         "AI Code Editor Main": get_aider_main_model(),
-         "AI Code Editor Editor": get_aider_editor_model(),
-         "AI Code Editor Weak": get_aider_weak_model(),
-    }
-    for role, model_name in models_to_check.items():
-         if model_name and model_name not in checked_models:
-             logger.info(f"Checking API key for {role} model: {model_name}")
-             api_key, env_var = get_api_key_for_model(model_name)
-             if not api_key:
-                 logger.warning(f"API key ({env_var}) needed for {role} model ({model_name}) but not found.")
-                 set_api_key_for_model(model_name) # Prompt user
-             checked_models.add(model_name)
 
 # --- Toolset Selection Command ---
 def select_tools_for_chat():
     """Interactive prompt for selecting enabled toolsets for the current chat."""
-    chat_file = get_current_chat()
-    if not chat_file:
+    chat_id = get_current_chat() # Use chat_id
+    if not chat_id:
         print("\nError: No active chat session.")
         print("Please load or create a chat first (e.g., `ai -c <chat_title>`).")
         return
 
-    chat_title = get_current_chat_title_state()
+    chat_title = get_current_chat_title() # Use new function name
     print(f"\n--- Select Enabled Toolsets for Chat: '{chat_title}' ---")
     print("Toolsets determine which capabilities the agent can potentially use in this chat.")
 
@@ -104,7 +71,7 @@ def select_tools_for_chat():
         print("No toolsets found/registered.")
         return
 
-    current_enabled_names = get_enabled_toolsets(chat_file) # List of display names
+    current_enabled_names = get_enabled_toolsets(chat_id) # Pass chat_id
     print("\nAvailable Toolsets:")
     options = {}
     idx = 1
@@ -144,21 +111,70 @@ def select_tools_for_chat():
             # Remove duplicates and sort
             new_enabled_list_names = sorted(list(set(new_enabled_list_names)))
 
-            # Update state - this also handles deactivating toolsets & prompt update implicitly
-            update_enabled_toolsets(chat_file, new_enabled_list_names) # Pass list of names
+            # Update state - this also handles deactivating toolsets
+            update_enabled_toolsets(chat_id, new_enabled_list_names) # Pass chat_id and list of names
             print(f"\nEnabled toolsets for '{chat_title}' set to: {', '.join(new_enabled_list_names) or 'None'}")
 
-            # --- Rebuild and save the system prompt ---
-            # Use the SYSTEM_PROMPT constant directly
-            success = _update_message_in_chat(chat_file, 0, {"role": "system", "content": SYSTEM_PROMPT})
-            if success: logger.info(f"System prompt updated for chat {chat_file} after toolset selection.")
-            else: logger.error(f"Failed to update system prompt for chat {chat_file} after toolset selection.")
-            print("System prompt updated. Changes apply on next interaction.")
+            # System prompt is now static - no need to update it explicitly
+            print("Changes apply on next interaction.")
             return
 
         except (EOFError, KeyboardInterrupt):
             print("\nSelection cancelled. No changes made.")
             return
+
+# --- Toolset Configuration Command ---
+def configure_toolset_cli(toolset_name: str):
+    """Handles the --configure-toolset command."""
+    chat_id = get_current_chat()
+    if not chat_id:
+        print("Error: No active chat session. Load or create one first.")
+        return
+
+    # Use state manager function for title
+    chat_title = get_current_chat_title()
+
+    # Use toolset registry functions
+    from .toolsets.toolsets import get_registered_toolsets, get_toolset_names
+
+    registered_toolsets = get_registered_toolsets() # id -> metadata
+    target_toolset_id = None
+    target_metadata = None
+    for ts_id, meta in registered_toolsets.items():
+        # Match against display name (case-insensitive)
+        if meta.name.lower() == toolset_name.lower():
+            target_toolset_id = ts_id
+            target_metadata = meta
+            break
+
+    if not target_metadata:
+        print(f"Error: Toolset '{toolset_name}' not found.")
+        print("Available toolsets:", ", ".join(get_toolset_names()))
+        return
+
+    if not target_metadata.configure_func:
+        print(f"Error: Toolset '{toolset_name}' (ID: {target_toolset_id}) does not have a configuration function.")
+        return
+
+    # Use state manager functions for path/reading
+    from .chat_state_manager import get_toolset_data_path, _read_json # Import helpers
+
+    toolset_data_path = get_toolset_data_path(chat_id, target_toolset_id)
+    # Read the toolset's specific config file
+    current_config = _read_json(toolset_data_path, default_value=None) # Pass None default
+
+    print(f"\n--- Configuring '{target_metadata.name}' for chat '{chat_title}' ---")
+    try:
+        # The configure_func handles prompting and saving
+        # It expects the path to its config file and the current config dict
+        target_metadata.configure_func(toolset_data_path, current_config)
+        # Confirmation message is printed within configure_func now
+    except (EOFError, KeyboardInterrupt):
+         logger.warning(f"Configuration cancelled for {toolset_name} by user.")
+         print("\nConfiguration cancelled.")
+    except Exception as e:
+        logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
+        print(f"\nAn error occurred during configuration: {e}")
 
 # --- Main CLI Execution Logic ---
 def main():
@@ -168,13 +184,13 @@ def main():
     model_group = parser.add_argument_group('Model Configuration')
     chat_group = parser.add_argument_group('Chat Management')
     tool_group = parser.add_argument_group('Toolset Configuration')
-    editor_group = parser.add_argument_group('File Editor (Aider) Configuration')
     msg_group = parser.add_argument_group('Messaging & Interaction')
 
     # --- Arguments ---
     model_group.add_argument("-llm", "--model", help="Set LLM model")
     model_group.add_argument("--select-model", action="store_true", help="Interactively select LLM model")
-    model_group.add_argument("-k", "--set-api-key", nargs="?", const=True, metavar="API_KEY", help="Set API key for current model")
+    model_group.add_argument("-k", "--set-api-key", nargs="?", const=True, metavar="API_KEY", 
+                             help="Set API key for the main agent model") # Clarified help text
 
     chat_group.add_argument("-c", "--chat", metavar="TITLE", help="Create or load chat session")
     chat_group.add_argument("-lc", "--load-chat", metavar="TITLE", help="Load chat (same as -c)")
@@ -184,12 +200,11 @@ def main():
     chat_group.add_argument("--temp-flush", action="store_true", help="Remove temp chats")
     chat_group.add_argument("-ct", "--current-chat-title", action="store_true", help="Print current chat title")
 
-    tool_group.add_argument("--select-tools", action="store_true", help="Interactively select enabled toolsets for the CURRENT chat") # KEPT
-    tool_group.add_argument("--list-toolsets", action="store_true", help="List available toolsets and their status") 
-
-    editor_group.add_argument("--select-edit-mode", action="store_true", help="Select File Editor edit format")
-    editor_group.add_argument("--select-coder-models", action="store_true", help="Select File Editor models")
-
+    tool_group.add_argument("--select-tools", action="store_true", help="Interactively select enabled toolsets for the CURRENT chat")
+    tool_group.add_argument("--list-toolsets", action="store_true", help="List available toolsets and their status")
+    tool_group.add_argument("--configure-toolset", metavar="TOOLSET_NAME", 
+                            help="Manually run configuration wizard for a toolset in the current chat")
+    
     msg_group.add_argument("-m", "--send-message", metavar='"MSG"', help="Send message")
     msg_group.add_argument("-tc", "--temp-chat", metavar='"MSG"', help="Start temporary chat")
     msg_group.add_argument("-e", "--edit", nargs="+", metavar="IDX|last \"MSG\"", help="Edit message & resend")
@@ -227,9 +242,9 @@ def main():
         return
 
     # 4. Ensure API Key (Exit if missing)
-    if not ensure_api_key():
-        logger.critical("API Key missing.")
-        print("\nError: API Key missing. Set with --set-api-key.")
+    if not ensure_api_key(): # Only checks agent key now
+        logger.critical("Main agent API Key missing.")
+        print("\nError: Agent API Key missing. Set with --set-api-key.")
         sys.exit(1)
 
     # 5. Toolset Selection (needs chat context)
@@ -238,16 +253,10 @@ def main():
         return
     if args.list_toolsets: 
         from .chat_manager import list_toolsets
-        list_toolsets()
+        list_toolsets() # Needs update in chat_manager
         return
-
-    # 6. Editor Config Wizards
-    if args.select_edit_mode:
-        prompt_for_edit_mode_selection()
-        return
-    if args.select_coder_models:
-        prompt_for_coder_models_selection()
-        ensure_api_keys_for_coder_models()
+    if args.configure_toolset:
+        configure_toolset_cli(args.configure_toolset)
         return
 
     # 7. Direct Command Execution
@@ -257,17 +266,15 @@ def main():
 
     # 8. Chat Management
     if args.chat:
-        chat_file = create_or_load_chat_state(args.chat)
-        if chat_file:
-            print(f"Switched to chat: '{args.chat}'.")
+        chat_id = create_or_load_chat(args.chat) # Use new function name
+        if chat_id: print(f"Switched to chat: '{args.chat}'.")
         return
     if args.load_chat:
-        chat_file = create_or_load_chat_state(args.load_chat)
-        if chat_file:
-            print(f"Switched to chat: '{args.load_chat}'.")
+        chat_id = create_or_load_chat(args.load_chat) # Use new function name
+        if chat_id: print(f"Switched to chat: '{args.load_chat}'.")
         return
     if args.current_chat_title:
-        title = get_current_chat_title_state()
+        title = get_current_chat_title() # Use new function name
         print(f"Current chat: {title}" if title else "No active chat.")
         return
     if args.list_chats:
@@ -284,17 +291,17 @@ def main():
         return
 
     # --- Operations requiring active chat ---
-    active_chat_file = get_current_chat()
+    active_chat_id = get_current_chat() # Use chat_id consistently
 
     # 9. Messaging / History
     if args.list_messages:
-        if not active_chat_file:
+        if not active_chat_id:
             print("No active chat. Use -c <title> first.")
             return
-        list_messages()
+        list_messages() # chat_manager will get chat_id using get_current_chat()
         return
     if args.edit:
-        if not active_chat_file:
+        if not active_chat_id:
             print("No active chat. Use -c <title> first.")
             return
         idx_str, msg_parts = args.edit[0], args.edit[1:]
@@ -306,18 +313,18 @@ def main():
             except ValueError:
                 print(f"Error: Invalid index '{idx_str}'. Must be integer or 'last'.")
                 return
-        edit_message(idx, new_msg)
+        edit_message(idx, new_msg) # chat_manager will get chat_id using get_current_chat()
         return
 
     # 10. Sending Messages (Default actions)
     msg_to_send = args.send_message or args.message # Prioritize -m
     if msg_to_send:
-        if not active_chat_file and not args.temp_chat:
+        if not active_chat_id and not args.temp_chat:
             # If no active chat and not explicitly temp
             print("No active chat. Starting temporary chat...")
             start_temp_chat(msg_to_send)
-        elif active_chat_file:
-            send_message(msg_to_send)
+        elif active_chat_id:
+            send_message(msg_to_send) # chat_manager will get chat_id using get_current_chat()
         # If args.temp_chat is set, it's handled below
         return
     if args.temp_chat: # Handles -tc explicitly

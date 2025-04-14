@@ -16,13 +16,15 @@ from . import logger
 
 # --- Import necessary components from the state manager ---
 from .chat_state_manager import (
-    get_current_chat, save_session, create_or_load_chat, _read_chat_data,
-    _write_chat_data, get_active_toolsets, get_enabled_toolsets,
+    get_current_chat, save_session, create_or_load_chat, 
+    # _read_chat_data, - Remove old function
+    # _write_chat_data, - Remove old function
+    get_active_toolsets, get_enabled_toolsets,
     # update_active_toolsets, update_enabled_toolsets, # State updated via ai.py or tools
     # REMOVED: enable_toolset, disable_toolset, activate_toolset, deactivate_toolset, update_system_prompt_for_toolsets
     _get_console_session_id, rename_chat as rename_chat_state,
     delete_chat as delete_chat_state, flush_temp_chats as flush_temp_chats_state,
-    get_current_chat_title, _update_message_in_chat, _get_chat_messages
+    get_current_chat_title, _update_message_in_chat, get_chat_messages, _write_chat_messages
 )
 
 # --- Import tool integrations/registry ---
@@ -32,9 +34,6 @@ except ImportError:
     SIGNAL_PROMPT_NEEDED = "[SIGNAL_PLACEHOLDER_AIDER_UNAVAILABLE]" # Fallback if aider toolset fails
 
 from .tool_registry import get_all_tools_dict # Needed for _handle_tool_calls
-
-# --- Import the new LLM builder ---
-from .llm import get_llm # get_llm now reads state internally
 
 # --- Chat Session Management ---
 def get_chat_titles_list():
@@ -160,9 +159,9 @@ def send_message(message: str) -> None:
 
     # 1. Add Human Message
     human_msg_dict = {"role": "human", "content": message, "timestamp": datetime.now(timezone.utc).isoformat()}
-    current_data = _read_chat_data(chat_file)
+    current_data = get_chat_messages(chat_file)
     if "messages" not in current_data: current_data["messages"] = []
-    current_data["messages"].append(human_msg_dict); _write_chat_data(chat_file, current_data)
+    current_data["messages"].append(human_msg_dict); _write_chat_messages(chat_file, current_data)
     logger.info(f"Human: {message}")
 
     # 2. ReAct Loop
@@ -170,7 +169,7 @@ def send_message(message: str) -> None:
     while iteration < max_iterations:
         iteration += 1
         logger.debug(f"ReAct iteration {iteration}/{max_iterations}")
-        chat_history_dicts = _get_chat_messages(chat_file)
+        chat_history_dicts = get_chat_messages(chat_file)
 
         # --- Message Validation Logic (Keep the existing robust logic) ---
         validated_messages = []
@@ -214,7 +213,7 @@ def send_message(message: str) -> None:
             ai_msg_dict_list = _convert_langchain_to_message_dicts([ai_response])
             if not ai_msg_dict_list: logger.error("AI resp convert fail."); print("\n[Error]: Internal error."); break
             ai_msg_dict = ai_msg_dict_list[0]
-            current_data = _read_chat_data(chat_file); current_data.setdefault("messages", []).append(ai_msg_dict); _write_chat_data(chat_file, current_data)
+            current_data = get_chat_messages(chat_file); current_data.setdefault("messages", []).append(ai_msg_dict); _write_chat_messages(chat_file, current_data)
 
             # --- Print & Handle Tool Calls ---
             has_tool_calls = bool(ai_msg_dict.get("tool_calls")) # Check saved dict
@@ -228,7 +227,7 @@ def send_message(message: str) -> None:
                 tool_messages = _handle_tool_calls(ai_response, chat_file) # Returns list[ToolMessage]
                 if tool_messages:
                     tool_message_dicts = _convert_langchain_to_message_dicts(tool_messages)
-                    current_data = _read_chat_data(chat_file); current_data.setdefault("messages", []).extend(tool_message_dicts); _write_chat_data(chat_file, current_data)
+                    current_data = get_chat_messages(chat_file); current_data.setdefault("messages", []).extend(tool_message_dicts); _write_chat_messages(chat_file, current_data)
                     stop_loop = False
                     for tool_msg in tool_messages: # Process results/signals
                         tool_name = next((tc.get("name") for tc in ai_response.tool_calls if tc.get("id") == tool_msg.tool_call_id), "Unknown")
@@ -254,7 +253,7 @@ def edit_message(index: Optional[int], new_message: str) -> None:
     """Edits a previous human message."""
     chat_file = get_current_chat();
     if not chat_file: print("No active chat."); return
-    chat_messages = _get_chat_messages(chat_file)
+    chat_messages = get_chat_messages(chat_file)
     if not chat_messages: print("No messages to edit."); return
 
     target_index = -1
@@ -271,10 +270,10 @@ def edit_message(index: Optional[int], new_message: str) -> None:
         "role": "human", "content": new_message, "timestamp": datetime.now(timezone.utc).isoformat(),
         "metadata": {"edited": True, "original_content": original_content, "original_timestamp": chat_messages[target_index].get("timestamp")} }
 
-    chat_data = _read_chat_data(chat_file); original_len = len(chat_data.get("messages", []))
+    chat_data = get_chat_messages(chat_file); original_len = len(chat_data.get("messages", []))
     chat_data["messages"] = chat_data.get("messages", [])[:target_index] + [edited_message_dict]
     num_removed = original_len - len(chat_data["messages"])
-    _write_chat_data(chat_file, chat_data)
+    _write_chat_messages(chat_file, chat_data)
 
     logger.info(f"Edited msg {target_index}. Removed {num_removed} subsequent.")
     print(f"Message {target_index} edited. Removed {num_removed} message(s). Resending...")
@@ -306,7 +305,7 @@ def list_messages() -> None:
     """Lists all messages in the current chat."""
     chat_file = get_current_chat()
     if not chat_file: print("No active chat."); return
-    chat_messages = _get_chat_messages(chat_file)
+    chat_messages = get_chat_messages(chat_file)
     if not chat_messages: print("No messages in chat."); return
 
     print(f"\n--- Chat History for: {get_current_chat_title()} ---")

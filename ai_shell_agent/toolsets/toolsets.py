@@ -4,9 +4,10 @@ Central registry for discovering and managing toolset metadata.
 import os
 import importlib
 import pkgutil
-from typing import Dict, List, Optional, Any, Tuple, Set
+from typing import Dict, List, Optional, Any, Tuple, Set, Callable
 from dataclasses import dataclass, field
 from langchain_core.tools import BaseTool
+from pathlib import Path # Added Path
 
 from .. import logger, ROOT_DIR # Use relative import for logger/ROOT_DIR
 from ..tool_registry import get_tool # Import get_tool for validation
@@ -22,6 +23,10 @@ class ToolsetMetadata:
     tools: List[BaseTool] = field(default_factory=list)
     prompt_content: Optional[str] = None
     module_path: Optional[str] = None # Store module path for reference
+    # --- NEW FIELDS ---
+    config_defaults: Dict[str, Any] = field(default_factory=dict)
+    # Signature: configure_func(config_file_path: Path, current_config: Optional[Dict]) -> Dict
+    configure_func: Optional[Callable[[Path, Optional[Dict]], Dict]] = None
 
 # Global registry for toolset metadata
 _toolsets_registry: Dict[str, ToolsetMetadata] = {}
@@ -30,7 +35,7 @@ _discovery_done = False # Flag to prevent repeated discovery
 def discover_and_register_toolsets():
     """
     Scans the toolsets directory, imports toolset.py modules,
-    extracts metadata, and validates tools against the tool_registry.
+    extracts metadata, configuration info, and validates tools.
     """
     global _toolsets_registry, _discovery_done
     if _discovery_done:
@@ -51,59 +56,54 @@ def discover_and_register_toolsets():
                 logger.debug(f"Importing toolset module: {toolset_module_name}")
                 module = importlib.import_module(toolset_module_name)
 
-                # Extract metadata - assumes specific variable names in toolset.py
+                # --- Extract Metadata (including new config parts) ---
                 name = getattr(module, "toolset_name", None)
                 description = getattr(module, "toolset_description", None)
                 start_tool_instance = getattr(module, "toolset_start_tool", None)
                 tools_list = getattr(module, "toolset_tools", []) # Should be list of instances
+                config_defaults = getattr(module, "toolset_config_defaults", {}) # Get defaults dict
+                configure_func = getattr(module, "configure_toolset", None) # Get config function
 
-                # Validate required metadata
-                if not (name and description): # Start tool is optional
-                    logger.warning(f"Skipping toolset '{toolset_id}'. Missing required metadata: 'toolset_name' or 'toolset_description' in {toolset_module_name}.")
+                # --- Validation ---
+                if not (name and description):
+                    logger.warning(f"Skipping toolset '{toolset_id}'. Missing required metadata: 'toolset_name' or 'toolset_description'.")
                     continue
+                # Validate config_defaults is a dict
+                if not isinstance(config_defaults, dict):
+                     logger.warning(f"Skipping toolset '{toolset_id}'. Invalid 'toolset_config_defaults' (must be a dict).")
+                     continue
+                # Validate configure_func is callable
+                if configure_func is not None and not callable(configure_func):
+                     logger.warning(f"Skipping toolset '{toolset_id}'. Invalid 'configure_toolset' (must be a function).")
+                     continue
 
-                # Validate tools against tool registry (ensure they were registered by the module)
+                # Validate tools against tool registry
                 validated_tools = []
                 all_tools_valid = True
                 for tool_instance in tools_list:
                     if isinstance(tool_instance, BaseTool) and get_tool(tool_instance.name):
                         validated_tools.append(tool_instance)
                     else:
-                        logger.error(f"Tool '{getattr(tool_instance, 'name', 'UNKNOWN')}' defined in '{toolset_module_name}' is not registered or not a BaseTool. Skipping toolset.")
-                        all_tools_valid = False
-                        break # Skip rest of validation for this toolset
+                        logger.error(f"Tool '{getattr(tool_instance, 'name', 'UNKNOWN')}' in '{toolset_module_name}' not registered or invalid. Skipping toolset.")
+                        all_tools_valid = False; break
+                if not all_tools_valid: continue
 
-                if not all_tools_valid: continue # Skip this toolset
-
-                # Validate start tool
                 start_tool_valid = True
                 if start_tool_instance:
-                     if isinstance(start_tool_instance, BaseTool) and get_tool(start_tool_instance.name):
-                         pass # Valid
-                     else:
-                         logger.error(f"Start tool '{getattr(start_tool_instance, 'name', 'UNKNOWN')}' defined in '{toolset_module_name}' is not registered or not a BaseTool. Disabling start tool for this toolset.")
-                         start_tool_instance = None # Disable invalid start tool
-                         start_tool_valid = False
+                    if not (isinstance(start_tool_instance, BaseTool) and get_tool(start_tool_instance.name)):
+                        logger.error(f"Start tool '{getattr(start_tool_instance, 'name', 'UNKNOWN')}' in '{toolset_module_name}' not registered or invalid. Disabling.")
+                        start_tool_instance = None; start_tool_valid = False
 
-
-                # Get prompt content from prompts module using convention
+                # Get prompt content from prompts module
                 prompt_content = None
                 try:
                     prompts_module = importlib.import_module(prompt_module_name)
-                    # Look for variable like TERMINAL_TOOLSET_PROMPT or AIDER_TOOLSET_PROMPT
                     prompt_content = getattr(prompts_module, prompt_content_variable_name, None)
-                    if not isinstance(prompt_content, str):
-                         logger.warning(f"Found {prompt_content_variable_name} in {prompt_module_name} but it's not a string. Ignoring.")
-                         prompt_content = None
-                except ImportError:
-                    logger.debug(f"No prompts module found at {prompt_module_name}. No specific prompt content for '{name}'.")
-                except AttributeError:
-                    logger.debug(f"Prompt variable '{prompt_content_variable_name}' not found in {prompt_module_name}.")
-                except Exception as e:
-                    logger.warning(f"Error loading prompt content for {toolset_id}: {e}")
+                    if not isinstance(prompt_content, str): prompt_content = None
+                except Exception: pass # Ignore prompt errors
 
 
-                # Register the validated metadata
+                # --- Register Validated Metadata ---
                 if toolset_id in _toolsets_registry:
                     logger.warning(f"Toolset ID '{toolset_id}' already registered. Overwriting.")
 
@@ -114,19 +114,22 @@ def discover_and_register_toolsets():
                     start_tool=start_tool_instance,
                     tools=validated_tools,
                     prompt_content=prompt_content,
-                    module_path=toolset_module_name # Keep for reference
+                    module_path=toolset_module_name,
+                    config_defaults=config_defaults, # Store defaults
+                    configure_func=configure_func     # Store function reference
                 )
-                logger.info(f"Registered toolset: '{name}' (ID: {toolset_id})")
+                logger.info(f"Registered toolset: '{name}' (ID: {toolset_id}) with config function {'✓' if configure_func else '✗'}")
 
             except ImportError as e:
-                logger.error(f"Failed to import toolset module {toolset_module_name}: {e}", exc_info=True)
+                logger.error(f"Failed to import toolset module {toolset_module_name}: {e}")
             except AttributeError as e:
-                 logger.error(f"Attribute error while processing toolset module {toolset_module_name}: {e}", exc_info=True)
+                 logger.error(f"Attribute error while processing toolset module {toolset_module_name}: {e}")
             except Exception as e:
-                logger.error(f"Unexpected error registering toolset from {toolset_module_name}: {e}", exc_info=True)
+                logger.error(f"Unexpected error registering toolset from {toolset_module_name}: {e}")
 
     _discovery_done = True # Mark discovery as complete
 
+# --- Accessor Functions ---
 def get_registered_toolsets() -> Dict[str, ToolsetMetadata]:
     """Returns a copy of the registered toolsets metadata."""
     if not _discovery_done: discover_and_register_toolsets()

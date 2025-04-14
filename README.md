@@ -95,6 +95,8 @@ ai -k  # Update your API key
 
 - **AI-Powered Code Editing**: Make natural language code changes to your files using the integrated code editing capabilities. Add files to the session and describe the changes you want to make.
 
+- **Modular Toolsets**: Use specialized tools like the terminal executor or code editor that can be enabled/disabled per chat session.
+
 https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
 
 ## Warning
@@ -107,6 +109,7 @@ https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
 - [Quickstart Guide](#quickstart-guide)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Toolsets](#toolsets)
 - [Code Editing](#code-editing)
 - [Development & Contributing](#development--contributing)
 - [License](#license)
@@ -141,6 +144,9 @@ https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
 
 - **AI-Powered Code Editing**:  
   Make natural language code changes to your files using the integrated code editing capabilities. Add files to the session and describe the changes you want to make.
+
+- **Modular Toolset Architecture**:
+  Specialized tools like the terminal executor and code editor can be enabled, disabled, or configured per chat session.
 
 ---
 
@@ -230,7 +236,7 @@ Shorthand:
 ai -x "dir"
 ```
 
-By automatically detecting your operating system (via Python’s `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal.
+By automatically detecting your operating system (via Python's `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal.
 
 ### Code Editing
 
@@ -500,32 +506,149 @@ pip install ai-shell-agent
   ai --temp-flush
   ```
 
-### System Prompt Management
-- **Set Default System Prompt:**
+### Toolset Management
+- **List Available Toolsets:**
   ```bash
-  ai --default-system-prompt "Your default system prompt"
+  ai --list-toolsets
+  ```
+  This command shows all registered toolsets and their enabled/active status for the current chat.
+
+- **Select Enabled Toolsets:**
+  ```bash
+  ai --select-tools
+  ```
+  Interactively choose which toolsets should be enabled for the current chat session.
+
+- **Configure a Toolset:**
+  ```bash
+  ai --configure-toolset "Toolset Name"
+  ```
+  Manually run the configuration wizard for a specific toolset. Example:
+  ```bash
+  ai --configure-toolset "File Editor"
   ```
 
-- **Update System Prompt for Active Chat:**
-  ```bash
-  ai --system-prompt "New system prompt for this chat"
-  ```
+## Toolsets
 
-### Shell Command Execution
-- **Execute Shell Command (with context preservation):**
-  ```bash
-  ai --execute "your shell command"
-  ```
-  Shorthand:  
-  ```bash
-  ai -x "your shell command"
-  ```
+AI Shell Agent uses a modular architecture with specialized toolsets that extend its capabilities:
+
+### Available Toolsets
+
+1. **Terminal**: Execute shell commands with proper handling for different operating systems.
+   - Becomes active when you ask the AI to run a command
+   - Handles Windows CMD, PowerShell, Linux Bash, and macOS terminal commands
+
+2. **File Editor**: Edit code files with natural language instructions, powered by Aider.
+   - Becomes active when you ask to edit code or start a code editing session
+   - Supports many programming languages
+   - AI will analyze, explain, and modify your code
+
+### Toolset States
+
+Each toolset can be in one of these states for a chat session:
+
+- **Enabled**: The toolset is available for the AI to use
+- **Active**: The toolset is currently in use
+- **Disabled**: The toolset is not available for the current chat
+
+You can manage toolsets with these commands:
+```bash
+ai --select-tools           # Choose which toolsets to enable
+ai --list-toolsets          # See all toolsets and their current status
+ai --configure-toolset NAME # Run configuration for a specific toolset
+```
 
 ---
 
 ## Development & Contributing
 
-Follow the same steps as described earlier.
+### Project Structure
+
+The project follows this directory structure:
+```
+ai_shell_agent/
+├── __init__.py           # Package initialization, constants
+├── ai.py                 # Main CLI entry point and command handling
+├── chat_manager.py       # Chat history and message flow management
+├── chat_state_manager.py # Persistent state and file management
+├── config_manager.py     # Model configuration and API key management
+├── llm.py                # LLM initialization and tool binding
+├── utils.py              # Shared utilities (JSON handling, etc.)
+├── prompts/              # System prompts and instructions
+└── toolsets/             # Modular toolset packages
+    ├── __init__.py       
+    ├── toolsets.py       # Toolset registration and discovery
+    ├── aider/            # File editor toolset
+    └── terminal/         # Terminal command toolset
+```
+
+### Data Directory Structure
+
+The agent stores its data in directories like this:
+```
+data/
+├── config.json         # Global configuration
+├── session.json        # Current active session
+└── chats/
+    ├── chat_map.json   # Maps chat IDs to titles
+    └── <chat_id>/      # One directory per chat
+        ├── chat.json   # Chat messages
+        ├── config.json # Chat-specific settings
+        └── toolsets/   # Toolset-specific config files
+            ├── aider.json
+            └── terminal.json
+```
+
+### Creating a New Toolset
+
+To create a new toolset:
+
+1. Create a directory structure under `ai_shell_agent/toolsets/your_toolset_name/`
+2. Create these files:
+   - `__init__.py`: Package initializer
+   - `toolset.py`: Tool implementations and registration
+   - `prompts.py`: Any toolset-specific prompts
+
+3. In `toolset.py`, define a registration function like:
+
+```python
+from langchain_core.tools import BaseTool
+from ...toolsets.toolsets import register_toolset, ToolsetMetadata
+
+def register_your_toolset():
+    # 1. Create your tool classes derived from BaseTool
+    class YourTool(BaseTool):
+        name = "your_tool_name"
+        description = "Description of what your tool does"
+        
+        def _run(self, query: str):
+            # Tool implementation
+            return "Result"
+    
+    # 2. Define a configuration function (optional)
+    def configure_your_toolset(config_path, current_config):
+        # Interactive configuration logic here
+        # Save configuration to config_path
+        pass
+    
+    # 3. Register the toolset
+    tools = [YourTool()]
+    starter_tool = YourTool() # Or another class for activation
+    
+    metadata = ToolsetMetadata(
+        id="your_toolset_id",
+        name="Your Toolset",
+        description="What your toolset does",
+        tools=tools,
+        start_tool=starter_tool,
+        configure_func=configure_your_toolset,
+        config_defaults={"key1": "default1"}
+    )
+    
+    register_toolset(metadata)
+```
+
+4. Import and call your registration function in `ai_shell_agent/toolsets/toolsets.py`.
 
 ---
 
