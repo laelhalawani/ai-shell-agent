@@ -1,5 +1,5 @@
 """
-Aider integration for AI Shell Agent.
+File Editor integration for AI Shell Agent.
 
 Handles communication with the Aider library, state management,
 and provides Langchain Tools for agent interaction.
@@ -307,7 +307,7 @@ def remove_active_coder_state(chat_file: str):
             #     if state.thread is_alive():
             #          logger.warning(f"Aider thread for {chat_file} did not terminate cleanly.")
         else:
-             logger.debug(f"No active Aider session found to remove for: {chat_file}")
+             logger.debug(f"No active Aider session found to remove for {chat_file}")
 
 # --- Aider Coder Recreation/Update ---
 def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[Coder]:
@@ -316,7 +316,19 @@ def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[C
     This version is passive and primarily for use within StartCodeEditorTool.
     """
     try:
-        aider_state = get_aider_state(chat_file) # Use chat_manager function
+        # First check if there's an active coder state for this chat file
+        active_state = get_active_coder_state(chat_file)
+        if active_state and active_state.coder:
+            # If we have an active coder instance, just return it
+            # But make sure it uses the provided io_stub
+            if active_state.coder.io is not io_stub:
+                logger.debug(f"Updating io_stub for existing active coder for {chat_file}")
+                active_state.coder.io = io_stub
+            logger.debug(f"Using existing active coder for {chat_file}")
+            return active_state.coder
+            
+        # If no active coder state, recreate from persistent state
+        aider_state = get_aider_state(chat_file) # Use chat_state_manager function
         if not aider_state or not aider_state.get("enabled", False):
             logger.debug(f"Aider state not found, empty, or not enabled for {chat_file}")
             return None
@@ -467,7 +479,9 @@ def recreate_coder(chat_file: str, io_stub: AiderIOStubWithQueues) -> Optional[C
             except Exception as e:
                  logger.warning(f"Could not initialize Commands for coder {chat_file}: {e}")
 
-        logger.info(f"Coder successfully recreated for {chat_file}")
+        # Store the newly recreated coder in active state
+        create_active_coder_state(chat_file, coder)
+        logger.info(f"Coder successfully recreated for {chat_file} and stored in active state")
         return coder
 
     except Exception as e:
@@ -744,25 +758,32 @@ class StartAIEditorTool(BaseTool):
 
 class AddFileTool(BaseTool):
     name: str = "include_file"
-    description: str = "Before the editor can adit any file, they need to be included in the editor's context. Argument must be the relative or absolute file path to add, do not use placeholders, only regular path strings."
+    description: str = "Before the File Editor can edit any file, they need to be included in the editor's context. Argument must be the relative or absolute file path to add."
     
     def _run(self, file_path: str) -> str:
         """Adds a file to the Aider context."""
         # Update the imports to use chat_state_manager instead of chat_manager
-        from .chat_state_manager import get_current_chat, get_aider_state
+        from .chat_state_manager import get_current_chat, get_aider_state, save_aider_state
         
         chat_file = get_current_chat()
         if not chat_file:
             return "Error: No active chat session found."
-            
-        aider_state = get_aider_state(chat_file)
-        if not aider_state or not aider_state.get("enabled", False):
-            return "Error: Editor not initialized or is closed. Use start_file_editor first."
-            
-        io_stub = AiderIOStubWithQueues()
-        coder = recreate_coder(chat_file, io_stub)
-        if not coder:
-            return f"Error: Failed to recreate editor state. {io_stub.get_captured_output()}"
+        
+        # First try to use the active coder state if it exists
+        active_state = get_active_coder_state(chat_file)
+        if active_state and active_state.coder:
+            coder = active_state.coder
+            io_stub = active_state.io_stub
+        else:
+            # If no active coder state, recreate from aider state
+            aider_state = get_aider_state(chat_file)
+            if not aider_state or not aider_state.get("enabled", False):
+                return "Error: Editor not initialized or is closed. Use start_file_editor first."
+                
+            io_stub = AiderIOStubWithQueues()
+            coder = recreate_coder(chat_file, io_stub)
+            if not coder:
+                return f"Error: Failed to recreate editor state. {io_stub.get_captured_output()}"
             
         try:
             abs_path_to_add = str(Path(file_path).resolve())
@@ -792,15 +813,32 @@ class AddFileTool(BaseTool):
             # Now safe to add
             coder.add_rel_fname(rel_path)
             
-            # Update state - Coder modifies its own abs_fnames set
-            update_aider_state_from_coder(chat_file, coder)
+            # Create or update the active coder state if it doesn't exist
+            if not active_state:
+                logger.info(f"Creating new active coder state for {chat_file}")
+                active_state = create_active_coder_state(chat_file, coder)
             
-            return f"Successfully added {rel_path}. \n{io_stub.get_captured_output()}"
+            # Ensure the coder's absf_fnames and active_state have the file
+            if abs_path_to_add not in coder.abs_fnames:
+                logger.warning(f"File {abs_path_to_add} not in coder.abs_fnames after add_rel_fname. Adding manually.")
+                coder.abs_fnames.add(abs_path_to_add)
+            
+            # Update the aider state to persist the change
+            update_aider_state_from_coder(chat_file, coder)
+            logger.info(f"Added file {rel_path} and updated both active coder state and persistent state")
+            
+            # Verify the file was properly added
+            aider_state = get_aider_state(chat_file)
+            if aider_state and abs_path_to_add in aider_state.get("abs_fnames", []):
+                return f"Successfully added {rel_path}.\n{io_stub.get_captured_output()}"
+            else:
+                logger.error(f"Failed to verify file {abs_path_to_add} was added to aider state")
+                return f"Warning: File {rel_path} may not have been properly added to persistent state.\n{io_stub.get_captured_output()}"
             
         except Exception as e:
             logger.error(f"Error in AddFileTool: {e}")
             logger.error(traceback.format_exc())
-            return f"Error adding file {file_path}: {e}. \n{io_stub.get_captured_output()}"
+            return f"Error adding file {file_path}: {e}.\n{io_stub.get_captured_output()}"
             
     async def _arun(self, file_path: str) -> str:
         return self._run(file_path)
@@ -834,7 +872,7 @@ class DropFileTool(BaseTool):
             success = coder.drop_rel_fname(rel_path_to_drop)
             
             if success:
-                # Update state
+                # Update state after dropping the file
                 update_aider_state_from_coder(chat_file, coder)
                 return f"Successfully dropped {file_path}. {io_stub.get_captured_output()}"
             else:
@@ -944,6 +982,9 @@ class RunCodeEditTool(BaseTool):
                 name=f"AiderWorker-{chat_file[:8]}"
             )
             state.thread.start()
+            
+            # Update state before waiting - makes sure we have the latest before any edits
+            update_aider_state_from_coder(chat_file, state.coder)
         # --- End Threading Logic ---
 
         # Release lock before waiting on queue
@@ -984,6 +1025,10 @@ class RunCodeEditTool(BaseTool):
                  options += ")"
                  response_guidance += f" Options: {options}"
 
+            # Update state here too, in case the prompt interrupts mid-processing
+            with state.lock:
+                update_aider_state_from_coder(chat_file, state.coder)
+                
             return f"{SIGNAL_PROMPT_NEEDED} {response_guidance}"
 
         elif message_type == 'result':
@@ -998,6 +1043,14 @@ class RunCodeEditTool(BaseTool):
             # Aider encountered an error immediately
             logger.error(f"Aider edit failed for {chat_file}.")
             error_content = message.get('message', 'Unknown error')
+            
+            # Even on error, update state if possible - might have partial changes
+            try:
+                with state.lock:
+                    update_aider_state_from_coder(chat_file, state.coder)
+            except Exception:
+                pass  # Ignore state update errors during cleanup
+                
             remove_active_coder_state(chat_file) # Clean up on error
             return f"Error during edit:\n{error_content}"
         else:

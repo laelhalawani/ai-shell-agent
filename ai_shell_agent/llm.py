@@ -32,7 +32,7 @@ TOOLSET_MEMBERS: Dict[str, List[str]] = {
         "submit_editor_input",  # SubmitCodeEditorInputTool
         "view_diff",            # ViewDiffTool
         "undo_last_edit",       # UndoLastEditTool
-        "close_file_editor",      # CloseCodeEditorTool
+        "close_file_editor",    # CloseCodeEditorTool
     ]
     # Add more toolsets here (e.g., "FileSystem": ["list_dir", "read_file", ...])
 }
