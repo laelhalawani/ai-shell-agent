@@ -20,6 +20,8 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Chat data
+data/
+user_data/
 chats/
 session.json
 config.json
@@ -31,3 +33,4 @@ config.json
 
 x_docs/
 tests/
+

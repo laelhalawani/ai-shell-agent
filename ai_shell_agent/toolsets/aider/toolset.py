@@ -216,6 +216,10 @@ def configure_toolset(
     final_config["auto_commits"] = config_for_prompting.get("auto_commits", defaults["auto_commits"])
     final_config["dirty_commits"] = config_for_prompting.get("dirty_commits", defaults["dirty_commits"])
 
+    # --- *** ADD ENABLED FLAG *** ---
+    final_config["enabled"] = True
+    # --- *** END ADD ENABLED FLAG *** ---
+
     # --- Ensure API Keys using ensure_dotenv_key ---
     print("\nChecking API keys for selected File Editor models...")
     # Determine the actual models being used (considering defaults)
