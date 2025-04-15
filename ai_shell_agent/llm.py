@@ -98,16 +98,17 @@ def get_llm() -> BaseChatModel:
 
     # Instantiate the LLM
     llm: BaseChatModel
-    temperature = 0.1
     if provider == "openai":
-        logger.debug(f"Using OpenAI provider with model: {model_name}, temp={temperature}")
-        llm = ChatOpenAI(model=model_name, temperature=temperature)
+        logger.debug(f"Using OpenAI provider with model: {model_name}")
+        llm = ChatOpenAI(model=model_name) # <-- temperature removed
     elif provider == "google":
-        logger.debug(f"Using Google provider with model: {model_name}, temp={temperature}")
-        llm = ChatGoogleGenerativeAI(model=model_name, convert_system_message_to_human=True, temperature=temperature)
+        logger.debug(f"Using Google provider with model: {model_name}")
+        # Keep convert_system_message_to_human=True if needed for Google models
+        llm = ChatGoogleGenerativeAI(model=model_name, convert_system_message_to_human=True) # <-- temperature removed
     else:
         logger.warning(f"Unsupported provider '{provider}'. Defaulting to OpenAI.")
-        llm = ChatOpenAI(model=model_name, temperature=temperature)
+        # Also remove temperature from the fallback
+        llm = ChatOpenAI(model=model_name) # <-- temperature removed
 
     # Bind the selected tools
     if bound_tools:

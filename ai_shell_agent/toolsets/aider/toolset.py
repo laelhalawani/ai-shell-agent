@@ -244,7 +244,7 @@ def configure_toolset(config_path: Path, current_config: Optional[Dict]) -> Dict
 
 class StartAIEditorTool(BaseTool):
     name: str = "start_file_editor"
-    description: str = "Use this to start the file editor, whenever asked to edit contents of any file. The editor works for any text file including advanced code editing. You operate it using natural language commands. More information will be present upon startup."
+    description: str = "Use this to start the file editor, whenever asked to edit contents of any text file. The editor works for any text file including advanced code editing. You operate it using natural language commands. Useful only for modifying files."
 
     def _run(self, **kwargs) -> str:
         """
@@ -348,8 +348,8 @@ class StartAIEditorTool(BaseTool):
 
 
 class AddFileTool(BaseTool):
-    name: str = "include_file"
-    description: str = "Before the File Editor can edit any file, they need to be included in the editor's context. Argument must be the relative or absolute file path to add."
+    name: str = "open_file"
+    description: str = "Opens a file for editing in the File Editor, files can be added by absolute or relative paths. The file must exist in the filesystem."
     
     def _run(self, file_path: str) -> str:
         """Adds a file to the Aider context, recreating state if needed."""
@@ -415,8 +415,8 @@ class AddFileTool(BaseTool):
 
 
 class DropFileTool(BaseTool):
-    name: str = "exclude_file"
-    description: str = "Removes a file from the File Editor's context. Argument must be the relative or absolute file path that was previously added."
+    name: str = "close_file"
+    description: str = "Closes a file from the File Editor. Files can be closed by relative or absolute paths, for files that were previously opened."
     
     def _run(self, file_path: str) -> str:
         """Removes a file from the Aider context."""
@@ -460,7 +460,7 @@ class DropFileTool(BaseTool):
 
 class ListFilesInEditorTool(BaseTool):
     name: str = "list_files"
-    description: str = "Lists all files currently in the File Editor's context."
+    description: str = "Lists all files currently in the File Editor's context. Can be used to preview what files are open for editing."
     
     def _run(self, **kwargs) -> str:
         """Lists all files in the Aider context."""
@@ -517,7 +517,7 @@ class ListFilesInEditorTool(BaseTool):
 
 class RunCodeEditTool(BaseTool):
     name: str = "request_edit"
-    description: str = "Using natural language, request an edit to the files in the editor. The AI will respond with a plan and then execute it. Use this tool after adding files."
+    description: str = "Using natural language, request an edit to the files opened in the File Editor. The editor is AI powered, the editor AI will respond with a plan and then execute it. Use this tool after adding files."
     
     def _run(self, instruction: str) -> str:
         """Runs Aider's main edit loop in a background thread."""
@@ -642,8 +642,8 @@ class RunCodeEditTool(BaseTool):
 
 
 class ViewDiffTool(BaseTool):
-    name: str = "view_diff"
-    description: str = "Shows the git diff of changes made by the 'request_edit' tool in the current session. This is useful to see what changes have been made to the files."
+    name: str = "view_changes"
+    description: str = "Shows the git diff of changes made by the 'request_edit' tool in the current session. This is useful to see what changes have been made to the files. Works only if there was a git repository initialized in the project root."
     
     def _run(self, **kwargs) -> str:
         """Shows the diff of changes made by Aider."""
@@ -705,10 +705,9 @@ class ViewDiffTool(BaseTool):
     async def _arun(self, **kwargs) -> str:
         return self._run(**kwargs)
 
-
 class UndoLastEditTool(BaseTool):
     name: str = "undo_last_edit"
-    description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the File Editor."
+    description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the File Editor or if there is no git repository initialized."
     
     def _run(self, **kwargs) -> str:
         """Undoes the last edit commit made by Aider."""
@@ -772,10 +771,9 @@ class UndoLastEditTool(BaseTool):
     async def _arun(self, **kwargs) -> str:
         return self._run(**kwargs)
 
-
 class CloseCodeEditorTool(BaseTool):
     name: str = "close_file_editor"
-    description: str = "Closes the File Editor session, clearing its context AND deactivating the 'File Editor' toolset."
+    description: str = "Closes the File Editor and all the files. Changes are saved automatically. Close it as soon as you verified with the user they don't want to edit the files anymore, once verified close the File Editor right away."
 
     def _run(self, **kwargs) -> str:
         """Clears the Aider state, deactivates the toolset, and updates the prompt."""
@@ -831,10 +829,8 @@ class CloseCodeEditorTool(BaseTool):
 class SubmitCodeEditorInputTool(BaseTool):
     name: str = "submit_editor_input"
     description: str = (
-         "Use to provide input to input request (e.g., 'yes', 'no', 'all', 'skip', 'don't ask', or text) "
-         "when the File Editor signals '[FILE_EDITOR_INPUT_NEEDED]'."
+         "Use to provide input ONLY when received an input request from the File Editor. Input requests are marked with a clear '[FILE_EDITOR_INPUT_NEEDED]' and can be triggered during edits."
     )
-
     def _run(self, user_response: str) -> str:
         chat_id = get_current_chat()
         if not chat_id:

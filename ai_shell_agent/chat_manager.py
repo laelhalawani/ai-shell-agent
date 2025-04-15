@@ -165,7 +165,7 @@ def send_message(message: str) -> None:
     logger.info(f"Human: {message}")
 
     # 2. ReAct Loop
-    max_iterations = 10; iteration = 0; last_ai_content = None
+    max_iterations = 100; iteration = 0; last_ai_content = None
     while iteration < max_iterations:
         iteration += 1
         logger.debug(f"ReAct iteration {iteration}/{max_iterations}")
@@ -232,13 +232,22 @@ def send_message(message: str) -> None:
                     current_messages = get_chat_messages(chat_file)
                     current_messages.extend(tool_message_dicts)
                     _write_chat_messages(chat_file, current_messages)
-                    stop_loop = False
+                    
                     for tool_msg in tool_messages: # Process results/signals
+                        # Determine the tool name associated with the result
                         tool_name = next((tc.get("name") for tc in ai_response.tool_calls if tc.get("id") == tool_msg.tool_call_id), "Unknown")
+
+                        # Check if this tool result contains the Aider signal
                         if isinstance(tool_msg.content, str) and tool_msg.content.startswith(SIGNAL_PROMPT_NEEDED):
-                             print(f"\n[File Editor Input Required]: {tool_msg.content[len(SIGNAL_PROMPT_NEEDED):].strip()}"); stop_loop = True
-                        else: print(f"\n[Tool Result - {tool_name}]:\n  " + str(tool_msg.content).replace('\n', '\n  '))
-                    if stop_loop: logger.info("Aider input needed. Break loop."); break
+                             # Print the prompt required by Aider for user visibility
+                             print(f"\n[File Editor Input Required]: {tool_msg.content[len(SIGNAL_PROMPT_NEEDED):].strip()}")
+                             # Log that the signal was detected
+                             logger.info(f"Tool '{tool_name}' signaled Aider input needed.")
+                        else:
+                            # Print the regular tool result
+                            print(f"\n[Tool Result - {tool_name}]:\n  " + str(tool_msg.content).replace('\n', '\n  '))
+
+                    # Always continue to the next iteration to let the LLM react to the tool results
                     continue # Loop back for LLM reaction
                 else: logger.warning("Tool exec failed. Break loop."); break # Break if tools failed
             else: logger.debug("No tool calls. Loop complete."); break # Break if no tools called
@@ -262,7 +271,7 @@ def edit_message(index: Optional[int], new_message: str) -> None:
 
     target_index = -1
     if index is None: # Find last human message
-        target_index = next((i for i in range(len(chat_messages) - 1, -1, -1) if chat_messages[i].get("role") == "human"), -1)
+        target_index = next((i for i in range(len(chat_messages) - 1, -1) if chat_messages[i].get("role") == "human"), -1)
         if target_index == -1: print("Error: No previous user message found."); return
     else: # Validate index
         if not isinstance(index, int) or not (0 <= index < len(chat_messages)): print(f"Error: Index {index} out of range."); return

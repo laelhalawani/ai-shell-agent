@@ -183,24 +183,29 @@ def prompt_for_model_selection() -> Optional[str]:
 
 def check_if_first_run() -> bool:
     """
-    Check if this is the first run of the application.
-    
+    Check if this is the first run of the application. More robust check.
+
     Returns:
         bool: True if this is the first run, False otherwise
     """
-    # Check if model is set in environment or config
+    # If the main config file doesn't exist, it's definitely a first run.
+    if not os.path.exists(CONFIG_FILE):
+        logger.info("First run detected - config file missing.")
+        return True
+
+    # If the config file exists, check if a model is set either
+    # in the config file or the environment variable.
+    # If neither is set, treat it as needing setup (first run or reset state).
     env_model = os.getenv("AI_SHELL_AGENT_MODEL")
-    if env_model:
-        return False
-    
-    # Check config file
     config = _read_config()
-    if config.get("model"):
-        return False
-    
-    # If we get here, it's the first run
-    logger.info("First run detected - model selection required")
-    return True
+    config_model = config.get("model")
+
+    if not config_model and not env_model:
+        logger.info("First run detected - no model configured in existing config or environment.")
+        return True
+
+    # If we have a model configured somewhere, it's not the first run.
+    return False
 
 def get_api_key_for_model(model_name: str) -> Tuple[Optional[str], str]:
     """
