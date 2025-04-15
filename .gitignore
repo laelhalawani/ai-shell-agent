@@ -30,3 +30,4 @@ config.json
 .aider.tags.cache.json
 
 x_docs/
+tests/
