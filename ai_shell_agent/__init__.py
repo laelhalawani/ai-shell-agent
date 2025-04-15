@@ -19,9 +19,14 @@ logger = logging.getLogger('ai_shell_agent')
 ROOT_DIR = Path(__file__).parent.parent
 DATA_DIR = ROOT_DIR / 'data'
 CHATS_DIR = DATA_DIR / 'chats'
+# --- NEW: Define global toolset config directory ---
+TOOLSETS_GLOBAL_CONFIG_DIR = DATA_DIR / 'toolsets'
 
 # Create necessary directories if not exist
 os.makedirs(CHATS_DIR, exist_ok=True)
+# --- NEW: Ensure global toolset config directory exists ---
+os.makedirs(TOOLSETS_GLOBAL_CONFIG_DIR, exist_ok=True)
+
 
 # Import key modules to ensure they are initialized early
 # This ensures tool registrations happen in the correct order

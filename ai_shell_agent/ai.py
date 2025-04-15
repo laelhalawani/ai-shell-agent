@@ -2,40 +2,50 @@ import os
 import json
 import argparse
 from dotenv import load_dotenv
-import sys # Import sys for exit
+import sys
+from pathlib import Path # Import Path
 
-# Get installation directory
+# Get installation directory (keep this function)
 def get_install_dir():
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Assumes ai.py is in ai_shell_agent/
+    return Path(__file__).parent.parent.resolve()
 
 # Load environment variables from .env in the installation directory
-env_path = os.path.join(get_install_dir(), '.env')
+env_path = get_install_dir() / '.env'
 load_dotenv(env_path)
 
 # Setup logger early
-from . import logger
+from . import logger, ROOT_DIR # Import ROOT_DIR for consistent .env path
 
-# Config manager imports - removed aider-specific imports
+# Config manager imports (keep necessary ones)
 from .config_manager import (
     get_current_model, set_model, prompt_for_model_selection,
-    ensure_api_key_for_current_model, get_api_key_for_model, set_api_key_for_model,
-    get_model_provider, check_if_first_run
+    ensure_api_key_for_current_model, get_api_key_for_model, # Keep get_api_key
+    # REMOVED: set_api_key_for_model (toolsets handle their own via utils)
+    get_model_provider, check_if_first_run,
+    set_default_enabled_toolsets # Keep for first run / select tools
 )
 
 # --- Import state manager functions with updated names ---
 from .chat_state_manager import (
-    create_or_load_chat, # Updated name
+    create_or_load_chat,
     save_session, get_current_chat, get_enabled_toolsets, update_enabled_toolsets,
-    get_active_toolsets, # Keep for edit/select-tools
-    get_current_chat_title # Updated name
+    get_active_toolsets,
+    get_current_chat_title,
+    # --- Import path helpers and JSON read needed here ---
+    get_toolset_data_path, get_toolset_global_config_path
 )
+# --- Import utils for JSON reading ---
+from .utils import read_json as _read_json, read_dotenv, write_dotenv # Alias if preferred
+
 # --- Import chat manager AFTER state manager ---
 from .chat_manager import (
     get_chat_titles_list, rename_chat, delete_chat, send_message,
-    edit_message, start_temp_chat, flush_temp_chats, execute, list_messages
+    edit_message, start_temp_chat, flush_temp_chats, execute, list_messages,
+    list_toolsets # Keep this import
 )
 # --- Import Toolset registry ---
-from .toolsets.toolsets import get_registered_toolsets, get_toolset_names # Use get_registered_toolsets for select_tools
+from .toolsets.toolsets import get_registered_toolsets, get_toolset_names
 # --- Import system prompt ---
 from .prompts.prompts import SYSTEM_PROMPT
 
@@ -53,7 +63,7 @@ def first_time_setup():
 
 def ensure_api_key() -> bool:
     # Only ensures key for the main agent model
-    return ensure_api_key_for_current_model()
+    return ensure_api_key_for_current_model() # This still uses config_manager logic for agent key
 
 def prompt_for_initial_toolsets():
     """Prompts user to select default enabled toolsets during first run."""
@@ -188,7 +198,7 @@ def select_tools_for_chat():
             print("\nSelection cancelled. No changes made.")
             return
 
-# --- Toolset Configuration Command ---
+# --- Toolset Configuration Command (MODIFIED) ---
 def configure_toolset_cli(toolset_name: str):
     """Handles the --configure-toolset command."""
     chat_id = get_current_chat()
@@ -196,44 +206,62 @@ def configure_toolset_cli(toolset_name: str):
         print("Error: No active chat session. Load or create one first.")
         return
 
-    # Use state manager function for title
     chat_title = get_current_chat_title()
+    if not chat_title: # Should not happen if chat_id exists, but check anyway
+        print(f"Error: Could not determine title for active chat {chat_id}.")
+        return
 
-    # Use toolset registry functions
+    # Find the toolset metadata
     from .toolsets.toolsets import get_registered_toolsets, get_toolset_names
-
-    registered_toolsets = get_registered_toolsets() # id -> metadata
+    registered_toolsets = get_registered_toolsets()
     target_toolset_id = None
     target_metadata = None
     for ts_id, meta in registered_toolsets.items():
-        # Match against display name (case-insensitive)
         if meta.name.lower() == toolset_name.lower():
             target_toolset_id = ts_id
             target_metadata = meta
             break
 
-    if not target_metadata:
+    if not target_metadata or not target_toolset_id:
         print(f"Error: Toolset '{toolset_name}' not found.")
         print("Available toolsets:", ", ".join(get_toolset_names()))
         return
 
     if not target_metadata.configure_func:
-        print(f"Error: Toolset '{toolset_name}' (ID: {target_toolset_id}) does not have a configuration function.")
+        print(f"Error: Toolset '{target_metadata.name}' (ID: {target_toolset_id}) does not have a configuration function.")
+        # Check if config exists, maybe inform user?
+        # For now, just exit as per original logic.
         return
 
-    # Use state manager functions for path/reading
-    from .chat_state_manager import get_toolset_data_path, _read_json # Import helpers
+    # --- Get required paths ---
+    # Use ROOT_DIR from __init__ for reliable .env path
+    dotenv_path = ROOT_DIR / '.env'
+    # Use chat_state_manager helpers for toolset paths
+    local_config_path = get_toolset_data_path(chat_id, target_toolset_id)
+    global_config_path = get_toolset_global_config_path(target_toolset_id)
 
-    toolset_data_path = get_toolset_data_path(chat_id, target_toolset_id)
-    # Read the toolset's specific config file
-    current_config = _read_json(toolset_data_path, default_value=None) # Pass None default
+    # --- Read current local (chat-specific) config to pass to the function ---
+    # Use the utility function directly
+    current_local_config = _read_json(local_config_path, default_value=None) # Pass None default
 
     print(f"\n--- Configuring '{target_metadata.name}' for chat '{chat_title}' ---")
+    print(f"(Applying settings to chat config: {local_config_path})")
+    print(f"(Applying settings to global default: {global_config_path})")
+    print(f"(Checking/Storing secrets in: {dotenv_path})")
+
     try:
-        # The configure_func handles prompting and saving
-        # It expects the path to its config file and the current config dict
-        target_metadata.configure_func(toolset_data_path, current_config)
-        # Confirmation message is printed within configure_func now
+        # Call the toolset's configure function with all necessary paths and current config
+        # Signature: configure_func(global_path, local_path, dotenv_path, current_local_config) -> Dict
+        # The function now handles prompting, secret checks, and saving to both paths.
+        final_config = target_metadata.configure_func(
+            global_config_path,
+            local_config_path,
+            dotenv_path,
+            current_local_config # Pass the read local config (or None)
+        )
+        # Confirmation message should be printed within configure_func now.
+        # Optional: Could check the returned dict 'final_config' if needed here.
+
     except (EOFError, KeyboardInterrupt):
          logger.warning(f"Configuration cancelled for {toolset_name} by user.")
          print("\nConfiguration cancelled.")

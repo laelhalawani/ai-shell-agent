@@ -4,7 +4,7 @@ Defines the tools and metadata for the Terminal toolset.
 """
 import subprocess
 from typing import Dict, List, Optional, Any, Union
-from pathlib import Path # Import Path
+from pathlib import Path # Keep Path import
 
 # Langchain imports
 from langchain_core.tools import BaseTool
@@ -14,7 +14,7 @@ from langchain_core.callbacks.manager import (
     CallbackManagerForToolRun,
 )
 from langchain_core.runnables.config import run_in_executor
-from pydantic import Field # BaseModel removed as not directly used here
+from pydantic import Field
 
 # Import the sanitize_input function directly from the module
 from langchain_experimental.tools.python.tool import sanitize_input, _get_default_python_repl
@@ -29,32 +29,68 @@ from ...chat_state_manager import (
     get_current_chat,
     get_active_toolsets,
     update_active_toolsets,
-    _write_json # Import helper for configuration
-    # No need for _update_message_in_chat here anymore
+    # Removed _write_json, use utils
 )
 # Import the prompt content to be returned by the start tool
 from .prompts import TERMINAL_TOOLSET_PROMPT
 
+# Import utils for JSON I/O
+from ...utils import write_json as _write_json, read_json as _read_json # Add read_json if needed
+
 # --- Toolset Metadata ---
 toolset_name = "Terminal"
+toolset_id = "terminal" # Add explicit ID
 toolset_description = "Provides tools to execute shell commands and Python code."
+# --- NEW: Required Secrets ---
+toolset_required_secrets: Dict[str, str] = {} # Terminal needs no secrets
 
 # --- Configuration ---
 toolset_config_defaults = {} # No specific config needed yet
 
-def configure_toolset(config_path: Path, current_config: Optional[Dict]) -> Dict:
-    """Configuration function for the Terminal toolset."""
-    # Terminal currently needs no configuration.
-    # We still write an empty config file to mark it as configured.
-    logger.info(f"Terminal toolset requires no specific configuration for path: {config_path}")
-    new_config = {} # Empty config
+# --- MODIFIED: configure_toolset signature and saving logic ---
+def configure_toolset(
+    global_config_path: Path,
+    local_config_path: Path,
+    dotenv_path: Path, # Accept dotenv_path even if unused
+    current_chat_config: Optional[Dict] # Accept chat config even if unused
+) -> Dict:
+    """
+    Configuration function for the Terminal toolset. Terminal currently needs
+    no specific configuration, so this writes empty config files to both paths
+    to mark it as configured.
+    """
+    logger.info(f"Terminal toolset requires no specific configuration. Writing empty config to local: {local_config_path} and global: {global_config_path}")
+    final_config = {} # Empty config
+    save_success = True
     try:
-        _write_json(config_path, new_config)
-        logger.debug(f"Wrote empty config for Terminal toolset to {config_path}")
+        # Ensure directory exists before writing
+        local_config_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(local_config_path, final_config)
+        logger.debug(f"Wrote empty config for Terminal toolset to local path: {local_config_path}")
     except Exception as e:
-         logger.error(f"Failed to write empty config for Terminal toolset to {config_path}: {e}")
-         # Return current_config or empty dict if write fails? Let's return new_config anyway.
-    return new_config # Return the (empty) config that was intended
+         save_success = False
+         logger.error(f"Failed to write empty config for Terminal toolset to local path {local_config_path}: {e}")
+
+    try:
+        # Ensure directory exists before writing
+        global_config_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(global_config_path, final_config)
+        logger.debug(f"Wrote empty config for Terminal toolset to global path: {global_config_path}")
+    except Exception as e:
+         save_success = False
+         logger.error(f"Failed to write empty config for Terminal toolset to global path {global_config_path}: {e}")
+
+    if not save_success:
+        print(f"\nWarning: Failed to write configuration files for Terminal toolset. Check logs.")
+    else:
+        # Provide confirmation only if run interactively (e.g., via --configure-toolset)
+        # We don't have that context here, so maybe skip confirmation?
+        # Or print a generic one:
+        # print("\nTerminal toolset configuration check complete (no settings required).")
+        pass
+
+    # Return the empty config
+    return final_config
 
 # --- Tool Classes (Migrated from terminal_tools.py) ---
 
@@ -66,26 +102,28 @@ class StartTerminalTool(BaseTool):
         """Activates the 'Terminal' toolset and returns usage instructions."""
         logger.info(f"StartTerminalTool called")
 
-        chat_file = get_current_chat()
-        if not chat_file:
+        chat_id = get_current_chat()
+        if not chat_id:
             return "Error: No active chat session found."
 
-        current_toolsets = get_active_toolsets(chat_file)
+        # --- NEW: Ensure configuration check runs ---
+        # Check/run configuration before activating if needed.
+        # This ensures the empty config files are created, marking it "configured".
+        from ...chat_state_manager import check_and_configure_toolset
+        check_and_configure_toolset(chat_id, toolset_name) # Add this call
+        # --- End configuration check ---
+
+        current_toolsets = get_active_toolsets(chat_id)
         if toolset_name in current_toolsets:
             logger.debug(f"'{toolset_name}' toolset is already active.")
-            # Maybe return a shorter message if already active?
             return f"'{toolset_name}' toolset is already active.\n\n{TERMINAL_TOOLSET_PROMPT}"
 
         # Activate the toolset
         new_toolsets = list(current_toolsets)
         new_toolsets.append(toolset_name)
-        update_active_toolsets(chat_file, new_toolsets) # Save updated toolsets list
+        update_active_toolsets(chat_id, new_toolsets) # Save updated toolsets list
 
-        # System prompt update is handled implicitly by llm.py using the new active_toolsets state.
-        # No need to manually update message 0 here.
-
-        logger.debug(f"Successfully activated '{toolset_name}' toolset for chat {chat_file}")
-        # Return the instructional prompt as the ToolMessage content
+        logger.debug(f"Successfully activated '{toolset_name}' toolset for chat {chat_id}")
         return TERMINAL_TOOLSET_PROMPT
 
     async def _arun(self, *args, **kwargs) -> str:

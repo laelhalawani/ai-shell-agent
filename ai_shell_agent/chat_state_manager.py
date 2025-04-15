@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import shutil # Import shutil for directory removal
 
 # Local imports
-from . import logger, DATA_DIR, CHATS_DIR # Import from __init__
+from . import logger, DATA_DIR, CHATS_DIR, TOOLSETS_GLOBAL_CONFIG_DIR # Import from __init__ including new dir
 # Import JSON utility functions from utils
 from .utils import read_json, write_json
 # Import the static system prompt (now using static prompt)
@@ -73,6 +73,15 @@ def get_toolset_data_path(chat_id: str, toolset_id: str) -> Path:
     toolsets_dir = _get_chat_dir_path(chat_id) / "toolsets"
     toolsets_dir.mkdir(exist_ok=True) # Ensure it exists when path is requested
     return toolsets_dir / f"{toolset_id}.json"
+
+# --- NEW: Function to get global toolset config path ---
+def get_toolset_global_config_path(toolset_id: str) -> Path:
+    """Gets the Path object for a toolset's GLOBAL default config file."""
+    if not toolset_id: raise ValueError("toolset_id cannot be empty")
+    # TOOLSETS_GLOBAL_CONFIG_DIR is imported from __init__
+    # Ensure the directory exists (should be handled by __init__)
+    TOOLSETS_GLOBAL_CONFIG_DIR.mkdir(exist_ok=True)
+    return TOOLSETS_GLOBAL_CONFIG_DIR / f"{toolset_id}.json"
 
 # --- Chat Data Access ---
 def _read_chat_messages(chat_id: str) -> List[Dict]:
@@ -196,6 +205,11 @@ def update_enabled_toolsets(chat_id: str, toolset_names: List[str]) -> None:
         logger.error("update_enabled_toolsets called with empty chat_id.")
         return
 
+    # --- Get enabled toolsets BEFORE the update ---
+    config_before_update = _read_chat_config(chat_id) # Read state before update
+    enabled_before_update = set(config_before_update.get(ENABLED_TOOLSETS_KEY, []))
+    # --- End get before update ---
+
     registered_names = get_toolset_names() # Use display names
     valid_toolsets = [name for name in toolset_names if name in registered_names]
     invalid_toolsets = [name for name in toolset_names if name not in registered_names]
@@ -213,12 +227,15 @@ def update_enabled_toolsets(chat_id: str, toolset_names: List[str]) -> None:
         logger.info(f"Deactivating toolsets no longer enabled: {list(set(current_active) - set(new_active))}")
         update_active_toolsets(chat_id, new_active) # This calls update_chat_config_value again
 
-    # Trigger config check for newly enabled toolsets
-    newly_enabled = set(unique_toolsets) - set(current_active)
-    if newly_enabled:
-        logger.info(f"Checking configuration for newly enabled toolsets: {newly_enabled}")
-        for toolset_name in newly_enabled:
+    # --- Correctly calculate and check newly enabled toolsets ---
+    enabled_after_update = set(unique_toolsets)
+    newly_enabled_correct = enabled_after_update - enabled_before_update # Compare new enabled with old enabled
+
+    if newly_enabled_correct:
+        logger.info(f"Checking configuration for newly enabled toolsets: {newly_enabled_correct}")
+        for toolset_name in newly_enabled_correct: # Iterate over the correctly identified set
             check_and_configure_toolset(chat_id, toolset_name)
+    # --- End correction ---
 
 def get_active_toolsets(chat_id: str) -> List[str]:
     """Gets the list of *active* toolset names for a specific chat session."""
@@ -238,17 +255,20 @@ def update_active_toolsets(chat_id: str, toolset_names: List[str]) -> None:
     update_chat_config_value(chat_id, ACTIVE_TOOLSETS_KEY, unique_toolsets)
     logger.debug(f"Active toolsets updated for chat {chat_id}: {unique_toolsets}")
 
+# --- MODIFIED: check_and_configure_toolset ---
 def check_and_configure_toolset(chat_id: str, toolset_name: str):
-    """Checks if a toolset is configured for a chat, runs config if not."""
+    """
+    Checks if a toolset is configured for a chat. If not, attempts to copy
+    global defaults. If no global defaults, runs the configuration wizard
+    which saves the result to both chat-specific and global locations.
+    """
     logger.debug(f"Checking configuration for toolset '{toolset_name}' in chat {chat_id}")
-    
-    # Import inside function to avoid circular imports
-    from .toolsets.toolsets import get_registered_toolsets
-    
+
+    from .toolsets.toolsets import get_registered_toolsets # Import locally
+
     registered_toolsets = get_registered_toolsets()
     target_metadata = None
     target_id = None
-    
     for ts_id, meta in registered_toolsets.items():
         if meta.name == toolset_name:
              target_metadata = meta
@@ -259,39 +279,114 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
         logger.error(f"Cannot check configuration: Toolset '{toolset_name}' not found in registry.")
         return
 
+    # Get paths
+    local_config_path = get_toolset_data_path(chat_id, target_id)
+    global_config_path = get_toolset_global_config_path(target_id)
+    # --- Get .env path ---
+    dotenv_path = ROOT_DIR / '.env'
+
+    # Read current chat-specific config
+    # Use None as default to distinguish between empty dict and file not found
+    local_config = _read_json(local_config_path, default_value=None)
+
+    # Check if chat-specific config is valid (basic check: is it a dict?)
+    is_local_configured = False
+    if isinstance(local_config, dict):
+         # Considered configured if it's a dict. Toolset's configure func can validate further.
+         # If toolset defines config_defaults, we could check keys here for stricter validation,
+         # but let's keep it simple: if a dict exists, assume configured for now.
+         is_local_configured = True
+         # More robust check (optional):
+         # if target_metadata.config_defaults:
+         #     is_local_configured = all(key in local_config for key in target_metadata.config_defaults) or not target_metadata.config_defaults
+         # else:
+         #     is_local_configured = True # Any dict is configured if no defaults defined
+
+    if is_local_configured:
+        logger.debug(f"Toolset '{toolset_name}' already configured locally for chat {chat_id} at {local_config_path}.")
+        # --- Check for required secrets even if configured ---
+        if target_metadata.required_secrets:
+             logger.debug(f"Checking required secrets for already configured toolset '{toolset_name}'...")
+             from .utils import ensure_dotenv_key # Import locally
+             all_secrets_ok = True
+             for key, desc in target_metadata.required_secrets.items():
+                  if ensure_dotenv_key(dotenv_path, key, desc) is None:
+                       all_secrets_ok = False
+             if not all_secrets_ok:
+                  logger.warning(f"One or more required secrets missing for '{toolset_name}'. It might malfunction.")
+        return # Already configured locally
+
+    # --- Local is NOT configured, check global defaults ---
+    logger.debug(f"Local config not found or invalid for '{toolset_name}' at {local_config_path}. Checking global defaults at {global_config_path}.")
+    global_config = _read_json(global_config_path, default_value=None)
+
+    # Check if global config is valid
+    is_global_configured = False
+    if isinstance(global_config, dict):
+         # Use same logic as local check
+         is_global_configured = True
+         # More robust check (optional):
+         # if target_metadata.config_defaults:
+         #     is_global_configured = all(key in global_config for key in target_metadata.config_defaults) or not target_metadata.config_defaults
+         # else:
+         #     is_global_configured = True
+
+    if is_global_configured:
+        # Global default exists, copy it to the local path
+        logger.info(f"Found valid global default config for '{toolset_name}'. Copying to {local_config_path}.")
+        try:
+            _write_json(local_config_path, global_config)
+            logger.debug(f"Successfully copied global config to local config for '{toolset_name}'.")
+            # --- Check required secrets AFTER copying global default ---
+            if target_metadata.required_secrets:
+                 logger.debug(f"Checking required secrets for '{toolset_name}' after applying global default...")
+                 from .utils import ensure_dotenv_key
+                 all_secrets_ok = True
+                 for key, desc in target_metadata.required_secrets.items():
+                      if ensure_dotenv_key(dotenv_path, key, desc) is None:
+                           all_secrets_ok = False
+                 if not all_secrets_ok:
+                      logger.warning(f"One or more required secrets missing for '{toolset_name}'. It might malfunction.")
+            return # Now configured locally using global defaults
+        except Exception as e:
+            logger.error(f"Failed to copy global config {global_config_path} to {local_config_path}: {e}. Proceeding to manual config.")
+            # Fall through to manual configuration if copy fails
+
+    # --- Neither local nor global config is valid/exists, run configure_func ---
     if not target_metadata.configure_func:
-         logger.debug(f"Toolset '{toolset_name}' has no configuration function. Skipping check.")
-         return # Nothing to configure
-
-    toolset_data_path = get_toolset_data_path(chat_id, target_id)
-    current_config = _read_json(toolset_data_path, default_value=None) # Read toolset's file
-
-    # Basic check: Does the file exist and is it a dictionary?
-    # More robust check: Are all keys from config_defaults present?
-    is_configured = False
-    if isinstance(current_config, dict):
-         # If defaults are defined, check if all keys exist in current config
-         if target_metadata.config_defaults:
-             is_configured = all(key in current_config for key in target_metadata.config_defaults)
-         else:
-             # If no defaults, assume any existing dict means configured
-             is_configured = True
-
-    if not is_configured:
-         print(f"\nNOTICE: Toolset '{toolset_name}' needs configuration for this chat.")
-         logger.info(f"Toolset '{toolset_name}' (ID: {target_id}) needs configuration for chat {chat_id}. Running configure function.")
+         logger.debug(f"Toolset '{toolset_name}' has no configuration function and no valid defaults found. Cannot configure automatically.")
+         # Create an empty config file locally to mark it as "checked"
          try:
-             # Run the configuration function
-             target_metadata.configure_func(toolset_data_path, current_config if isinstance(current_config, dict) else None)
-             logger.info(f"Configuration function completed for {toolset_name}.")
-         except (EOFError, KeyboardInterrupt):
-              logger.warning(f"Configuration cancelled by user for {toolset_name}. Toolset may not work.")
-              print(f"\nConfiguration for '{toolset_name}' cancelled. It may not function correctly.")
+             _write_json(local_config_path, {})
+             logger.debug(f"Wrote empty local config for toolset '{toolset_name}' at {local_config_path} as no configure_func exists.")
          except Exception as e:
-              logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
-              print(f"\nError configuring '{toolset_name}': {e}. It may not function correctly.")
-    else:
-         logger.debug(f"Toolset '{toolset_name}' already configured for chat {chat_id}.")
+              logger.error(f"Failed to write empty local config for '{toolset_name}' at {local_config_path}: {e}")
+         return # Nothing more to do
+
+    # --- Run the configuration function ---
+    # It handles prompting, secret checks (using ensure_dotenv_key), and saving to both paths.
+    print(f"\nNOTICE: Toolset '{toolset_name}' needs configuration for this chat (no valid local or global default was found).")
+    logger.info(f"Running configuration function for '{toolset_name}' (ID: {target_id}) for chat {chat_id}.")
+    try:
+        # Call configure_func, passing paths and the potentially invalid local_config (or None)
+        # Signature: configure_func(global_path, local_path, dotenv_path, current_local_config) -> Dict
+        final_config = target_metadata.configure_func(
+            global_config_path,
+            local_config_path,
+            dotenv_path,
+            local_config if isinstance(local_config, dict) else None # Pass None if not a dict
+        )
+        logger.info(f"Configuration function completed for {toolset_name}.")
+        # Configuration function handles user confirmation messages.
+
+    except (EOFError, KeyboardInterrupt):
+         logger.warning(f"Configuration cancelled by user for {toolset_name}. Toolset may not work correctly.")
+         print(f"\nConfiguration for '{toolset_name}' cancelled. It may not function correctly.")
+         # Should we create empty files? Assume configure_func might have partially created them or failed cleanly.
+         # We could write empty dicts here to prevent re-prompting immediately, but let's rely on the func for now.
+    except Exception as e:
+         logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
+         print(f"\nError configuring '{toolset_name}': {e}. It may not function correctly.")
 
 # --- Chat Creation/Management ---
 def create_or_load_chat(title: str) -> Optional[str]:

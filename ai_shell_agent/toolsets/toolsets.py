@@ -7,7 +7,7 @@ import pkgutil
 from typing import Dict, List, Optional, Any, Tuple, Set, Callable
 from dataclasses import dataclass, field
 from langchain_core.tools import BaseTool
-from pathlib import Path # Added Path
+from pathlib import Path # Keep Path import
 
 from .. import logger, ROOT_DIR # Use relative import for logger/ROOT_DIR
 from ..tool_registry import get_tool # Import get_tool for validation
@@ -25,8 +25,11 @@ class ToolsetMetadata:
     module_path: Optional[str] = None # Store module path for reference
     # --- NEW FIELDS ---
     config_defaults: Dict[str, Any] = field(default_factory=dict)
-    # Signature: configure_func(config_file_path: Path, current_config: Optional[Dict]) -> Dict
-    configure_func: Optional[Callable[[Path, Optional[Dict]], Dict]] = None
+    # Key: Env Var Name, Value: Description/URL
+    required_secrets: Dict[str, str] = field(default_factory=dict)
+    # --- MODIFIED SIGNATURE HINT ---
+    # Signature: configure_func(global_path: Path, local_path: Path, dotenv_path: Path, current_local_config: Optional[Dict]) -> Dict
+    configure_func: Optional[Callable[[Path, Path, Path, Optional[Dict]], Dict]] = None
 
 # Global registry for toolset metadata
 _toolsets_registry: Dict[str, ToolsetMetadata] = {}
@@ -35,7 +38,7 @@ _discovery_done = False # Flag to prevent repeated discovery
 def discover_and_register_toolsets():
     """
     Scans the toolsets directory, imports toolset.py modules,
-    extracts metadata, configuration info, and validates tools.
+    extracts metadata, configuration info, secrets, and validates tools.
     """
     global _toolsets_registry, _discovery_done
     if _discovery_done:
@@ -56,26 +59,31 @@ def discover_and_register_toolsets():
                 logger.debug(f"Importing toolset module: {toolset_module_name}")
                 module = importlib.import_module(toolset_module_name)
 
-                # --- Extract Metadata (including new config parts) ---
+                # --- Extract Metadata ---
                 name = getattr(module, "toolset_name", None)
                 description = getattr(module, "toolset_description", None)
                 start_tool_instance = getattr(module, "toolset_start_tool", None)
-                tools_list = getattr(module, "toolset_tools", []) # Should be list of instances
-                config_defaults = getattr(module, "toolset_config_defaults", {}) # Get defaults dict
-                configure_func = getattr(module, "configure_toolset", None) # Get config function
+                tools_list = getattr(module, "toolset_tools", [])
+                config_defaults = getattr(module, "toolset_config_defaults", {})
+                configure_func = getattr(module, "configure_toolset", None)
+                # --- Get required secrets ---
+                required_secrets = getattr(module, "toolset_required_secrets", {})
 
                 # --- Validation ---
                 if not (name and description):
-                    logger.warning(f"Skipping toolset '{toolset_id}'. Missing required metadata: 'toolset_name' or 'toolset_description'.")
+                    logger.warning(f"Skipping toolset '{toolset_id}'. Missing 'toolset_name' or 'toolset_description'.")
                     continue
-                # Validate config_defaults is a dict
                 if not isinstance(config_defaults, dict):
                      logger.warning(f"Skipping toolset '{toolset_id}'. Invalid 'toolset_config_defaults' (must be a dict).")
                      continue
-                # Validate configure_func is callable
                 if configure_func is not None and not callable(configure_func):
                      logger.warning(f"Skipping toolset '{toolset_id}'. Invalid 'configure_toolset' (must be a function).")
                      continue
+                # --- Validate required secrets ---
+                if not isinstance(required_secrets, dict) or \
+                   not all(isinstance(k, str) and isinstance(v, str) for k, v in required_secrets.items()):
+                    logger.warning(f"Skipping toolset '{toolset_id}'. Invalid 'toolset_required_secrets' (must be Dict[str, str]). Found: {type(required_secrets)}")
+                    required_secrets = {} # Reset to empty if invalid
 
                 # Validate tools against tool registry
                 validated_tools = []
@@ -94,7 +102,7 @@ def discover_and_register_toolsets():
                         logger.error(f"Start tool '{getattr(start_tool_instance, 'name', 'UNKNOWN')}' in '{toolset_module_name}' not registered or invalid. Disabling.")
                         start_tool_instance = None; start_tool_valid = False
 
-                # Get prompt content from prompts module
+                # Get prompt content
                 prompt_content = None
                 try:
                     prompts_module = importlib.import_module(prompt_module_name)
@@ -115,21 +123,24 @@ def discover_and_register_toolsets():
                     tools=validated_tools,
                     prompt_content=prompt_content,
                     module_path=toolset_module_name,
-                    config_defaults=config_defaults, # Store defaults
-                    configure_func=configure_func     # Store function reference
+                    config_defaults=config_defaults,
+                    required_secrets=required_secrets, # Store secrets map
+                    configure_func=configure_func
                 )
-                logger.info(f"Registered toolset: '{name}' (ID: {toolset_id}) with config function {'✓' if configure_func else '✗'}")
+                logger.info(f"Registered toolset: '{name}' (ID: {toolset_id}) "
+                            f"with config {'✓' if configure_func else '✗'}, "
+                            f"secrets: {list(required_secrets.keys()) or 'None'}")
 
             except ImportError as e:
                 logger.error(f"Failed to import toolset module {toolset_module_name}: {e}")
             except AttributeError as e:
                  logger.error(f"Attribute error while processing toolset module {toolset_module_name}: {e}")
             except Exception as e:
-                logger.error(f"Unexpected error registering toolset from {toolset_module_name}: {e}")
+                logger.error(f"Unexpected error registering toolset from {toolset_module_name}: {e}", exc_info=True) # Add exc_info
 
-    _discovery_done = True # Mark discovery as complete
+    _discovery_done = True
 
-# --- Accessor Functions ---
+# --- Accessor Functions (No changes needed below) ---
 def get_registered_toolsets() -> Dict[str, ToolsetMetadata]:
     """Returns a copy of the registered toolsets metadata."""
     if not _discovery_done: discover_and_register_toolsets()

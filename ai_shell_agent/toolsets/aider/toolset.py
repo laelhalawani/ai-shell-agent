@@ -24,9 +24,9 @@ from ...chat_state_manager import (
     get_current_chat,
     get_active_toolsets,
     update_active_toolsets,
-    get_toolset_data_path,
-    _read_json,
-    _write_json
+    get_toolset_data_path
+    # _read_json,  # REMOVED - use utils import instead
+    # _write_json  # REMOVED - use utils import instead
 )
 # Import config manager helpers needed for API keys during startup
 from ...config_manager import (
@@ -151,15 +151,32 @@ def _prompt_for_edit_format_config(current_value: Optional[str]) -> Optional[str
             print("\nSelection cancelled. Keeping current setting.")
             return current_value
 
-def configure_toolset(config_path: Path, current_config: Optional[Dict]) -> Dict:
-    """Configuration function for the File Editor (Aider) toolset."""
-    logger.info(f"Configuring File Editor toolset. Config path: {config_path}")
-    config = current_config or {} # Start with current or empty dict
+# Import utils for JSON I/O
+from ...utils import read_json as _read_json, write_json as _write_json
+
+# --- MODIFIED: configure_toolset signature and saving logic ---
+def configure_toolset(
+    global_config_path: Path,
+    local_config_path: Path,
+    dotenv_path: Path,
+    current_chat_config: Optional[Dict]
+) -> Dict:
+    """
+    Configuration function for the File Editor (Aider) toolset.
+    Prompts user based on current_chat_config, ensures secrets via .env utils,
+    and saves the result to BOTH local_config_path and global_config_path.
+    """
+    logger.info(f"Configuring File Editor toolset. Global: {global_config_path}, Local: {local_config_path}, .env: {dotenv_path}")
+    # Use current_chat_config for prompting defaults, fallback to empty dict if None
+    config_for_prompting = current_chat_config or {}
     defaults = toolset_config_defaults
+    # Resulting config will be built fresh
+    final_config = {}
 
     print("\n--- Configure File Editor (Aider) Settings ---")
     print("Select the models and edit format the File Editor should use.")
-    print("Leave input empty at any step to keep the current setting.")
+    print("This configuration will be saved for the current chat AND as the global default for new chats.")
+    print("Leave input empty at any step to keep the current setting for this chat.")
     print("Enter 'none' to reset a setting to its default value.")
 
     # --- Model Selection ---
@@ -168,77 +185,105 @@ def configure_toolset(config_path: Path, current_config: Optional[Dict]) -> Dict
     # Main Model
     selected_main = _prompt_for_single_model_config(
         "Main/Architect",
-        config.get("main_model"),
-        defaults["main_model"] or agent_model # Default to agent model if not set
+        config_for_prompting.get("main_model"), # Use chat config for current value
+        defaults["main_model"] # Default is None initially, _prompt.. handles agent fallback
     )
-    config["main_model"] = selected_main
+    final_config["main_model"] = selected_main
 
     # Editor Model
     selected_editor = _prompt_for_single_model_config(
         "Editor",
-        config.get("editor_model"),
+        config_for_prompting.get("editor_model"), # Use chat config for current value
         defaults["editor_model"]
     )
-    config["editor_model"] = selected_editor
+    final_config["editor_model"] = selected_editor
 
     # Weak Model
     selected_weak = _prompt_for_single_model_config(
         "Weak (Commits etc.)",
-        config.get("weak_model"),
+        config_for_prompting.get("weak_model"), # Use chat config for current value
         defaults["weak_model"]
     )
-    config["weak_model"] = selected_weak
+    final_config["weak_model"] = selected_weak
 
     # --- Edit Format Selection ---
-    selected_format = _prompt_for_edit_format_config(config.get("edit_format"))
-    config["edit_format"] = selected_format
+    selected_format = _prompt_for_edit_format_config(config_for_prompting.get("edit_format")) # Use chat config
+    final_config["edit_format"] = selected_format
 
-    # --- Ensure API Keys ---
+    # Add other default config values if they aren't model/format related
+    final_config["auto_commits"] = config_for_prompting.get("auto_commits", defaults["auto_commits"])
+    final_config["dirty_commits"] = config_for_prompting.get("dirty_commits", defaults["dirty_commits"])
+
+    # --- Ensure API Keys using ensure_dotenv_key ---
     print("\nChecking API keys for selected File Editor models...")
+    # Determine the actual models being used (considering defaults)
+    actual_main_model = final_config.get("main_model") or agent_model
+    actual_editor_model = final_config.get("editor_model") or defaults["editor_model"]
+    actual_weak_model = final_config.get("weak_model") or defaults["weak_model"]
+
     models_to_check = {
-        config.get("main_model"),
-        config.get("editor_model"),
-        config.get("weak_model")
+        actual_main_model,
+        actual_editor_model,
+        actual_weak_model
     }
-    # Also check agent's main model if it's different and used as default
-    if config.get("main_model") is None: models_to_check.add(agent_model)
 
     checked_providers = set()
     required_keys_ok = True
-    for model_name in filter(None, models_to_check): # Filter out None values
-        provider = get_model_provider(model_name)
-        if provider not in checked_providers:
-             api_key, env_var = get_api_key_for_model(model_name)
-             if not api_key:
-                 logger.warning(f"API key ({env_var}) needed for File Editor model ({model_name}) but not found.")
-                 try:
-                     set_api_key_for_model(model_name) # Prompt user
-                     api_key, _ = get_api_key_for_model(model_name) # Check again
-                     if not api_key:
-                          print(f"Warning: API key ({env_var}) still not provided. File Editor may fail.")
-                          required_keys_ok = False # Mark as potentially problematic
-                 except (EOFError, KeyboardInterrupt):
-                      print(f"\nAPI key entry skipped. File Editor may fail.")
-                      required_keys_ok = False
-             else:
-                  logger.debug(f"API key ({env_var}) found for File Editor model {model_name}.")
-             checked_providers.add(provider)
+    # Define descriptions for keys
+    api_key_descriptions = {
+        "OPENAI_API_KEY": "OpenAI API Key (https://platform.openai.com/api-keys)",
+        "GOOGLE_API_KEY": "Google AI API Key (https://aistudio.google.com/app/apikey)"
+    }
 
-    # --- Save Config ---
+    for model_name in filter(None, models_to_check): # Filter out potential None values
+        try:
+             provider = get_model_provider(model_name)
+             provider_name = "OpenAI" if provider == "openai" else "Google"
+             env_var = "OPENAI_API_KEY" if provider == "openai" else "GOOGLE_API_KEY"
+
+             if env_var not in checked_providers:
+                 logger.debug(f"Ensuring dotenv key: {env_var} for model {model_name}")
+                 key_value = ensure_dotenv_key(
+                     dotenv_path,
+                     env_var,
+                     api_key_descriptions.get(env_var, f"{provider_name} API Key")
+                 )
+                 if key_value is None:
+                      print(f"Warning: API key ({env_var}) required by model '{model_name}' was not provided or found. File Editor may fail.")
+                      required_keys_ok = False # Mark as potentially problematic
+                 checked_providers.add(env_var)
+        except Exception as e:
+            logger.error(f"Error checking API key for model '{model_name}': {e}", exc_info=True)
+            print(f"\nError checking API key for model '{model_name}'. Check logs.")
+            required_keys_ok = False # Mark as problematic if check fails
+
+    # --- Save Config to BOTH locations ---
+    save_success = True
     try:
-        # Merge with defaults to ensure all keys are present? No, save only user-set or prompted values.
-        # Let the toolset handle defaults when reading later.
-        _write_json(config_path, config)
-        logger.info(f"File Editor configuration saved to {config_path}")
-        print("\nFile Editor configuration updated.")
-        if not required_keys_ok:
-             print("Note: Some API keys were missing or skipped. Ensure they are set in your environment.")
+        _write_json(local_config_path, final_config)
+        logger.info(f"File Editor configuration saved to local path: {local_config_path}")
     except Exception as e:
-         logger.error(f"Failed to save File Editor configuration to {config_path}: {e}")
-         print(f"\nError: Failed to save configuration: {e}")
-         return current_config or {} # Return old config on save error
+         save_success = False
+         logger.error(f"Failed to save File Editor configuration to local path {local_config_path}: {e}")
+         print(f"\nError: Failed to save configuration for current chat: {e}")
 
-    return config # Return the final config dict
+    try:
+        _write_json(global_config_path, final_config)
+        logger.info(f"File Editor configuration saved to global path: {global_config_path}")
+    except Exception as e:
+         save_success = False
+         logger.error(f"Failed to save File Editor configuration to global path {global_config_path}: {e}")
+         print(f"\nError: Failed to save global default configuration: {e}")
+
+    if save_success:
+        print("\nFile Editor configuration updated for this chat and globally.")
+        if not required_keys_ok:
+             print("Note: Some API keys were missing or skipped. Ensure they are set in your environment or .env file.")
+    else:
+        print("\nFile Editor configuration update failed. Check logs.")
+
+    # Return the final config dict
+    return final_config
 
 # --- Tool Classes ---
 
@@ -249,14 +294,11 @@ class OpenFileEditor(BaseTool):
     def _run(self, **kwargs) -> str:
         """
         Initializes the Aider state, activates the 'File Editor' toolset,
-        and updates the system prompt.
-        
-        Handles both direct args and v__args wrapper format from LangChain.
+        and updates the system prompt. Handles configuration checks.
         """
         # Extract real args if wrapped in v__args (for compatibility with some LLM bindings)
         args = kwargs.get("v__args", [])
         if isinstance(args, list) and len(args) > 0:
-            # If we have positional args in v__args, use the first one
             args = args[0] if args else ""
         elif "args" in kwargs:
             # Try direct 'args' parameter
@@ -282,69 +324,59 @@ class OpenFileEditor(BaseTool):
             activation_feedback = f"'{toolset_name}' toolset activated.\n\n"
             logger.debug(f"System prompt will be implicitly updated by LLM using new toolset state.")
 
-        # --- Get json file path for this toolset ---
-        aider_json_path = get_toolset_data_path(chat_id, toolset_id) 
-
-        # --- Read current state or initialize empty ---
-        aider_state = _read_json(aider_json_path, default_value={})
-
-        # Check if already enabled
-        if aider_state.get("enabled", False):
-            # Try to resume existing session
-            state = ensure_active_coder_state(aider_json_path)
-            if state and state.coder:
-                logger.info(f"Resuming File Editor session for chat {chat_id}.")
-                files_str = ', '.join(state.coder.get_rel_fnames()) or 'None'
-                status_message = f"Resumed existing File Editor session. Files: {files_str}."
-                return f"{activation_feedback}{status_message}\n\n{AIDER_TOOLSET_PROMPT}"
-            else:
-                # Failed to resume - fall through to initialization code
-                logger.warning(f"Failed to resume File Editor session for {chat_id}. Will reinitialize.")
+        # --- Get paths ---
+        chat_config_path = get_toolset_data_path(chat_id, toolset_id)
         
-        # --- Initialize new state ---
-        # Check if we need to run configuration
-        config_exists = bool(aider_state)  # Non-empty dict has some config
-        if not config_exists:
-            # Run configuration wizard (which will save the config to the path)
-            logger.info(f"Running configuration wizard for new File Editor session ({chat_id}).")
-            try:
-                # Call the configuration function (which handles prompting and saving)
-                configure_toolset(aider_json_path, aider_state)
-                # Reload the state after configuration
-                aider_state = _read_json(aider_json_path, default_value={})
-            except (EOFError, KeyboardInterrupt) as e:
-                logger.warning(f"Configuration cancelled for File Editor: {e}")
-                return f"{activation_feedback}Error: Configuration cancelled. Please try again."
-            except Exception as e:
-                logger.error(f"Error during configuration: {e}", exc_info=True)
-                return f"{activation_feedback}Error: Configuration failed: {e}"
+        # --- NEW: Ensure configuration check runs FIRST ---
+        # This function now handles checking chat, global, copying, or prompting.
+        # It ensures chat_config_path is populated correctly before we proceed.
+        from ...chat_state_manager import check_and_configure_toolset
+        check_and_configure_toolset(chat_id, toolset_name) # Call the unified checker
+        # --- End configuration check ---
 
-        # --- Finalize and enable the state ---
-        # Ensure state has minimal required fields
-        aider_state["enabled"] = True
-        if "abs_fnames" not in aider_state:
-            aider_state["abs_fnames"] = []
-        if "aider_done_messages" not in aider_state:
-            aider_state["aider_done_messages"] = []
+        # --- Read the potentially just-configured chat state ---
+        # We assume check_and_configure_toolset ensures chat_config_path is valid now
+        # or handles errors appropriately within itself.
+        aider_state = _read_json(chat_config_path, default_value=None)
+        if not isinstance(aider_state, dict):
+             # This shouldn't happen if check_and_configure works correctly
+             logger.error(f"Failed to read/configure state from {chat_config_path} after check.")
+             return f"{activation_feedback}Error: Failed to initialize File Editor state after configuration check."
 
-        # Save the initialized state
-        try:
-            _write_json(aider_json_path, aider_state)
-        except Exception as e:
-            logger.error(f"Failed to save Aider state: {e}", exc_info=True)
-            return f"{activation_feedback}Error: Failed to initialize state: {e}."
 
-        # Create the active state
-        state = ensure_active_coder_state(aider_json_path)
+        # --- Resume or Initialize Active Coder State ---
+        # Check if already enabled runtime state exists (less likely now with check first)
+        runtime_state = get_active_coder_state(chat_id)
+        if runtime_state and runtime_state.coder:
+            logger.info(f"Resuming existing File Editor session for chat {chat_id}.")
+            files_str = ', '.join(runtime_state.coder.get_rel_fnames()) or 'None'
+            status_message = f"Resumed existing File Editor session. Files: {files_str}."
+            # Always provide the prompt content on start/resume
+            return f"{activation_feedback}{status_message}\n\n{AIDER_TOOLSET_PROMPT}"
+
+        # If no runtime state, create it using the (now guaranteed) chat_config_path
+        logger.debug(f"Creating new active coder state using config from {chat_config_path}")
+        aider_state["enabled"] = True # Ensure enabled flag is set for recreation logic
+        if "abs_fnames" not in aider_state: aider_state["abs_fnames"] = []
+        if "aider_done_messages" not in aider_state: aider_state["aider_done_messages"] = []
+
+        # --- Recreate/Create Coder State ---
+        # ensure_active_coder_state handles recreation from the chat_config_path
+        state = ensure_active_coder_state(chat_config_path)
         if not state:
-            return f"{activation_feedback}Error: Failed to initialize File Editor. Check logs."
+            # Mark as disabled in chat config if creation failed?
+            aider_state["enabled"] = False
+            _write_json(chat_config_path, aider_state)
+            return f"{activation_feedback}Error: Failed to initialize File Editor runtime state. Check logs."
 
-        status_message = "New File Editor session started. Use 'include_file' to add files."
+        # --- Final Message ---
+        status_message = "New File Editor session started. Use 'open_file' to add files."
         logger.info(f"New File Editor session initialized for {chat_id}")
+        # Always provide the prompt content on start/resume
         return f"{activation_feedback}{status_message}\n\n{AIDER_TOOLSET_PROMPT}"
-        
-    async def _arun(self, args: str = "") -> str:
-        return self._run(args)
+
+    async def _arun(self, **kwargs) -> str:
+        return self._run(**kwargs)
 
 
 class OpenFileTool(BaseTool):
