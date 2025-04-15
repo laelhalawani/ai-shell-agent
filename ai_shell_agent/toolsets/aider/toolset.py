@@ -11,11 +11,12 @@ import threading
 import traceback
 import queue
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Type # Add Type
 
 # Langchain imports
 from langchain_core.tools import BaseTool
 from prompt_toolkit import prompt
+from pydantic import BaseModel, Field # Import BaseModel and Field
 
 # Local imports
 from ... import logger
@@ -25,18 +26,19 @@ from ...chat_state_manager import (
     get_active_toolsets,
     update_active_toolsets,
     get_toolset_data_path
-    # _read_json,  # REMOVED - use utils import instead
-    # _write_json  # REMOVED - use utils import instead
+    # Removed: _read_json, _write_json imports - use utils
 )
-# Import config manager helpers needed for API keys during startup
+# Import config manager helpers needed ONLY for model/provider info
 from ...config_manager import (
     get_current_model as get_agent_model, # Rename to avoid confusion
-    get_api_key_for_model, # For API key checks
-    get_model_provider, # Added for model provider lookup
-    set_api_key_for_model, # Added for setting API keys
-    normalize_model_name, # Added for model name normalization
-    ALL_MODELS # Added models dictionary
+    get_api_key_for_model, # For checking if keys EXIST (read-only)
+    get_model_provider, # For model provider lookup
+    # Removed: set_api_key_for_model
+    normalize_model_name, # Keep for model name normalization
+    ALL_MODELS # Keep models dictionary
 )
+# --- NEW: Import .env utilities ---
+from ...utils import ensure_dotenv_key, read_json as _read_json, write_json as _write_json
 
 # Import integration module for aider features
 from .integration.integration import (
@@ -285,28 +287,37 @@ def configure_toolset(
     # Return the final config dict
     return final_config
 
-# --- Tool Classes ---
+# --- Tool Input Schemas ---
+class NoArgsSchema(BaseModel):
+    """Input schema for tools that require no arguments."""
+    pass
+
+class FilePathSchema(BaseModel):
+    """Input schema for tools accepting a file path."""
+    file_path: str = Field(description="The absolute or relative path to the file.")
+
+class InstructionSchema(BaseModel):
+    """Input schema for tools accepting a natural language instruction."""
+    instruction: str = Field(description="The natural language instruction for the edit request.")
+
+class UserResponseSchema(BaseModel):
+    """Input schema for tools accepting a user response to a prompt."""
+    user_response: str = Field(description="The user's response to the editor's prompt.")
+
+
+# --- Tool Classes (MODIFIED) ---
 
 class OpenFileEditor(BaseTool):
     name: str = "open_file_editor"
     description: str = "Use this to start the file editor, whenever asked to edit contents of any text file. The editor works for any text file including advanced code editing. You operate it using natural language commands. Useful only for modifying files."
+    args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
-    def _run(self, **kwargs) -> str:
+    # Removed **kwargs as no args expected
+    def _run(self) -> str:
         """
         Initializes the Aider state, activates the 'File Editor' toolset,
         and updates the system prompt. Handles configuration checks.
         """
-        # Extract real args if wrapped in v__args (for compatibility with some LLM bindings)
-        args = kwargs.get("v__args", [])
-        if isinstance(args, list) and len(args) > 0:
-            args = args[0] if args else ""
-        elif "args" in kwargs:
-            # Try direct 'args' parameter
-            args = kwargs.get("args", "")
-        else:
-            # Otherwise use empty string
-            args = ""
-
         chat_id = get_current_chat()
         if not chat_id:
             return "Error: No active chat session found."
@@ -375,13 +386,14 @@ class OpenFileEditor(BaseTool):
         # Always provide the prompt content on start/resume
         return f"{activation_feedback}{status_message}\n\n{AIDER_TOOLSET_PROMPT}"
 
-    async def _arun(self, **kwargs) -> str:
-        return self._run(**kwargs)
+    async def _arun(self) -> str:
+        return self._run()
 
 
 class OpenFileTool(BaseTool):
     name: str = "open_file"
     description: str = "Opens a file for editing in the File Editor, files can be added by absolute or relative paths. The file must exist in the filesystem."
+    args_schema: Type[BaseModel] = FilePathSchema # Specify schema
     
     def _run(self, file_path: str) -> str:
         """Adds a file to the Aider context, recreating state if needed."""
@@ -449,6 +461,7 @@ class OpenFileTool(BaseTool):
 class CloseFileTool(BaseTool):
     name: str = "close_file"
     description: str = "Closes a file from the File Editor. Files can be closed by relative or absolute paths, for files that were previously opened."
+    args_schema: Type[BaseModel] = FilePathSchema # Specify schema
     
     def _run(self, file_path: str) -> str:
         """Removes a file from the Aider context."""
@@ -493,20 +506,10 @@ class CloseFileTool(BaseTool):
 class ListOpenFilesTool(BaseTool):
     name: str = "list_files"
     description: str = "Lists all files currently in the File Editor's context. Can be used to preview what files are open for editing."
+    args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
-    def _run(self, **kwargs) -> str:
+    def _run(self) -> str:
         """Lists all files in the Aider context."""
-        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
-        args = kwargs.get("v__args", [])
-        if isinstance(args, list) and len(args) > 0:
-            args = args[0]
-        elif "args" in kwargs:
-            # Try direct 'args' parameter
-            args = kwargs.get("args", "")
-        else:
-            # Otherwise use empty string
-            args = ""
-            
         chat_id = get_current_chat()
         if not chat_id:
             return "Error: No active chat session found."
@@ -543,13 +546,14 @@ class ListOpenFilesTool(BaseTool):
             logger.error(traceback.format_exc())
             return f"Error listing files: {e}"
             
-    async def _arun(self, **kwargs) -> str:
-        return self._run(**kwargs)
+    async def _arun(self) -> str:
+        return self._run()
 
 
 class RequestEditsTool(BaseTool):
     name: str = "request_edit"
     description: str = "Using natural language, request an edit to the files opened in the File Editor. The editor is AI powered, the editor AI will respond with a plan and then execute it. Use this tool after adding files."
+    args_schema: Type[BaseModel] = InstructionSchema # Specify schema
     
     def _run(self, instruction: str) -> str:
         """Runs Aider's main edit loop in a background thread."""
@@ -676,20 +680,10 @@ class RequestEditsTool(BaseTool):
 class ViewDiffTool(BaseTool):
     name: str = "view_changes"
     description: str = "Shows the git diff of changes made by the 'request_edit' tool in the current session. This is useful to see what changes have been made to the files. Works only if there was a git repository initialized in the project root."
+    args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
-    def _run(self, **kwargs) -> str:
+    def _run(self) -> str:
         """Shows the diff of changes made by Aider."""
-        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
-        args = kwargs.get("v__args", [])
-        if isinstance(args, list) and len(args) > 0:
-            args = args[0] if args else ""
-        elif "args" in kwargs:
-            # Try direct 'args' parameter
-            args = kwargs.get("args", "")
-        else:
-            # Otherwise use empty string
-            args = ""
-            
         chat_id = get_current_chat()
         if not chat_id:
             return "Error: No active chat session found."
@@ -734,26 +728,16 @@ class ViewDiffTool(BaseTool):
             logger.error(traceback.format_exc())
             return f"Error viewing diff: {e}. {io_stub.get_captured_output()}"
             
-    async def _arun(self, **kwargs) -> str:
-        return self._run(**kwargs)
+    async def _arun(self) -> str:
+        return self._run()
 
 class UndoLastEditTool(BaseTool):
     name: str = "undo_last_edit"
     description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the File Editor or if there is no git repository initialized."
+    args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
-    def _run(self, **kwargs) -> str:
+    def _run(self) -> str:
         """Undoes the last edit commit made by Aider."""
-        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
-        args = kwargs.get("v__args", [])
-        if isinstance(args, list) and len(args) > 0:
-            args = args[0] if args else ""
-        elif "args" in kwargs:
-            # Try direct 'args' parameter
-            args = kwargs.get("args", "")
-        else:
-            # Otherwise use empty string
-            args = ""
-            
         chat_id = get_current_chat()
         if not chat_id:
             return "Error: No active chat session found."
@@ -800,26 +784,17 @@ class UndoLastEditTool(BaseTool):
             logger.error(traceback.format_exc())
             return f"Error during undo: {e}. {io_stub.get_captured_output()}".strip()
             
-    async def _arun(self, **kwargs) -> str:
-        return self._run(**kwargs)
+    async def _arun(self) -> str:
+        return self._run()
+
 
 class CloseFileEditorTool(BaseTool):
     name: str = "close_file_editor"
     description: str = "Closes the File Editor and all the files. Changes are saved automatically. Close it as soon as you verified with the user they don't want to edit the files anymore, once verified close the File Editor right away."
+    args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
-    def _run(self, **kwargs) -> str:
+    def _run(self) -> str:
         """Clears the Aider state, deactivates the toolset, and updates the prompt."""
-        # Extract real args if wrapped in v__args (for compatibility with LangChain bindings)
-        args = kwargs.get("v__args", [])
-        if isinstance(args, list) and len(args) > 0:
-            args = args[0] if args else ""
-        elif "args" in kwargs:
-            # Try direct 'args' parameter
-            args = kwargs.get("args", "")
-        else:
-            # Otherwise use empty string
-            args = ""
-            
         chat_id = get_current_chat()
         if not chat_id:
             return "Error: No active chat session found to close the editor for."
@@ -853,9 +828,9 @@ class CloseFileEditorTool(BaseTool):
              toolset_deactivated_msg = f"'{toolset_name}' toolset was already inactive."
         return f"{state_cleared_msg} {toolset_deactivated_msg}".strip()
              
-    async def _arun(self, **kwargs) -> str:
+    async def _arun(self) -> str:
         # Simple enough to run synchronously
-        return self._run(**kwargs)
+        return self._run()
 
 
 class SubmitFileEditorInputTool(BaseTool):
@@ -869,6 +844,8 @@ class SubmitFileEditorInputTool(BaseTool):
          "Directly submit input when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
          "This version bypasses user confirmation."
     )
+    args_schema: Type[BaseModel] = UserResponseSchema # Specify schema
+
     def _run(self, user_response: str) -> str:
         chat_id = get_current_chat()
         if not chat_id:
@@ -971,6 +948,8 @@ class SubmitFileEditorInputTool_HITL(BaseTool):
          "Use to provide input when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
          "The proposed input will be shown to the user for confirmation or editing before being submitted."
     )
+    args_schema: Type[BaseModel] = UserResponseSchema # Specify schema
+
     def _run(self, user_response: str) -> str:
         chat_id = get_current_chat()
         if not chat_id:

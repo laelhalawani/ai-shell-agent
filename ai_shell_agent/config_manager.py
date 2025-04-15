@@ -96,37 +96,18 @@ def get_current_model() -> str:
 
 def set_model(model_name: str) -> None:
     """
-    Set the model to use for AI interactions, saving to both env var and config file.
+    Set the model to use for AI interactions, saving to environment variable and config file.
+    No longer saves to .env file - toolsets handle their own secrets.
     """
     normalized_name = normalize_model_name(model_name)
     
-    # Save to environment variable
+    # Save to environment variable (for current session only)
     os.environ["AI_SHELL_AGENT_MODEL"] = normalized_name
     
-    # Save to config file
+    # Save to config file (for persistence between sessions)
     config = _read_config()
     config["model"] = normalized_name
     _write_config(config)
-    
-    # Also persist to .env file
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
-    
-    # Read existing .env file
-    env_vars = {}
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                if "=" in line:
-                    key, value = line.strip().split("=", 1)
-                    env_vars[key] = value
-    
-    # Update with new model
-    env_vars["AI_SHELL_AGENT_MODEL"] = normalized_name
-    
-    # Write back to .env file
-    with open(env_path, "w") as f:
-        for key, value in env_vars.items():
-            f.write(f"{key}={value}\n")
     
     logger.info(f"Model set to: {normalized_name}")
 

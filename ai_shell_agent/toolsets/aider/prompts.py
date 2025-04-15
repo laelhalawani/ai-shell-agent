@@ -7,7 +7,7 @@ This content is returned as a ToolMessage when the toolset is activated.
 AIDER_TOOLSET_PROMPT = """\
 You have activated the 'File Editor' tools, an advanced code editing toolset for your project. Use it only to make edits to text files including regular files, code, configuration, scripts etc.
 It is particularly effective for code but works with any text file. If a git repository is present, it will be used automatically for change tracking and diffs.
-
+The editor is AI powered, it can view any files you open in the editor. Always open all files relevant for context, and specify edits only to the files that need to be changed.
 IMPORTANT:
 - You must have at least one file included before attempting to `request_edit`, inclusion is persistent per session, if you don't add the file you want to edit.
 - Be specific in your `request_edit` instructions, as if you were explaining the request to a developer who will implement it.

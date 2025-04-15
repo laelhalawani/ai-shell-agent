@@ -20,8 +20,8 @@ from . import logger, ROOT_DIR # Import ROOT_DIR for consistent .env path
 # Config manager imports (keep necessary ones)
 from .config_manager import (
     get_current_model, set_model, prompt_for_model_selection,
-    ensure_api_key_for_current_model, get_api_key_for_model, # Keep get_api_key
-    # REMOVED: set_api_key_for_model (toolsets handle their own via utils)
+    ensure_api_key_for_current_model, get_api_key_for_model,
+    set_api_key_for_model, # Added this back for CLI --set-api-key support
     get_model_provider, check_if_first_run,
     set_default_enabled_toolsets # Keep for first run / select tools
 )

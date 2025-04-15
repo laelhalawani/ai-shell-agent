@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import shutil # Import shutil for directory removal
 
 # Local imports
-from . import logger, DATA_DIR, CHATS_DIR, TOOLSETS_GLOBAL_CONFIG_DIR # Import from __init__ including new dir
+from . import logger, DATA_DIR, CHATS_DIR, TOOLSETS_GLOBAL_CONFIG_DIR, ROOT_DIR # Added ROOT_DIR import
 # Import JSON utility functions from utils
 from .utils import read_json, write_json
 # Import the static system prompt (now using static prompt)
@@ -289,21 +289,16 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
     # Use None as default to distinguish between empty dict and file not found
     local_config = _read_json(local_config_path, default_value=None)
 
-    # Check if chat-specific config is valid (basic check: is it a dict?)
+    # --- MODIFIED CHECK ---
+    # Check if the local config file EXISTS *and* contains a dictionary
     is_local_configured = False
-    if isinstance(local_config, dict):
-         # Considered configured if it's a dict. Toolset's configure func can validate further.
-         # If toolset defines config_defaults, we could check keys here for stricter validation,
-         # but let's keep it simple: if a dict exists, assume configured for now.
-         is_local_configured = True
-         # More robust check (optional):
-         # if target_metadata.config_defaults:
-         #     is_local_configured = all(key in local_config for key in target_metadata.config_defaults) or not target_metadata.config_defaults
-         # else:
-         #     is_local_configured = True # Any dict is configured if no defaults defined
+    if local_config_path.exists() and isinstance(local_config, dict):
+        is_local_configured = True
+        logger.debug(f"Found existing local config file for '{toolset_name}' at {local_config_path}.")
+    # --- END MODIFIED CHECK ---
 
     if is_local_configured:
-        logger.debug(f"Toolset '{toolset_name}' already configured locally for chat {chat_id} at {local_config_path}.")
+        logger.debug(f"Toolset '{toolset_name}' already configured locally for chat {chat_id}.")
         # --- Check for required secrets even if configured ---
         if target_metadata.required_secrets:
              logger.debug(f"Checking required secrets for already configured toolset '{toolset_name}'...")
@@ -316,20 +311,16 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
                   logger.warning(f"One or more required secrets missing for '{toolset_name}'. It might malfunction.")
         return # Already configured locally
 
-    # --- Local is NOT configured, check global defaults ---
+    # --- Local is NOT configured (File doesn't exist or isn't a dict) ---
     logger.debug(f"Local config not found or invalid for '{toolset_name}' at {local_config_path}. Checking global defaults at {global_config_path}.")
     global_config = _read_json(global_config_path, default_value=None)
 
-    # Check if global config is valid
+    # --- MODIFIED CHECK ---
+    # Check if global config exists and is valid
     is_global_configured = False
-    if isinstance(global_config, dict):
-         # Use same logic as local check
+    if global_config_path.exists() and isinstance(global_config, dict):
          is_global_configured = True
-         # More robust check (optional):
-         # if target_metadata.config_defaults:
-         #     is_global_configured = all(key in global_config for key in target_metadata.config_defaults) or not target_metadata.config_defaults
-         # else:
-         #     is_global_configured = True
+    # --- END MODIFIED CHECK ---
 
     if is_global_configured:
         # Global default exists, copy it to the local path

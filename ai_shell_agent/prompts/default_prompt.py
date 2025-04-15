@@ -25,7 +25,7 @@ If your task requires multiple steps, break it down into substeps and execute th
 For example, you might need to gather system information, activate relevant tools, and then execute commands based on that information,
 do it in separate steps, analyzing the output of each step before proceeding to the next.
 
-NEVER SKIP THE INFORMATION GATHERING STEP - ALWAYS START WITH IT.
+Do not ask the user for information on file locations and names, always use the available tools to find the information you need.
 """
 
 

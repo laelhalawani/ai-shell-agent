@@ -3,7 +3,7 @@
 Defines the tools and metadata for the Terminal toolset.
 """
 import subprocess
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Type # Add Type
 from pathlib import Path # Keep Path import
 
 # Langchain imports
@@ -14,7 +14,7 @@ from langchain_core.callbacks.manager import (
     CallbackManagerForToolRun,
 )
 from langchain_core.runnables.config import run_in_executor
-from pydantic import Field
+from pydantic import BaseModel, Field # Import BaseModel and Field
 
 # Import the sanitize_input function directly from the module
 from langchain_experimental.tools.python.tool import sanitize_input, _get_default_python_repl
@@ -92,44 +92,53 @@ def configure_toolset(
     # Return the empty config
     return final_config
 
-# --- Tool Classes (Migrated from terminal_tools.py) ---
+# --- Tool Input Schemas ---
+class NoArgsSchema(BaseModel):
+    """Input schema for tools that require no arguments."""
+    pass
+
+class CommandSchema(BaseModel):
+    """Input schema for tools accepting a shell command."""
+    command: str = Field(description="The command to execute in the terminal.")
+
+class QuerySchema(BaseModel):
+    """Input schema for tools accepting a query (like Python code)."""
+    query: str = Field(description="The query or code snippet to execute.")
+
+# --- Tool Classes (MODIFIED) ---
 
 class StartTerminalTool(BaseTool):
     name: str = "start_terminal"
     description: str = "Activates the Terminal toolset, enabling execution of shell commands and Python code."
+    args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
-    def _run(self, *args, **kwargs) -> str:
+    # Removed *args, **kwargs from signature as schema defines no args
+    def _run(self) -> str:
         """Activates the 'Terminal' toolset and returns usage instructions."""
         logger.info(f"StartTerminalTool called")
-
         chat_id = get_current_chat()
         if not chat_id:
             return "Error: No active chat session found."
 
-        # --- NEW: Ensure configuration check runs ---
-        # Check/run configuration before activating if needed.
-        # This ensures the empty config files are created, marking it "configured".
         from ...chat_state_manager import check_and_configure_toolset
-        check_and_configure_toolset(chat_id, toolset_name) # Add this call
-        # --- End configuration check ---
+        check_and_configure_toolset(chat_id, toolset_name)
 
         current_toolsets = get_active_toolsets(chat_id)
         if toolset_name in current_toolsets:
             logger.debug(f"'{toolset_name}' toolset is already active.")
             return f"'{toolset_name}' toolset is already active.\n\n{TERMINAL_TOOLSET_PROMPT}"
 
-        # Activate the toolset
         new_toolsets = list(current_toolsets)
         new_toolsets.append(toolset_name)
-        update_active_toolsets(chat_id, new_toolsets) # Save updated toolsets list
+        update_active_toolsets(chat_id, new_toolsets)
 
         logger.debug(f"Successfully activated '{toolset_name}' toolset for chat {chat_id}")
-        return TERMINAL_TOOLSET_PROMPT
+        return f"'{toolset_name}' toolset activated.\n\n{TERMINAL_TOOLSET_PROMPT}"
 
-    async def _arun(self, *args, **kwargs) -> str:
+    # Removed *args, **kwargs from signature
+    async def _arun(self) -> str:
         """Run the tool asynchronously."""
-        # For now, run synchronously using run_in_executor if needed, or just call sync
-        return self._run(*args, **kwargs)
+        return self._run()
 
 class TerminalTool_HITL(BaseTool):
     """
@@ -141,22 +150,15 @@ class TerminalTool_HITL(BaseTool):
         "User will be prompted to confirm or edit the command before execution."
         "Use this for file operations, system checks, installations, etc."
     )
+    args_schema: Type[BaseModel] = CommandSchema # Specify schema
 
-    def _run(self, command: str = None, **kwargs) -> str:
+    # Use explicit 'command' arg based on schema, keep **kwargs for potential framework args
+    def _run(self, command: str, **kwargs) -> str:
         """Execute a command in the terminal shell with human verification."""
-        cmd_to_execute = command
-
-        # Check for 'command' in kwargs (used by agent invoke)
-        if cmd_to_execute is None and 'command' in kwargs:
-            cmd_to_execute = kwargs.get('command', '')
-        # Check for v__args format from LangChain (less common now with direct dict passing)
-        elif cmd_to_execute is None and 'v__args' in kwargs:
-             wrapped_args = kwargs.get('v__args', [])
-             if isinstance(wrapped_args, list) and wrapped_args:
-                 cmd_to_execute = wrapped_args[0] if isinstance(wrapped_args[0], str) else str(wrapped_args[0])
-
+        cmd_to_execute = command # Argument directly from schema
 
         if not cmd_to_execute:
+            # This case should ideally not happen if schema is required
             return "Error: No command provided to execute."
 
         logger.info(f"Proposing terminal command: {cmd_to_execute}")
@@ -173,36 +175,34 @@ class TerminalTool_HITL(BaseTool):
 
         logger.info(f"Executing terminal command: {edited_command}")
         try:
+            # Execute the command
             result = subprocess.run(
                 edited_command,
                 shell=True,
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
-                errors='replace' # Handle potential encoding errors gracefully
+                errors='replace'
             )
-
+            
+            # Format the output
             output_parts = []
-            # Add command info first
             output_parts.append(f"Executed: `{edited_command}`")
-
             if result.returncode != 0:
                 output_parts.append(f"Exit Code: {result.returncode}")
-
+                
             stdout = result.stdout.strip()
             stderr = result.stderr.strip()
-
+            
             if stdout:
                 output_parts.append(f"Output:\n---\n{stdout}\n---")
             if stderr:
                 output_parts.append(f"Errors/Warnings:\n---\n{stderr}\n---")
-
-            if not stdout and not stderr and result.returncode == 0:
-                output_parts.append("Status: Command completed successfully with no output.")
-            elif not stdout and not stderr and result.returncode != 0:
-                 output_parts.append("Status: Command failed with no output.")
-
-
+            
+            if not stdout and not stderr:
+                status = "Command completed successfully with no output." if result.returncode == 0 else "Command failed with no output."
+                output_parts.append(f"Status: {status}")
+                
             return "\n".join(output_parts)
 
         except FileNotFoundError:
@@ -212,10 +212,10 @@ class TerminalTool_HITL(BaseTool):
             logger.error(f"Error executing command '{edited_command}': {e}", exc_info=True)
             return f"Error executing command: {str(e)}\n(Attempted: `{edited_command}`)"
 
-    async def _arun(self, command: str = None, **kwargs) -> str:
-        return await run_in_executor(None, self._run, command, **kwargs)
+    # Use explicit 'command' arg based on schema
+    async def _arun(self, command: str, **kwargs) -> str:
+        return await run_in_executor(None, self._run, command=command, **kwargs)
 
-    # Removed invoke - standard agent framework calls _run/_arun directly with dict args
 
 class PythonREPLTool_HITL(BaseTool):
     """
@@ -226,32 +226,21 @@ class PythonREPLTool_HITL(BaseTool):
         "Evaluates Python code snippets in a REPL environment. "
         "User will be prompted to confirm or edit the code before execution."
     )
+    args_schema: Type[BaseModel] = QuerySchema # Specify schema
     python_repl: PythonREPL = Field(default_factory=_get_default_python_repl)
-    sanitize_input: bool = True
+    sanitize_input: bool = True # Keep sanitize option
 
+    # Use explicit 'query' arg based on schema
     def _run(
         self,
-        query: str = None, # Renamed 'command' to 'query' for consistency with PythonREPL
-        #run_manager: Optional[CallbackManagerForToolRun] = None, # Often unused directly
-        **kwargs
-    ) -> str: # Changed return type hint to str
+        query: str,
+        **kwargs # Keep kwargs for potential framework args
+    ) -> str:
         """HITL version of the tool."""
-        code_to_execute = query
-
-        # Check for 'query' in kwargs (used by agent invoke)
-        if code_to_execute is None and 'query' in kwargs:
-             code_to_execute = kwargs.get('query', '')
-        # Check for 'command' for backward compatibility if needed? maybe not.
-        elif code_to_execute is None and 'command' in kwargs:
-            logger.warning("Received 'command' argument for python_repl, expected 'query'. Using 'command'.")
-            code_to_execute = kwargs.get('command', '')
-        elif code_to_execute is None and 'v__args' in kwargs:
-             wrapped_args = kwargs.get('v__args', [])
-             if isinstance(wrapped_args, list) and wrapped_args:
-                 code_to_execute = wrapped_args[0] if isinstance(wrapped_args[0], str) else str(wrapped_args[0])
-
+        code_to_execute = query # Argument directly from schema
 
         if not code_to_execute:
+             # Should not happen if schema is required
             return "Error: No Python code provided to execute."
 
         logger.info(f"Proposing Python code: {code_to_execute}")
@@ -262,14 +251,12 @@ class PythonREPLTool_HITL(BaseTool):
             if original_code != code_to_execute:
                 logger.debug(f"Sanitized Python code: {code_to_execute}")
 
-
         print(f"\n[Proposed Python code]:")
         try:
             edited_query = prompt("(Accept or Edit) > ", default=code_to_execute)
         except EOFError:
              logger.warning("User cancelled code input (EOF).")
              return "Code input cancelled by user."
-
 
         if not edited_query.strip():
             logger.warning("User cancelled code execution by submitting empty input.")
@@ -278,21 +265,19 @@ class PythonREPLTool_HITL(BaseTool):
         logger.info(f"Executing Python code: {edited_query}")
         try:
             result = self.python_repl.run(edited_query)
-            # Ensure result is string
             return f"Executed: `python_repl(query='''{edited_query}''')`\nResult:\n---\n{str(result)}\n---"
         except Exception as e:
             logger.error(f"Error executing Python code '{edited_query}': {e}", exc_info=True)
-            # Provide more context in the error message
             return f"Error executing Python code:\n---\n{str(e)}\n---\n(Attempted Code:\n'''\n{edited_query}\n'''\n)"
 
+    # Use explicit 'query' arg based on schema
     async def _arun(
         self,
-        query: str = None,
-        #run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
-         **kwargs
-    ) -> str: # Changed return type hint to str
+        query: str,
+        **kwargs
+    ) -> str:
         """Use the tool asynchronously."""
-        return await run_in_executor(None, self._run, query=query, **kwargs) # Pass query explicitly
+        return await run_in_executor(None, self._run, query=query, **kwargs)
 
 # --- Tool Instances ---
 start_terminal_tool = StartTerminalTool()
@@ -312,12 +297,16 @@ logger.debug(f"Terminal toolset tools registered: {[t.name for t in [toolset_sta
 
 # --- Direct Execution Helper (Not part of toolset, kept for execute() in chat_manager) ---
 # This tool is NOT registered for the LLM, only used internally by `ai -x`
-class TerminalTool_Direct(BaseTool):
-    name: str = "_internal_direct_terminal" # Internal name
-    description: str = "Internal tool for direct command execution without HITL."
-
-    def _run(self, command: str) -> str:
-        logger.info(f"Executing direct command internally: {command}")
+class TerminalTool_Direct:
+    """
+    Direct terminal execution without HITL prompts.
+    Not a BaseTool as it's not exposed to the LLM.
+    """
+    def run(self, command: str) -> str:
+        """Execute a command directly in the terminal shell."""
+        if not command:
+            return "Error: No command provided."
+            
         try:
             result = subprocess.run(
                 command,
@@ -327,28 +316,32 @@ class TerminalTool_Direct(BaseTool):
                 encoding='utf-8',
                 errors='replace'
             )
+            
+            # Format the output like the HITL tool
+            output_parts = []
+            output_parts.append(f"Executed: `{command}`")
+            if result.returncode != 0:
+                output_parts.append(f"Exit Code: {result.returncode}")
+                
             stdout = result.stdout.strip()
             stderr = result.stderr.strip()
-            output = ""
+            
             if stdout:
-                output += f"Output:\n{stdout}\n"
+                output_parts.append(f"Output:\n---\n{stdout}\n---")
             if stderr:
-                output += f"Errors/Warnings:\n{stderr}\n"
-            if result.returncode != 0:
-                 output += f"Exit Code: {result.returncode}\n"
-            if not output:
-                output = "Command executed with no output."
-            return output.strip()
+                output_parts.append(f"Errors/Warnings:\n---\n{stderr}\n---")
+                
+            if not stdout and not stderr:
+                output_parts.append(f"Status: Command completed with no output.")
+                
+            return "\n".join(output_parts)
+            
+        except FileNotFoundError:
+            return f"Error: Command not found: '{command.split()[0]}'. Please ensure it's installed and in the system's PATH."
         except Exception as e:
-            logger.error(f"Direct execution failed for '{command}': {e}", exc_info=True)
+            logger.error(f"Error executing command '{command}': {e}", exc_info=True)
             return f"Error executing command: {str(e)}"
 
-    async def _arun(self, command: str) -> str:
-         return await run_in_executor(None, self._run, command)
-
-# Instance for internal use
-_direct_terminal_tool_instance = TerminalTool_Direct()
-
 def run_direct_terminal_command(command: str) -> str:
-    """Function to run command using the internal direct tool"""
-    return _direct_terminal_tool_instance._run(command=command)
+    """Execute a command directly, used by execute() in chat_manager."""
+    return TerminalTool_Direct().run(command)

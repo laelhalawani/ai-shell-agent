@@ -1,0 +1,8 @@
+{
+    "main_model": "o3-mini",
+    "editor_model": "o3-mini",
+    "weak_model": "gpt-4o-mini",
+    "edit_format": null,
+    "auto_commits": true,
+    "dirty_commits": true
+}

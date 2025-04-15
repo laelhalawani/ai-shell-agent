@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,  # Default to INFO level
+    level=logging.DEBUG,  # Default to INFO level
     format='%(levelname)s [%(filename)s:%(funcName)s:%(lineno)d]: %(message)s', # Added line number
 )
 logger = logging.getLogger('ai_shell_agent')
