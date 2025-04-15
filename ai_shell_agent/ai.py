@@ -47,11 +47,71 @@ def first_time_setup():
         if selected_model: set_model(selected_model)
         else: logger.critical("No model selected during first run. Exiting."); sys.exit(1)
         if not ensure_api_key(): logger.critical("API Key not provided. Exiting."); sys.exit(1)
+        # Add prompt for initial toolsets
+        prompt_for_initial_toolsets()
         logger.info("First-time setup complete.")
 
 def ensure_api_key() -> bool:
     # Only ensures key for the main agent model
     return ensure_api_key_for_current_model()
+
+def prompt_for_initial_toolsets():
+    """Prompts user to select default enabled toolsets during first run."""
+    print("\n--- Select Default Enabled Toolsets ---")
+    print("These toolsets will be enabled by default when you create new chats.")
+
+    # Use registry functions directly
+    from .toolsets.toolsets import get_registered_toolsets
+    from .config_manager import set_default_enabled_toolsets
+
+    all_toolsets = get_registered_toolsets()
+    if not all_toolsets:
+        print("No toolsets found/registered.")
+        set_default_enabled_toolsets([]) # Save empty list
+        return
+
+    print("\nAvailable Toolsets:")
+    options = {}
+    idx = 1
+    for ts_id, meta in sorted(all_toolsets.items(), key=lambda item: item[1].name):
+        # No current selection here, just list options
+        print(f"  {idx}: {meta.name.ljust(15)} - {meta.description}")
+        options[str(idx)] = meta.name
+        idx += 1
+
+    print("\nEnter comma-separated numbers TO ENABLE by default (e.g., 1,3).")
+    print("To enable none by default, leave empty or enter 'none'.")
+
+    while True:
+        try:
+            choice_str = input("> ").strip()
+            selected_names = []
+            if not choice_str or choice_str.lower() == 'none':
+                pass # selected_names remains empty
+            else:
+                selected_indices = {c.strip() for c in choice_str.split(',') if c.strip()}
+                valid_selection = True
+                for index in selected_indices:
+                    if index in options:
+                        selected_names.append(options[index])
+                    else:
+                        print(f"Error: Invalid selection '{index}'. Please use numbers from 1 to {idx-1}.")
+                        valid_selection = False
+                        break
+                if not valid_selection: continue # Ask again
+
+            # Remove duplicates and sort
+            final_selection = sorted(list(set(selected_names)))
+
+            # Save as global default
+            set_default_enabled_toolsets(final_selection)
+            print(f"\nDefault enabled toolsets set to: {', '.join(final_selection) or 'None'}")
+            return
+
+        except (EOFError, KeyboardInterrupt):
+            print("\nSelection cancelled. Setting no default toolsets.")
+            set_default_enabled_toolsets([])
+            return
 
 # --- Toolset Selection Command ---
 def select_tools_for_chat():
@@ -114,6 +174,11 @@ def select_tools_for_chat():
             # Update state - this also handles deactivating toolsets
             update_enabled_toolsets(chat_id, new_enabled_list_names) # Pass chat_id and list of names
             print(f"\nEnabled toolsets for '{chat_title}' set to: {', '.join(new_enabled_list_names) or 'None'}")
+
+            # Also update the global default setting
+            from .config_manager import set_default_enabled_toolsets
+            set_default_enabled_toolsets(new_enabled_list_names)
+            print("Global default enabled toolsets also updated.")
 
             # System prompt is now static - no need to update it explicitly
             print("Changes apply on next interaction.")

@@ -14,6 +14,7 @@ import sys
 import queue
 import logging
 import threading
+import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, Tuple
 
@@ -34,91 +35,172 @@ from aider.coders import Coder
 from aider.coders.base_coder import ANY_GIT_ERROR
 from aider.models import Model
 from aider.repo import GitRepo
+from aider.io import InputOutput
+from aider.commands import Commands
 
 # --- I/O Class for Aider Integration ---
-class AiderIOStubWithQueues:
+class AiderIOStubWithQueues(InputOutput):
     """
-    I/O stub for Aider that captures output and input via queues.
-    This allows AI Shell Agent to interact with Aider programmatically.
+    An InputOutput stub for Aider that uses queues for interaction
+    and captures output.
     """
-    def __init__(self):
-        self.output_queue = queue.Queue()
-        self.input_queue = queue.Queue()
-        self.input_provided = threading.Event()
-        self.input_needed = threading.Event()
-        self.verbose = False
-        self.quiet = False
-        
-    def write(self, text, end="\n"):
-        """Write output to the queue."""
-        if text:
-            logger.debug(f"Aider IO: {text}")
-            self.output_queue.put(text + end)
-        
-    def write_raw(self, text):
-        """Write raw output (without newline)."""
-        if text:
-            self.output_queue.put(text)
-    
-    def input(self, prompt=""):
-        """Get input from the queue."""
-        if prompt:
-            self.write_raw(prompt)
-        
-        # Signal that input is needed and wait for it
-        self.input_needed.set()
-        self.input_provided.clear()
-        
-        # Wait for input to be provided
-        self.input_provided.wait()
-        
-        # Get input from the queue
-        result = self.input_queue.get()
-        logger.debug(f"Aider input: {result}")
-        return result
-        
-    def provide_input(self, text):
-        """Provide input to Aider."""
-        self.input_queue.put(text)
-        self.input_needed.clear()
-        self.input_provided.set()
-        
-    def is_input_needed(self):
-        """Check if input is needed."""
-        return self.input_needed.is_set()
-        
-    def clear_input_needed(self):
-        """Clear the input needed flag."""
-        self.input_needed.clear()
-    
-    def get_accumulated_output(self):
-        """Get all accumulated output as a single string."""
-        outputs = []
-        while not self.output_queue.empty():
-            outputs.append(self.output_queue.get())
-        return "".join(outputs) if outputs else ""
+    def __init__(self, *args, **kwargs):
+        # Initialize with minimal necessary defaults for non-interactive use
+        # Ensure 'yes' is True for automatic confirmations where possible internally
+        # But external confirmations will be routed via queues.
+        super().__init__(pretty=False, yes=True, fancy_input=False)
+        self.input_q: Optional[queue.Queue] = None
+        self.output_q: Optional[queue.Queue] = None
+        self.group_preferences: Dict[int, str] = {}  # group_id -> preference ('yes'/'no'/'all'/'skip')
+        self.never_prompts: Set[Tuple[str, Optional[str]]] = set()  # (question, subject)
 
-    # Required methods for Aider compatibility
-    def reuse_last_answer(self):
-        return False
-        
-    def get_last_answer(self):
-        return None
-        
-    def bump_tokens(self, val=0):
-        pass
-        
-    def wrap_for_prompt(self, code):
-        return f"```\n{code}\n```"
+        # Buffers for capturing output
+        self.captured_output: List[str] = []
+        self.captured_errors: List[str] = []
+        self.captured_warnings: List[str] = []
+        self.tool_output_lock = threading.Lock()  # Protect buffer access
+
+    def set_queues(self, input_q: queue.Queue, output_q: queue.Queue):
+        """Assign the input and output queues."""
+        self.input_q = input_q
+        self.output_q = output_q
+
+    def tool_output(self, *messages, log_only=False, bold=False):
+        """Capture tool output."""
+        msg = " ".join(map(str, messages))
+        with self.tool_output_lock:
+             self.captured_output.append(msg)
+        # Also call parent for potential logging if needed by aider internals
+        super().tool_output(*messages, log_only=True)  # Ensure log_only=True for parent
+
+    def tool_error(self, message="", strip=True):
+        """Capture error messages."""
+        msg = str(message).strip() if strip else str(message)
+        with self.tool_output_lock:
+            self.captured_errors.append(msg)
+        super().tool_error(message, strip=strip)  # Call parent for potential logging
+
+    def tool_warning(self, message="", strip=True):
+        """Capture warning messages."""
+        msg = str(message).strip() if strip else str(message)
+        with self.tool_output_lock:
+            self.captured_warnings.append(msg)
+        super().tool_warning(message, strip=strip)  # Call parent for potential logging
+
+    def get_captured_output(self, include_warnings=True, include_errors=True) -> str:
+        """Returns all captured output, warnings, and errors as a single string and clears buffers."""
+        with self.tool_output_lock:
+            output = []
+            if self.captured_output:
+                output.extend(self.captured_output)
+            if include_warnings and self.captured_warnings:
+                for warn in self.captured_warnings: output.append(f"WARNING: {warn}")
+            if include_errors and self.captured_errors:
+                for err in self.captured_errors: output.append(f"ERROR: {err}")
+            result = "\n".join(output)
+            self.captured_output = []
+            self.captured_errors = []
+            self.captured_warnings = []
+            return result
+
+    # --- Intercept Blocking Methods ---
+    def confirm_ask(self, question, default="y", subject=None, explicit_yes_required=False, group=None, allow_never=False):
+        """Intercepts confirm_ask, sends prompt data via output_q, waits for input_q."""
+        logger.debug(f"Intercepted confirm_ask: {question} (Subject: {subject})")
+        if not self.input_q or not self.output_q:
+            logger.error("Queues not set for AiderIOStubWithQueues confirm_ask.")
+            raise RuntimeError("Aider IO Queues not initialized.")
+
+        question_id = (question, subject)
+        group_id = id(group) if group else None
+
+        # 1. Check internal state for early exit (never/all/skip)
+        if question_id in self.never_prompts:
+            logger.debug(f"confirm_ask: Answering 'no' due to 'never_prompts' for {question_id}")
+            return False
+        if group_id and group_id in self.group_preferences:
+            preference = self.group_preferences[group_id]
+            logger.debug(f"confirm_ask: Using group preference '{preference}' for group {group_id}")
+            if preference == 'skip': return False
+            if preference == 'all' and not explicit_yes_required: return True
+
+        # 2. Send prompt details to the main thread via output_q
+        prompt_data = {
+            'type': 'prompt', 'prompt_type': 'confirm', 'question': question,
+            'default': default, 'subject': subject, 'explicit_yes_required': explicit_yes_required,
+            'allow_never': allow_never, 'group_id': group_id
+        }
+        logger.debug(f"Putting prompt data on output_q: {prompt_data}")
+        self.output_q.put(prompt_data)
+
+        # 3. Block and wait for the response from the main thread via input_q
+        logger.debug("Waiting for response on input_q...")
+        raw_response = self.input_q.get() # Blocking get
+        logger.debug(f"Received raw response from input_q: '{raw_response}'")
+
+        # 4. Process the response
+        response = str(raw_response).lower().strip()
+        result = False  # Default to no
+
+        if allow_never and ("never" in response or "don't ask" in response):
+            self.never_prompts.add(question_id); logger.debug(f"Adding {question_id} to never_prompts"); return False
+        if group_id:
+            if 'all' in response: self.group_preferences[group_id] = 'all'; logger.debug(f"Setting preference 'all' for group {group_id}"); return True
+            elif 'skip' in response: self.group_preferences[group_id] = 'skip'; logger.debug(f"Setting preference 'skip' for group {group_id}"); return False
+        if response.startswith('y') or response == '1' or response == 'true' or response == 't': result = True
+        return result
+
+    def prompt_ask(self, question, default="", subject=None):
+        """Intercepts prompt_ask, sends prompt data via output_q, waits for input_q."""
+        logger.debug(f"Intercepted prompt_ask: {question} (Subject: {subject})")
+        if not self.input_q or not self.output_q:
+            logger.error("Queues not set for AiderIOStubWithQueues prompt_ask.")
+            raise RuntimeError("Aider IO Queues not initialized.")
+
+        prompt_data = {
+            'type': 'prompt', 'prompt_type': 'input', 'question': question,
+            'default': default, 'subject': subject
+        }
+        logger.debug(f"Putting prompt data on output_q: {prompt_data}")
+        self.output_q.put(prompt_data)
+
+        logger.debug("Waiting for response on input_q...")
+        raw_response = self.input_q.get() # Blocking get
+        logger.debug(f"Received raw response from input_q: '{raw_response}'")
+        return raw_response if raw_response else default
+
+    def get_input(self, *args, **kwargs):
+        err = "AiderIOStubWithQueues.get_input() called unexpectedly in tool mode."
+        logger.error(err)
+        # In tool mode, input comes via RunCodeEditTool or SubmitCodeEditorInputTool -> prompt_ask/confirm_ask
+        raise NotImplementedError(err)
+
+    # Keep other original methods for compatibility if needed
+    def user_input(self, *args, **kwargs): pass
+    def ai_output(self, *args, **kwargs): pass
+    def append_chat_history(self, *args, **kwargs): pass
+    def rule(self, *args, **kwargs): pass # Add stubs for any other base methods if needed
 
 # --- Runtime State Management ---
 class ActiveCoderState:
     """Runtime state for an active Aider coder instance."""
-    def __init__(self, coder, io_stub):
+    def __init__(self, coder, io_stub=None, input_q=None, output_q=None):
         self.coder = coder
-        self.io_stub = io_stub
+        self.io_stub = io_stub or AiderIOStubWithQueues()
+        self.input_q = input_q or queue.Queue()
+        self.output_q = output_q or queue.Queue()
+        self.thread = None
+        self.lock = threading.RLock()
         self.last_activity = threading.Event()
         self.last_activity.set()  # Mark as active initially
+        
+    def __post_init__(self):
+        """Initialize the IO stub with the queues."""
+        if hasattr(self, 'io_stub') and hasattr(self, 'input_q') and hasattr(self, 'output_q'):
+            self.io_stub.set_queues(self.input_q, self.output_q)
+            # Also ensure the coder is using this io_stub
+            if self.coder.io is not self.io_stub:
+                self.coder.io = self.io_stub
         
     def mark_activity(self):
         """Mark activity to prevent timeout."""
@@ -141,17 +223,35 @@ def get_active_coder_state(chat_id_or_key: str) -> Optional[ActiveCoderState]:
         return active_coders.get(chat_id_or_key)
 
 def create_active_coder_state(chat_id_or_key: str, coder) -> ActiveCoderState:
-    """Create and store a new active coder state."""
-    io_stub = getattr(coder, "io", None)
-    if not isinstance(io_stub, AiderIOStubWithQueues):
-        logger.warning(f"Coder has unexpected IO type: {type(io_stub)}")
-        io_stub = AiderIOStubWithQueues()
-        coder.io = io_stub
-        
-    new_state = ActiveCoderState(coder, io_stub)
+    """Creates and stores a new active coder state."""
     with _active_coders_dict_lock:
-        active_coders[chat_id_or_key] = new_state
-    return new_state
+        if chat_id_or_key in active_coders:
+             logger.warning(f"Overwriting existing active coder state for {chat_id_or_key}")
+             # Potentially add cleanup logic here if needed before overwriting
+        
+        # Create the state, which includes creating the IO stub and queues
+        io_stub = getattr(coder, "io", None)
+        if not isinstance(io_stub, AiderIOStubWithQueues):
+            logger.warning(f"Coder has unexpected IO type: {type(io_stub)}")
+            io_stub = AiderIOStubWithQueues()
+            coder.io = io_stub
+            
+        state = ActiveCoderState(coder=coder, io_stub=io_stub)
+        # Associate the coder with the io_stub explicitly
+        coder.io = state.io_stub
+        state.io_stub.set_queues(state.input_q, state.output_q)
+        
+        # Initialize Commands if not already done by Coder.create
+        if not hasattr(coder, 'commands') or coder.commands is None:
+            try:
+                coder.commands = Commands(io=state.io_stub, coder=coder)
+                logger.debug(f"Initialized Commands for coder {chat_id_or_key}")
+            except Exception as e:
+                logger.warning(f"Could not initialize Commands for coder {chat_id_or_key}: {e}")
+
+        active_coders[chat_id_or_key] = state
+        logger.info(f"Created active Aider session for: {chat_id_or_key}")
+        return state
 
 def remove_active_coder_state(aider_json_path: Path):
     """Removes the active coder state and marks as disabled in aider.json."""
@@ -191,7 +291,7 @@ def ensure_active_coder_state(aider_json_path: Path) -> Optional[ActiveCoderStat
 
     # Recreate the coder instance from persistent state
     temp_io_stub = AiderIOStubWithQueues()
-    recreated_coder = recreate_coder(aider_json_path, persistent_state, temp_io_stub) # Pass loaded state
+    recreated_coder = recreate_coder(aider_json_path, persistent_state, temp_io_stub)
 
     if not recreated_coder:
         logger.error(f"Failed to recreate Coder from persistent state for {aider_json_path}.")
@@ -276,7 +376,14 @@ def recreate_coder(aider_json_path: Path, aider_state: Dict, io_stub: AiderIOStu
         coder = Coder.create(**coder_kwargs)
         coder.root = git_root or os.getcwd() # Set root
 
-        # No need to call create_active_coder_state here, caller does it
+        # Initialize Commands if needed
+        if not hasattr(coder, 'commands') or coder.commands is None:
+            try:
+                coder.commands = Commands(io=io_stub, coder=coder)
+                logger.debug(f"Initialized Commands for coder during recreation")
+            except Exception as e:
+                logger.warning(f"Could not initialize Commands for coder: {e}")
+
         logger.info(f"Coder successfully recreated for {aider_json_path}")
         return coder
 
@@ -325,123 +432,35 @@ def update_aider_state_from_coder(aider_json_path: Path, coder) -> None:
     except Exception as e:
         logger.error(f"Failed to update persistent Aider state in {aider_json_path}: {e}", exc_info=True)
 
-# --- Run Aider Command in Thread ---
+# --- Run Aider in Thread ---
 def _run_aider_in_thread(coder, instruction: str, output_q: queue.Queue):
     """Run an Aider command in a separate thread."""
-    if not coder:
-        output_q.put({"error": "No active Aider session."})
-        return
-        
+    thread_name = threading.current_thread().name
+    logger.info(f"Aider worker thread '{thread_name}' started for instruction: {instruction[:50]}...")
     try:
-        # Parse the instruction as input to the coder
-        coder.io.clear_input_needed()
-        
-        # Reset output queue to start fresh
-        while not coder.io.output_queue.empty():
-            coder.io.output_queue.get()
-        
-        # Run the coder with the instruction
-        logger.debug(f"Running Aider instruction: {instruction}")
-        was_successful = coder.run_instruction(instruction)
-        
-        # Get any output
-        output = coder.io.get_accumulated_output()
-        
-        # Prepare result
-        result = {"output": output}
-        if not was_successful:
-            result["error"] = "Aider instruction failed."
-            logger.error(f"Aider instruction failed: {instruction}")
-        
-        # Put the result in the output queue
-        output_q.put(result)
-        
-    except Exception as e:
-        logger.error(f"Error running Aider instruction: {e}", exc_info=True)
-        output_q.put({"error": f"Error running Aider instruction: {e}", "output": ""})
+        # Ensure the coder uses the stub with the correct queues assigned
+        if not isinstance(coder.io, AiderIOStubWithQueues) or coder.io.output_q != output_q:
+             logger.error(f"Thread {thread_name}: Coder IO setup is incorrect!")
+             raise RuntimeError("Coder IO setup incorrect in thread.")
 
-# --- Run Aider Command ---
-def run_aider_command(aider_json_path: Path, instruction: str, timeout: int = 60) -> Dict[str, str]:
-    """Run an Aider command."""
-    logger.info(f"Running Aider command: {instruction}")
-    state = ensure_active_coder_state(aider_json_path)
-    if not state:
-        return {"error": "Aider session not active. Try starting the File Editor first.", "output": ""}
-    
-    coder = state.coder
-    output_q = queue.Queue()
-    
-    # Run in a separate thread to avoid blocking
-    thread = threading.Thread(
-        target=_run_aider_in_thread, 
-        args=(coder, instruction, output_q)
-    )
-    thread.daemon = True
-    thread.start()
-    
-    # Wait for the thread to complete
-    try:
-        thread.join(timeout=timeout)
-        if thread.is_alive():
-            logger.error(f"Aider command timed out after {timeout} seconds: {instruction}")
-            return {"error": f"Command timed out after {timeout} seconds.", "output": ""}
+        # Clear any previous output in the stub before running
+        coder.io.get_captured_output() # Use the restored method
+        
+        # The main blocking call - use coder.run
+        coder.run(with_message=instruction)
+        
+        # Get accumulated output from the run
+        final_output = coder.io.get_captured_output()
+        logger.info(f"Thread {thread_name}: coder.run completed successfully.")
+        # Put structured result on queue
+        output_q.put({'type': 'result', 'content': final_output})
+        
     except Exception as e:
-        logger.error(f"Error waiting for Aider command: {e}")
-        return {"error": f"Error waiting for Aider command: {e}", "output": ""}
-    
-    # Check for additional input needed
-    if state.io_stub.is_input_needed():
-        logger.info("Aider is waiting for input.")
-        # Get whatever output is available
-        output = state.io_stub.get_accumulated_output()
-        return {
-            "input_needed": True,
-            "output": output
-        }
-    
-    # Get the result from the queue
-    try:
-        result = output_q.get(block=False)
-    except queue.Empty:
-        result = {"error": "No result from Aider command.", "output": ""}
-    
-    # Update persistent state if command was successful
-    if "error" not in result:
-        try:
-            update_aider_state_from_coder(aider_json_path, coder)
-        except Exception as e:
-            logger.error(f"Failed to update Aider state after command: {e}")
-    
-    return result
-
-def provide_input_to_aider(aider_json_path: Path, input_text: str) -> Dict[str, str]:
-    """Provide input to an active Aider session."""
-    logger.info(f"Providing input to Aider: {input_text}")
-    state = ensure_active_coder_state(aider_json_path)
-    if not state:
-        return {"error": "Aider session not active.", "output": ""}
-    
-    # Check if input is needed
-    if not state.io_stub.is_input_needed():
-        logger.warning("Providing input to Aider when none was requested.")
-    
-    # Provide the input
-    state.io_stub.provide_input(input_text)
-    
-    # Get any output that was generated after input
-    output = state.io_stub.get_accumulated_output()
-    
-    # Check if more input is needed
-    if state.io_stub.is_input_needed():
-        return {
-            "input_needed": True,
-            "output": output
-        }
-    
-    # Update persistent state
-    try:
-        update_aider_state_from_coder(aider_json_path, state.coder)
-    except Exception as e:
-        logger.error(f"Failed to update Aider state after input: {e}")
-    
-    return {"output": output}
+        logger.error(f"Thread {thread_name}: Exception during coder.run: {e}", exc_info=True)
+        # Capture any output accumulated before the error
+        error_output = coder.io.get_captured_output()
+        error_message = f"Error during edit: {e}\nOutput before error:\n{error_output}"
+        # Put structured error on queue
+        output_q.put({'type': 'error', 'message': error_message, 'traceback': traceback.format_exc()})
+    finally:
+        logger.info(f"Aider worker thread '{thread_name}' finished.")

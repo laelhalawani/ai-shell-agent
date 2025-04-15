@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from . import logger
 
 # Define model mappings
@@ -288,6 +288,38 @@ def ensure_api_key_for_current_model() -> bool:
             return False
     
     return True
+
+# --- Global Default Toolset Functions ---
+
+DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY = "default_enabled_toolsets"
+
+def get_default_enabled_toolsets() -> List[str]:
+    """
+    Gets the globally configured default enabled toolset names.
+    Returns an empty list if not set.
+    """
+    config = _read_config()
+    # Ensure it returns a list, default to empty list if key missing or not a list
+    default_toolsets = config.get(DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY, [])
+    if not isinstance(default_toolsets, list):
+        logger.warning(f"'{DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY}' in config is not a list. Returning empty list.")
+        return []
+    # Optionally validate against registered toolsets? Maybe not here, let caller handle.
+    return default_toolsets
+
+def set_default_enabled_toolsets(toolset_names: List[str]) -> None:
+    """
+    Sets the globally configured default enabled toolset names.
+    """
+    config = _read_config()
+    # Validate input is a list of strings
+    if not isinstance(toolset_names, list) or not all(isinstance(name, str) for name in toolset_names):
+         logger.error(f"Invalid input to set_default_enabled_toolsets: {toolset_names}. Must be a list of strings.")
+         return
+
+    config[DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY] = sorted(list(set(toolset_names))) # Store unique sorted names
+    _write_config(config)
+    logger.info(f"Global default enabled toolsets set to: {config[DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY]}")
 
 # All Aider-specific functions have been removed:
 # - get_aider_edit_format

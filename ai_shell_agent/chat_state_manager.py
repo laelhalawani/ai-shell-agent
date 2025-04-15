@@ -36,15 +36,8 @@ CREATED_AT_KEY = "created_at"
 # Active toolsets start empty, must be activated by LLM or user
 DEFAULT_ACTIVE_TOOLSETS_NAMES = []
 
-# Enabled toolsets default to all discovered toolsets
-# This relies on discovery having run in toolsets/toolsets.py via the __init__ import chain
-try:
-    DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names() # Use names for user display/selection
-    logger.info(f"Default enabled toolsets (names) initialized: {DEFAULT_ENABLED_TOOLSETS_NAMES}")
-except Exception as e:
-    logger.error(f"Failed to get toolset names for defaults at init: {e}. Falling back.")
-    # Fallback might need adjustment based on toolset names vs IDs
-    DEFAULT_ENABLED_TOOLSETS_NAMES = ["Terminal"] # Basic fallback with display name
+# --- REMOVED Default Toolsets initialization ---
+# REMOVED: DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names()
 
 # Ensure directories exist
 os.makedirs(CHATS_DIR, exist_ok=True)
@@ -109,7 +102,7 @@ def _read_chat_config(chat_id: str) -> Dict:
     # Provide DEFAULTS structure when reading
     defaults = {
         MODEL_KEY: None, # Default to global model
-        ENABLED_TOOLSETS_KEY: list(DEFAULT_ENABLED_TOOLSETS_NAMES),
+        ENABLED_TOOLSETS_KEY: [], # Default to EMPTY list now
         ACTIVE_TOOLSETS_KEY: list(DEFAULT_ACTIVE_TOOLSETS_NAMES),
         TITLE_KEY: "Untitled Chat",
         CREATED_AT_KEY: datetime.now(timezone.utc).isoformat()
@@ -122,7 +115,8 @@ def _read_chat_config(chat_id: str) -> Dict:
             config[key] = default_val
             needs_update = True # If a key was missing, write back the complete default structure
     
-    # Validate toolset lists
+    # Validate toolset lists against registry (can stay, good practice)
+    from .toolsets.toolsets import get_toolset_names # Import locally here is ok
     registered_names = get_toolset_names()
     current_enabled = config.get(ENABLED_TOOLSETS_KEY, [])
     valid_enabled = [name for name in current_enabled if name in registered_names]
@@ -189,12 +183,12 @@ def _get_console_session_id() -> str:
 # --- Toolset Management ---
 def get_enabled_toolsets(chat_id: str) -> List[str]:
     """Gets the list of *enabled* toolset names for a specific chat session."""
-    global DEFAULT_ENABLED_TOOLSETS_NAMES
-    try: 
-        DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names()
-    except Exception: 
-        pass # Ignore errors here, default already set
-    return get_chat_config_value(chat_id, ENABLED_TOOLSETS_KEY, default=list(DEFAULT_ENABLED_TOOLSETS_NAMES))
+    # No need to refresh global DEFAULT anymore
+    return get_chat_config_value(chat_id, ENABLED_TOOLSETS_KEY, default=[]) # Return empty list default
+
+def get_active_toolsets(chat_id: str) -> List[str]:
+    """Gets the list of *active* toolset names for a specific chat session."""
+    return get_chat_config_value(chat_id, ACTIVE_TOOLSETS_KEY, default=list(DEFAULT_ACTIVE_TOOLSETS_NAMES))
 
 def update_enabled_toolsets(chat_id: str, toolset_names: List[str]) -> None:
     """Updates the list of *enabled* toolset names. Deactivates any no longer enabled."""
@@ -306,13 +300,6 @@ def create_or_load_chat(title: str) -> Optional[str]:
     title_to_id = {v: k for k, v in chat_map.items()}
     chat_id: Optional[str] = None
 
-    # Refresh default enabled toolsets value
-    global DEFAULT_ENABLED_TOOLSETS_NAMES
-    try: 
-        DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names()
-    except Exception: 
-        pass
-
     if title in title_to_id:
         chat_id = title_to_id[title]
         chat_dir = _get_chat_dir_path(chat_id)
@@ -366,12 +353,15 @@ def create_or_load_chat(title: str) -> Optional[str]:
             _write_chat_map(chat_map)
             return None
 
-        # Write initial config.json
-        initial_enabled = list(DEFAULT_ENABLED_TOOLSETS_NAMES)
-        initial_active = list(DEFAULT_ACTIVE_TOOLSETS_NAMES)
+        # Read global defaults for new chat
+        from .config_manager import get_default_enabled_toolsets
+        initial_enabled = get_default_enabled_toolsets()
+        logger.info(f"Applying global default enabled toolsets to new chat: {initial_enabled}")
+        
+        initial_active = list(DEFAULT_ACTIVE_TOOLSETS_NAMES) # Active always starts empty
         initial_config = {
             MODEL_KEY: None, # Use global default initially
-            ENABLED_TOOLSETS_KEY: initial_enabled,
+            ENABLED_TOOLSETS_KEY: initial_enabled, # Use global defaults here
             ACTIVE_TOOLSETS_KEY: initial_active,
             TITLE_KEY: title,
             CREATED_AT_KEY: datetime.now(timezone.utc).isoformat()
