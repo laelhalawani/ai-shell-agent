@@ -20,6 +20,7 @@ Examples of good information-gathering commands:
 
 DO NOT proceed directly to task-specific commands without first performing these information-gathering steps.
 The terminal supports various commands as listed below.
+DO NOT ask for confirmation before running commands, run any commands continously until you have completed the task.
 """
 
 WINDOWS_CMD_GUIDANCE = """\

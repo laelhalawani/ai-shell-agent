@@ -242,8 +242,8 @@ def configure_toolset(config_path: Path, current_config: Optional[Dict]) -> Dict
 
 # --- Tool Classes ---
 
-class StartAIEditorTool(BaseTool):
-    name: str = "start_file_editor"
+class OpenFileEditor(BaseTool):
+    name: str = "open_file_editor"
     description: str = "Use this to start the file editor, whenever asked to edit contents of any text file. The editor works for any text file including advanced code editing. You operate it using natural language commands. Useful only for modifying files."
 
     def _run(self, **kwargs) -> str:
@@ -274,7 +274,7 @@ class StartAIEditorTool(BaseTool):
         # --- Toolset Activation ---
         current_toolsets = get_active_toolsets(chat_id)
         activation_feedback = ""
-        if toolset_name not in current_toolsets:
+        if (toolset_name not in current_toolsets) and (toolset_id not in current_toolsets):
             logger.debug(f"Activating '{toolset_name}' toolset for chat {chat_id}.")
             new_toolsets = list(current_toolsets)
             new_toolsets.append(toolset_name)
@@ -347,7 +347,7 @@ class StartAIEditorTool(BaseTool):
         return self._run(args)
 
 
-class AddFileTool(BaseTool):
+class OpenFileTool(BaseTool):
     name: str = "open_file"
     description: str = "Opens a file for editing in the File Editor, files can be added by absolute or relative paths. The file must exist in the filesystem."
     
@@ -414,7 +414,7 @@ class AddFileTool(BaseTool):
         return self._run(file_path)
 
 
-class DropFileTool(BaseTool):
+class CloseFileTool(BaseTool):
     name: str = "close_file"
     description: str = "Closes a file from the File Editor. Files can be closed by relative or absolute paths, for files that were previously opened."
     
@@ -458,7 +458,7 @@ class DropFileTool(BaseTool):
         return self._run(file_path)
 
 
-class ListFilesInEditorTool(BaseTool):
+class ListOpenFilesTool(BaseTool):
     name: str = "list_files"
     description: str = "Lists all files currently in the File Editor's context. Can be used to preview what files are open for editing."
     
@@ -515,7 +515,7 @@ class ListFilesInEditorTool(BaseTool):
         return self._run(**kwargs)
 
 
-class RunCodeEditTool(BaseTool):
+class RequestEditsTool(BaseTool):
     name: str = "request_edit"
     description: str = "Using natural language, request an edit to the files opened in the File Editor. The editor is AI powered, the editor AI will respond with a plan and then execute it. Use this tool after adding files."
     
@@ -771,7 +771,7 @@ class UndoLastEditTool(BaseTool):
     async def _arun(self, **kwargs) -> str:
         return self._run(**kwargs)
 
-class CloseCodeEditorTool(BaseTool):
+class CloseFileEditorTool(BaseTool):
     name: str = "close_file_editor"
     description: str = "Closes the File Editor and all the files. Changes are saved automatically. Close it as soon as you verified with the user they don't want to edit the files anymore, once verified close the File Editor right away."
 
@@ -826,10 +826,16 @@ class CloseCodeEditorTool(BaseTool):
         return self._run(**kwargs)
 
 
-class SubmitCodeEditorInputTool(BaseTool):
-    name: str = "submit_editor_input"
+class SubmitFileEditorInputTool(BaseTool):
+    """
+    Tool to provide direct input to the File Editor when it requests it.
+    WARNING: This version does NOT include Human-in-the-Loop confirmation.
+    Use with caution, intended for specific internal use or future automated workflows.
+    """
+    name: str = "submit_editor_input_direct" # Changed name to avoid collision
     description: str = (
-         "Use to provide input ONLY when received an input request from the File Editor. Input requests are marked with a clear '[FILE_EDITOR_INPUT_NEEDED]' and can be triggered during edits."
+         "Directly submit input when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
+         "This version bypasses user confirmation."
     )
     def _run(self, user_response: str) -> str:
         chat_id = get_current_chat()
@@ -843,33 +849,138 @@ class SubmitCodeEditorInputTool(BaseTool):
         state = ensure_active_coder_state(aider_json_path)
         if not state:
             return "Error: No active editor session found or state could not be restored."
-            
-        # HITL: Allow the user to review and edit the response before submitting
-        print(f"\n[Proposed response to File Editor]:")
-        edited_response = prompt("(Accept or Edit) > ", default=user_response)
-        
-        # If the user provided an empty response, treat it as a cancellation
-        if not edited_response.strip():
-            return "Input submission cancelled by user."
 
         # Acquire lock for the specific session
         with state.lock:
              # Check if the thread is actually running and waiting
              if not state.thread or not state.thread.is_alive():
-                  # Could happen if thread finished unexpectedly or was closed
-                  # Clean up just in case
                   remove_active_coder_state(aider_json_path)
                   return "Error: The editing process is not waiting for input."
 
-             # Send the edited user response to the waiting Aider thread
-             logger.debug(f"Putting user response on input_q: '{edited_response}' for {chat_id}")
-             state.input_q.put(edited_response)
+             # --- Original Logic: Send the response directly ---
+             logger.debug(f"Putting direct user response on input_q: '{user_response}' for {chat_id}")
+             state.input_q.put(user_response)
+             # --- End Original Logic ---
 
         # Release lock before waiting on queue
         logger.debug(f"Main thread waiting for *next* message from output_q for {chat_id}...")
         try:
-            # Wait for the Aider thread's *next* action (could be another prompt, result, or error)
-             message = state.output_q.get(timeout=TIMEOUT)  # Added timeout here too
+            message = state.output_q.get(timeout=TIMEOUT)
+            logger.debug(f"Main thread received message from output_q: {message.get('type')}")
+        except queue.Empty:
+             logger.error(f"Timeout or queue error waiting for Aider response ({chat_id}).")
+             remove_active_coder_state(aider_json_path)
+             return "Error: Timed out waiting for Aider response after submitting input."
+        except Exception as e:
+             logger.error(f"Exception waiting on output_q for {chat_id}: {e}")
+             remove_active_coder_state(aider_json_path)
+             return f"Error: Exception while waiting for Aider after submitting input: {e}"
+
+        # Process the message (identical logic to RunCodeEditTool's processing part)
+        message_type = message.get('type')
+
+        if message_type == 'prompt':
+            prompt_data = message
+            prompt_type = prompt_data.get('prompt_type', 'unknown')
+            question = prompt_data.get('question', 'Input needed')
+            subject = prompt_data.get('subject')
+            default = prompt_data.get('default')
+            allow_never = prompt_data.get('allow_never')
+
+            # Update the state before returning the prompt
+            with state.lock:
+                update_aider_state_from_coder(aider_json_path, state.coder)
+
+            response_guidance = f"Aider requires further input. Please respond using 'submit_editor_input'. Prompt: '{question}'"
+            if subject: response_guidance += f" (Regarding: {subject[:100]}{'...' if len(subject)>100 else ''})"
+            if default: response_guidance += f" [Default: {default}]"
+            if prompt_type == 'confirm':
+                 options = "(yes/no"
+                 if prompt_data.get('group_id'): options += "/all/skip"
+                 if allow_never: options += "/don't ask"
+                 options += ")"
+                 response_guidance += f" Options: {options}"
+
+            return f"{SIGNAL_PROMPT_NEEDED} {response_guidance}"
+
+        elif message_type == 'result':
+             logger.info(f"Aider edit completed successfully for {chat_id} after input.")
+             with state.lock:
+                  update_aider_state_from_coder(aider_json_path, state.coder)
+                  state.thread = None
+             return f"Edit completed. {message.get('content', 'No output captured.')}"
+
+        elif message_type == 'error':
+             logger.error(f"Aider edit failed for {chat_id} after input.")
+             error_content = message.get('message', 'Unknown error')
+             try:
+                 with state.lock:
+                     update_aider_state_from_coder(aider_json_path, state.coder)
+             except Exception: pass
+             remove_active_coder_state(aider_json_path)
+             return f"Error during edit:\n{error_content}"
+        else:
+             logger.error(f"Received unknown message type from Aider thread: {message_type}")
+             try:
+                 with state.lock:
+                     update_aider_state_from_coder(aider_json_path, state.coder)
+             except Exception: pass
+             remove_active_coder_state(aider_json_path)
+             return f"Error: Unknown response type '{message_type}' from Aider process."
+
+    async def _arun(self, user_response: str) -> str:
+        # Consider running sync in threadpool if needed
+        return self._run(user_response)
+
+
+class SubmitFileEditorInputTool_HITL(BaseTool):
+    name: str = "submit_editor_input" # Keep the original intended name for LLM use
+    description: str = (
+         "Use to provide input when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
+         "The proposed input will be shown to the user for confirmation or editing before being submitted."
+    )
+    def _run(self, user_response: str) -> str:
+        chat_id = get_current_chat()
+        if not chat_id:
+            return "Error: No active chat session found."
+
+        aider_json_path = get_toolset_data_path(chat_id, toolset_id)
+        state = ensure_active_coder_state(aider_json_path)
+        if not state:
+            return "Error: No active editor session found or state could not be restored."
+            
+        # --- HITL Modification START ---
+        logger.info(f"Proposing editor input: {user_response}")
+        print(f"\n[Proposed response to File Editor]:")
+        try:
+            # Use the LLM's proposed response as the default
+            edited_response = prompt("(Accept or Edit) > ", default=user_response)
+        except EOFError:
+             logger.warning("User cancelled input submission (EOF).")
+             return "Input submission cancelled by user."
+
+        # If the user provided an empty response, treat it as a cancellation
+        if not edited_response.strip():
+            logger.warning("User cancelled input submission by submitting empty input.")
+            return "Input submission cancelled by user (empty input)."
+        # --- HITL Modification END ---
+
+        # Acquire lock for the specific session
+        with state.lock:
+             # Check if the thread is actually running and waiting
+             if not state.thread or not state.thread.is_alive():
+                  remove_active_coder_state(aider_json_path)
+                  return "Error: The editing process is not waiting for input."
+
+             # --- Use the potentially edited response ---
+             logger.debug(f"Putting user confirmed/edited response on input_q: '{edited_response}' for {chat_id}")
+             state.input_q.put(edited_response)
+             # --- End Use edited response ---
+
+        # Release lock before waiting on queue
+        logger.debug(f"Main thread waiting for *next* message from output_q for {chat_id}...")
+        try:
+             message = state.output_q.get(timeout=TIMEOUT)
              logger.debug(f"Main thread received message from output_q: {message.get('type')}")
         except queue.Empty:
              logger.error(f"Timeout or queue error waiting for Aider response ({chat_id}).")
@@ -946,15 +1057,16 @@ class SubmitCodeEditorInputTool(BaseTool):
 
 
 # --- Create tool instances ---
-start_code_editor_tool = StartAIEditorTool()
-add_code_file_tool = AddFileTool()
-drop_code_file_tool = DropFileTool()
-list_code_files_tool = ListFilesInEditorTool()
-edit_code_tool = RunCodeEditTool()
-submit_code_editor_input_tool = SubmitCodeEditorInputTool()
+start_code_editor_tool = OpenFileEditor()
+add_code_file_tool = OpenFileTool()
+drop_code_file_tool = CloseFileTool()
+list_code_files_tool = ListOpenFilesTool()
+edit_code_tool = RequestEditsTool()
+submit_code_editor_input_tool = SubmitFileEditorInputTool_HITL()
+submit_code_editor_input_direct_tool = SubmitFileEditorInputTool()
 view_diff_tool = ViewDiffTool()
 undo_last_edit_tool = UndoLastEditTool()
-close_code_editor_tool = CloseCodeEditorTool()
+close_code_editor_tool = CloseFileEditorTool()
 
 # Define the tools that belong to this toolset
 toolset_tools = [
@@ -963,6 +1075,7 @@ toolset_tools = [
     list_code_files_tool,
     edit_code_tool,
     submit_code_editor_input_tool,
+    submit_code_editor_input_direct_tool,
     view_diff_tool,
     undo_last_edit_tool,
     close_code_editor_tool
@@ -977,6 +1090,7 @@ register_tools([
     list_code_files_tool,
     edit_code_tool,
     submit_code_editor_input_tool,
+    submit_code_editor_input_direct_tool,
     view_diff_tool,
     undo_last_edit_tool,
     close_code_editor_tool
