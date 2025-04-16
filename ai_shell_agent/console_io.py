@@ -49,20 +49,24 @@ STYLE_INPUT_OPTION = Style(underline=True)
 
 # --- Live Display State ---
 _live_context: Optional[Live] = None # type: ignore
-_last_tool_name: Optional[str] = None
-_last_tool_args: Optional[Dict] = None
 _live_lock = threading.Lock() # Lock for managing live context access
 
 # --- Internal Helper ---
 def _stop_live():
     """Safely stops the current Live display and resets related state."""
-    global _live_context, _last_tool_name, _last_tool_args
+    global _live_context
     with _live_lock:
-        if (_live_context):
-            _live_context.stop()
-            _live_context = None
-        _last_tool_name = None
-        _last_tool_args = None
+        live = _live_context # Get context inside lock
+        if live:
+            _live_context = None # Clear context variable *before* stopping
+            try:
+                # Ensure we stop and clear the display area
+                live.stop()
+                console.print("", end="") # Force a clear/redraw
+                # Add a small flush just in case
+                console.file.flush()
+            except Exception as e:
+                 print(f"\nWarning: Error stopping Rich Live display: {e}", file=sys.stderr)
 
 # --- Public API ---
 
@@ -71,167 +75,181 @@ def start_ai_thinking():
     global _live_context
     _stop_live() # Ensure any previous live display is stopped
 
-    # Create the static prefix text
     prefix = Text("AI: ", style=STYLE_AI_LABEL)
-
-    # Create the spinner renderable (which includes " Thinking...")
     spinner = Spinner("dots", text=Text(" Thinking...", style=STYLE_THINKING))
-
-    # Use Columns to arrange prefix and spinner horizontally
-    # padding=(0, 1) adds a single space between the columns
     renderable_columns = Columns([prefix, spinner], padding=(0, 1), expand=False)
 
     with _live_lock:
-        try:
-            # Pass the Columns renderable directly to Live
-            _live_context = Live(renderable_columns, console=console, refresh_per_second=10)
-            _live_context.start(refresh=True)
-        except Exception as e:
-             # Fallback if Live or Columns fails
-             _live_context = None
-             # Simpler fallback: print prefix and spinner text separately on error
-             console.print(f"{prefix.plain} Thinking...", style=STYLE_THINKING) # Fallback print
-             print(f"Warning: Failed to start Rich Live display: {e}", file=sys.stderr)
+        if _live_context is None: # Prevent starting if already started
+            try:
+                # --- REMOVE transient=True ---
+                _live_context = Live(renderable_columns, console=console, refresh_per_second=10) # Removed transient=True
+                _live_context.start(refresh=True)
+            except Exception as e:
+                _live_context = None
+                console.print(f"{prefix.plain} Thinking...", style=STYLE_THINKING) # Fallback print
+                print(f"Warning: Failed to start Rich Live display: {e}", file=sys.stderr)
 
-def update_ai_tool_call(tool_name: str, tool_args: Dict):
+def request_tool_edit(
+    tool_name: str,
+    proposed_args: Dict[str, Any],
+    edit_key: str,
+    prompt_suffix: str = "(edit or confirm) > "
+) -> Optional[str]:
     """
-    Updates the 'thinking' status to show the tool call details.
-    Does NOT stop the Live display.
+    Stops live display, prepares prompt message, and prompts user for editable input using prompt_toolkit.
+
+    Args:
+        tool_name: Name of the tool being used.
+        proposed_args: Dictionary of arguments proposed by the LLM.
+        edit_key: The key within proposed_args containing the value to be edited.
+        prompt_suffix: The suffix to display before the editable input field.
+
+    Returns:
+        The confirmed or edited string value, or None if cancelled.
     """
-    global _last_tool_name, _last_tool_args
-    with _live_lock:
-        if not _live_context: return # Ensure live context exists
+    _stop_live() # Crucial: Stop spinner before printing/prompting
 
-        _last_tool_name = tool_name
-        _last_tool_args = tool_args # Store args for finalize_ai_tool_result
+    if edit_key not in proposed_args:
+        print_error(f"Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.")
+        return None
 
-        # Build the rich Text object with proper style assignment
-        text = Text.assemble(
-            ("AI: ", STYLE_AI_LABEL),
-            ("Using tool '", STYLE_AI_CONTENT), 
-            (escape(tool_name), STYLE_TOOL_NAME),
-            ("'", STYLE_AI_CONTENT)
-        )
+    value_to_edit = proposed_args[edit_key]
 
-        if tool_args:
-            text.append(" with ", style=STYLE_AI_CONTENT)
-            args_parts: List[Text] = []
-            for i, (arg_name, arg_val) in enumerate(tool_args.items()):
-                arg_text = Text()
-                arg_text.append(escape(str(arg_name)), style=STYLE_ARG_NAME)
-                arg_text.append(": ", style=STYLE_ARG_NAME)
-                # Truncate value display
-                val_str = escape(str(arg_val))
-                max_len = 50
-                display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
-                arg_text.append(display_val, style=STYLE_ARG_VALUE)
-                args_parts.append(arg_text)
+    # --- Construct the prefix text OBJECT (for plain text extraction) ---
+    prefix_text_obj = Text.assemble( # Renamed variable
+        ("AI: ", STYLE_AI_LABEL),
+        ("Using tool '", STYLE_AI_CONTENT),
+        (escape(tool_name), STYLE_TOOL_NAME),
+        ("'", STYLE_AI_CONTENT)
+    )
+    # Append non-editable arguments for context in the prefix string
+    if proposed_args:
+        prefix_text_obj.append(" with ", style=STYLE_AI_CONTENT)
+        args_parts: List[str] = [] # Store plain strings for the message
+        # Iterate through all args
+        for i, (arg_name, arg_val) in enumerate(proposed_args.items()):
+             arg_part = f"{escape(str(arg_name))}: "
+             if arg_name == edit_key:
+                 # For the editable key, just show the key name in the prefix part
+                 args_parts.append(arg_part)
+             else:
+                 # For non-editable keys, show key: value (truncated)
+                 val_str = escape(str(arg_val))
+                 max_len = 50
+                 display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
+                 args_parts.append(f"{arg_part}{display_val}") # Append formatted value
 
-            # Join args with commas
-            for i, part in enumerate(args_parts):
-                text.append(part)
-                if i < len(args_parts) - 1:
-                    text.append(", ", style=STYLE_AI_CONTENT)
+        # Join argument strings with commas
+        prefix_text_obj.append(", ".join(args_parts), style=STYLE_AI_CONTENT) # Use the appropriate style
 
-        try:
-             _live_context.update(text, refresh=True)
-        except Exception as e:
-             # Fallback if update fails
-             _stop_live() # Stop the potentially broken live context
-             console.print(text)
-             print(f"Warning: Failed to update Rich Live display: {e}", file=sys.stderr)
+    # --- Get the plain text version of the prefix ---
+    prefix_plain = prefix_text_obj.plain # Use .plain to get string representation
+
+    # --- Construct the FULL message for prompt_toolkit ---
+    # Example: "AI: Using tool 'terminal' with cmd: (edit or confirm) > "
+    # Ensure there's a space between the prefix and the suffix
+    full_prompt_message = f"{prefix_plain.rstrip()} {prompt_suffix}" # rstrip to remove potential trailing space before adding one
+
+    # --- Prompt user using prompt_toolkit with the full message ---
+    try:
+        # Pass the combined message string to prompt_toolkit
+        user_input = prompt_toolkit_prompt(
+            message=full_prompt_message, # Use the constructed message
+            default=str(value_to_edit), # Ensure default is a string
+            # Determine multiline based on key - adjust as needed
+            multiline=(edit_key == 'query' or edit_key == 'user_response' or edit_key == 'instruction')
+        ).strip() # Strip whitespace from user input
+
+        if not user_input:
+             print("\nInput cancelled (empty).", file=sys.stderr)
+             return None
+
+        return user_input
+
+    except (EOFError, KeyboardInterrupt):
+         print("\nInput cancelled.", file=sys.stderr)
+         return None
+    except Exception as e:
+         # Print error using Rich console for consistency
+         print_error(f"Error during input prompt: {e}")
+         return None
+
+def print_tool_execution_info(tool_name: str, final_args: Dict[str, Any]):
+    """
+    Prints the 'Used tool...' line with the final arguments after confirmation/edit.
+    This replaces the line where the prompt occurred.
+    """
+    # Ensure live is stopped, just in case
+    _stop_live()
+
+    # Move cursor up one line and clear it. This targets the line where prompt_toolkit rendered.
+    # Using stderr ensures it doesn't interfere with potential stdout redirection.
+    # Check if stderr is a TTY before writing control codes
+    if sys.stderr.isatty():
+        sys.stderr.write('\x1b[1A\x1b[K')
+        sys.stderr.flush()
+
+    # Build the final Text object (logic remains the same)
+    text = Text.assemble(
+        ("AI: ", STYLE_AI_LABEL),
+        ("Used tool '", STYLE_AI_CONTENT),
+        (escape(tool_name), STYLE_TOOL_NAME),
+        ("'", STYLE_AI_CONTENT)
+    )
+    if final_args:
+        text.append(" with ", style=STYLE_AI_CONTENT)
+        args_parts: List[Text] = []
+        for i, (arg_name, arg_val) in enumerate(final_args.items()):
+            arg_text = Text()
+            arg_text.append(escape(str(arg_name)), style=STYLE_ARG_NAME)
+            arg_text.append(": ", style=STYLE_ARG_NAME)
+            val_str = escape(str(arg_val))
+            max_len = 100
+            display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
+            arg_text.append(display_val, style=STYLE_ARG_VALUE)
+            args_parts.append(arg_text)
+        for i, part in enumerate(args_parts):
+             text.append(part)
+             if i < len(args_parts) - 1:
+                  text.append(", ", style=STYLE_AI_CONTENT)
+
+    # Print the final confirmation line
+    console.print(text)
+
+# --- ADD print_tool_output ---
+def print_tool_output(output: str):
+    """
+    Prints the output received from a tool execution.
+    """
+    # Ensure any lingering live display is stopped (belt and suspenders)
+    _stop_live()
+    # Escape the output content to prevent accidental Rich markup interpretation
+    console.print(Text.assemble(("TOOL: ", STYLE_INFO_LABEL), (escape(output), STYLE_INFO_CONTENT)))
+
 
 def update_ai_response(content: str):
     """
-    Updates the 'thinking' status to show the final AI text response
-    and stops the Live display.
+    Stops the 'thinking' status, clears its line, and shows the final AI text response.
     """
-    # Apply label style to prefix, content style to the rest
+    # 1. Stop the Live spinner updates first
+    _stop_live()
+
+    # 2. Clear the line where the spinner was displayed
+    # Check if stderr is a TTY before writing control codes
+    if sys.stderr.isatty():
+        # Move cursor up one line and clear the entire line
+        sys.stderr.write('\x1b[1A\x1b[K')
+        sys.stderr.flush() # Ensure the control codes are processed
+
+    # 3. Build and print the final AI response text
     text = Text.assemble(
         ("AI: ", STYLE_AI_LABEL),
         (escape(content), STYLE_AI_CONTENT) # Apply content style
     )
+    console.print(text) # Print the final response to stderr
 
-    with _live_lock:
-         if (_live_context):
-              try:
-                  _live_context.update(text, refresh=True)
-              except Exception as e:
-                   # If update fails, stop and print normally
-                   _stop_live()
-                   console.print(text)
-                   print(f"Warning: Failed to update Rich Live display: {e}", file=sys.stderr)
-                   return # Exit after printing
-         else:
-              # If there was no live context (e.g., thinking fallback), just print
-              console.print(text)
-
-    _stop_live() # Finalize the display and clear state
-
-def finalize_ai_tool_result(tool_result: str):
-    """
-    Updates the status line (which should show the tool call)
-    to show the final tool result and stops the Live display.
-    Uses the stored _last_tool_name and _last_tool_args.
-    """
-    with _live_lock:
-         if not _live_context:
-              # If there's no live context, just print the result simply
-              # This might happen if the tool call itself failed to update the live display
-              tool_name_str = f"'{escape(_last_tool_name)}'" if _last_tool_name else "tool"
-              print_info(f"Result from {tool_name_str}: {tool_result}") # Use print_info for fallback
-              _stop_live() # Ensure state is cleared
-              return
-
-         if not _last_tool_name:
-              # Should not happen if update_ai_tool_call was called, but handle defensively
-              print_error("Internal Error: finalize_ai_tool_result called without tool name.")
-              _stop_live()
-              return
-
-         # Build the final Text object using stored info with Text.assemble
-         text = Text.assemble(
-            ("AI: ", STYLE_AI_LABEL),
-            ("Used tool '", STYLE_AI_CONTENT),
-            (escape(_last_tool_name), STYLE_TOOL_NAME),
-            ("'", STYLE_AI_CONTENT)
-         )
-
-         if _last_tool_args:
-             # Reconstruct arg string similar to update_ai_tool_call for consistency
-             text.append(" with ", style=STYLE_AI_CONTENT)
-             args_parts: List[Text] = []
-             for i, (arg_name, arg_val) in enumerate(_last_tool_args.items()):
-                 arg_text = Text()
-                 arg_text.append(escape(str(arg_name)), style=STYLE_ARG_NAME)
-                 arg_text.append(": ", style=STYLE_ARG_NAME)
-                 val_str = escape(str(arg_val))
-                 max_len = 50
-                 display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
-                 arg_text.append(display_val, style=STYLE_ARG_VALUE)
-                 args_parts.append(arg_text)
-             for i, part in enumerate(args_parts):
-                 text.append(part)
-                 if i < len(args_parts) - 1:
-                     text.append(", ", style=STYLE_AI_CONTENT)
-
-         text.append(": ", style=STYLE_AI_CONTENT)
-         # Append the actual tool result (escape it)
-         text.append(escape(tool_result), style=STYLE_AI_CONTENT)
-
-         try:
-              _live_context.update(text, refresh=True)
-         except Exception as e:
-               # If update fails, stop and print normally
-               _stop_live()
-               console.print(text)
-               print(f"Warning: Failed to update Rich Live display with tool result: {e}", file=sys.stderr)
-               return # Exit after printing
-
-    _stop_live() # Finalize the display and clear state
-
-
-# --- Static Print Functions ---
+# --- Static Print Functions (No changes needed) ---
 
 def print_info(message: str):
     """Prints an informational message."""
@@ -261,7 +279,7 @@ def print_message_block(title: str, content: str, style: Optional[Style] = None)
      console.print(panel)
 
 
-# --- Input Functions ---
+# --- Input Functions (No changes needed) ---
 
 def prompt_for_input(prompt_text: str, default: Optional[str] = None, is_password: bool = False) -> str:
     """
@@ -289,7 +307,8 @@ def prompt_for_input(prompt_text: str, default: Optional[str] = None, is_passwor
             default=default or "", # prompt_toolkit needs empty string, not None
             is_password=is_password,
         )
-        return user_input.strip() # Return stripped input
+        return user_input # Return raw input, stripping is responsibility of caller if needed
+
     except (EOFError, KeyboardInterrupt):
         print("\nInput cancelled.", file=sys.stderr)
         # Decide on behavior: raise exception, return None, or return empty string?

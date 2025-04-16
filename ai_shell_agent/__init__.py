@@ -15,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger('ai_shell_agent')
 
 # Disable all logging messages
-#logging.disable(logging.CRITICAL)
+logging.disable(logging.CRITICAL)
 
 # Get the root directory
 ROOT_DIR = Path(__file__).parent.parent
