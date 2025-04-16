@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Dict, Optional, Tuple, List
-from . import logger
+from . import logger, console_io, ROOT_DIR # Added console_io and ROOT_DIR imports
 
 # Define model mappings
 OPENAI_MODELS = {
@@ -112,12 +112,7 @@ def set_model(model_name: str) -> None:
     logger.info(f"Model set to: {normalized_name}")
 
 def prompt_for_model_selection() -> Optional[str]:
-    """
-    Prompt the user for model selection, showing available options with aliases.
-    
-    Returns:
-        str: The selected normalized model name
-    """
+    """Prompts user for model selection using console_io with highlighting."""
     current_model = get_current_model()
     
     # Create a map of model names to their aliases
@@ -133,34 +128,56 @@ def prompt_for_model_selection() -> Optional[str]:
         if full_name in model_aliases[full_name]:
             model_aliases[full_name].remove(full_name)
     
-    print("Available models:")
-    print("OpenAI:")
+    from rich.text import Text # Import Text
+
+    console_io.print_system("Available models:")
+    console_io.print_system("OpenAI:")
+    openai_lines = []
     for model in set(OPENAI_MODELS.values()):
-        aliases = model_aliases.get(model, [])
-        # Only show aliases if they exist and are different from the model name
-        alias_text = f" (aliases: {', '.join(aliases)})" if aliases else ""
+        aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
+        alias_text = f" (aliases: {', '.join([f'[underline]{a}[/underline]' for a in aliases])})" if aliases else "" # Use markup for aliases
         marker = " <- Current Model" if model == current_model else ""
-        print(f"- {model}{alias_text}{marker}")
+        # Use Text.from_markup for highlighting
+        line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
+        openai_lines.append(line_text)
+    for line in openai_lines:
+        console_io.console.print(line) # Print directly
     
-    print("Google:")
+    console_io.print_system("Google:")
+    google_lines = []
     for model in set(GOOGLE_MODELS.values()):
-        aliases = model_aliases.get(model, [])
-        # Only show aliases if they exist and are different from the model name
-        alias_text = f" (aliases: {', '.join(aliases)})" if aliases else ""
+        aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
+        alias_text = f" (aliases: {', '.join([f'[underline]{a}[/underline]' for a in aliases])})" if aliases else "" # Use markup for aliases
         marker = " <- Current Model" if model == current_model else ""
-        print(f"- {model}{alias_text}{marker}")
+        # Use Text.from_markup for highlighting
+        line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
+        google_lines.append(line_text)
+    for line in google_lines:
+        console_io.console.print(line) # Print directly
     
-    selected_model = input(f"\nPlease input the model you want to use, or leave empty to keep using the current model {current_model}.\n> ").strip()
-    
-    if not selected_model:
-        return current_model
-    
-    normalized_model = normalize_model_name(selected_model)
-    if normalized_model not in set(OPENAI_MODELS.values()) and normalized_model not in set(GOOGLE_MODELS.values()):
-        logger.warning(f"Unknown model: {selected_model}. Using default model: {current_model}")
-        return current_model
-    
-    return normalized_model
+    try:
+        # Use console_io prompt
+        prompt_msg = f"\nPlease input the model you want to use, or leave empty to keep using '{current_model}'"
+        selected_model = console_io.prompt_for_input(prompt_msg).strip()
+        
+        if not selected_model:
+            return current_model
+        
+        normalized_model = normalize_model_name(selected_model)
+        if normalized_model not in set(OPENAI_MODELS.values()) and normalized_model not in set(GOOGLE_MODELS.values()):
+            # Use console_io warning
+            console_io.print_warning(f"Unknown model: {selected_model}. Keeping current model: {current_model}")
+            logger.warning(f"Unknown model selected: {selected_model}. Using current: {current_model}")
+            return current_model
+        
+        return normalized_model
+    except KeyboardInterrupt:
+        # Handled by console_io.prompt_for_input
+        return None # Indicate cancellation
+    except Exception as e:
+        console_io.print_error(f"An error occurred during model selection: {e}")
+        logger.error(f"Model selection error: {e}", exc_info=True)
+        return None
 
 def check_if_first_run() -> bool:
     """
@@ -206,49 +223,49 @@ def get_api_key_for_model(model_name: str) -> Tuple[Optional[str], str]:
 
 def set_api_key_for_model(model_name: str, api_key: Optional[str] = None) -> None:
     """
-    Prompt for and save the appropriate API key for the selected model.
-    
-    Args:
-        model_name: The name of the model
-        api_key: The API key to set, or None to prompt the user
+    Prompt for and save the appropriate API key using console_io.
     """
     provider = get_model_provider(model_name)
-    env_var_name = "OPENAI_API_KEY" if provider == "openai" else "GOOGLE_API_KEY"
     provider_name = "OpenAI" if provider == "openai" else "Google"
-    
+    env_var_name = "OPENAI_API_KEY" if provider == "openai" else "GOOGLE_API_KEY"
     api_key_link = "https://platform.openai.com/api-keys" if provider == "openai" else "https://aistudio.google.com/app/apikey"
     
     if not api_key:
-        print(f"Please enter your {provider_name} API key.")
-        print(f"You can get it from: {api_key_link}")
-        api_key = input(f"Enter {provider_name} API key: ").strip()
+        # Combine system messages
+        prompt_info = f"""
+Please enter your {provider_name} API key.
+You can get it from: {api_key_link}
+"""
+        console_io.print_system(prompt_info.strip())
+        try:
+            # Use console_io prompt, marking as password
+            api_key = console_io.prompt_for_input(f"Enter {provider_name} API key", is_password=True).strip()
+        except KeyboardInterrupt:
+            # Already handled by console_io.prompt_for_input printing "Input cancelled."
+            logger.warning(f"API key input cancelled for {provider_name}.")
+            return # Abort
+        except Exception as e:
+            console_io.print_error(f"An error occurred during API key input: {e}")
+            logger.error(f"API key input error: {e}", exc_info=True)
+            return # Abort
     
     if not api_key:
-        logger.warning(f"No {provider_name} API key provided. Aborting.")
+        # Use console_io warning
+        console_io.print_warning(f"No {provider_name} API key provided. Aborting.")
+        logger.warning(f"No {provider_name} API key provided.")
         return
     
     os.environ[env_var_name] = api_key
     
-    # Save to .env file
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
-    
-    # Read existing .env file
-    env_vars = {}
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                if "=" in line:
-                    key, value = line.strip().split("=", 1)
-                    env_vars[key] = value
-    
-    # Update or add the API key
+    # Use utils for .env file operations
+    env_path = ROOT_DIR / '.env' # Use ROOT_DIR from __init__
+    from .utils import read_dotenv, write_dotenv # Import locally
+    env_vars = read_dotenv(env_path)
     env_vars[env_var_name] = api_key
+    write_dotenv(env_path, env_vars)
     
-    # Write back to .env file
-    with open(env_path, "w") as f:
-        for key, value in env_vars.items():
-            f.write(f"{key}={value}\n")
-    
+    # Use console_io info
+    console_io.print_info(f"{provider_name} API key saved successfully to .env")
     logger.info(f"{provider_name} API key saved successfully to .env")
 
 def ensure_api_key_for_current_model() -> bool:

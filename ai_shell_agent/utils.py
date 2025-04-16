@@ -7,9 +7,8 @@ import uuid
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional # Added Dict, Optional
-from prompt_toolkit import prompt # Import prompt_toolkit for user input
 
-from . import logger
+from . import logger, console_io # Add console_io import
 
 def read_json(file_path: Path, default_value=None) -> Any:
     """Reads a JSON file or returns a default value if not found.
@@ -108,10 +107,9 @@ def write_dotenv(dotenv_path: Path, env_vars: Dict[str, str]) -> None:
             try: tmp_path.unlink()
             except Exception as rm_e: logger.error(f"Failed to remove temporary .env file {tmp_path}: {rm_e}")
 
-
 def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = None) -> Optional[str]:
     """
-    Ensures a key exists in the environment and .env file.
+    Ensures a key exists in the environment and .env file using console_io for prompts.
 
     Checks os.environ first. If not found, prompts the user.
     If the user provides a value, it's saved to the .env file and os.environ.
@@ -130,35 +128,37 @@ def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = 
         return value
 
     logger.warning(f"Environment variable '{key}' not found.")
-    print(f"\nConfiguration required: Missing environment variable '{key}'.")
+    # Use console_io for system/info messages
+    console_io.print_system(f"\nConfiguration required: Missing environment variable '{key}'.")
     if description:
-        print(f"Description: {description}")
+        console_io.print_info(f"Description: {description}")
 
     try:
-        # Use prompt_toolkit for better user experience if available
-        user_input = prompt(f"Please enter the value for {key}: ").strip()
+        # Use console_io prompt
+        user_input = console_io.prompt_for_input(f"Please enter the value for {key}").strip()
 
         if not user_input:
             logger.warning(f"User skipped providing value for '{key}'.")
-            print("Input skipped.")
+            console_io.print_warning("Input skipped.") # Use console_io
             return None
 
         # Value provided, save it
         current_env_vars = read_dotenv(dotenv_path)
         current_env_vars[key] = user_input
         write_dotenv(dotenv_path, current_env_vars)
-
+        
         # Update os.environ for the current session
         os.environ[key] = user_input
+
         logger.info(f"Saved '{key}' to {dotenv_path} and updated environment.")
-        print(f"Value for '{key}' saved.")
+        console_io.print_info(f"Value for '{key}' saved.") # Use console_io
         return user_input
 
-    except (EOFError, KeyboardInterrupt):
-        logger.warning(f"User cancelled input for key '{key}'.")
-        print("\nInput cancelled.")
-        return None
+    except KeyboardInterrupt:
+         # Handled by console_io.prompt_for_input
+         # logger.warning(f"User cancelled input for key '{key}'.") # Already logged by console_io
+         return None
     except Exception as e:
          logger.error(f"Error during ensure_dotenv_key for '{key}': {e}", exc_info=True)
-         print(f"\nAn unexpected error occurred while handling '{key}'. Check logs.")
+         console_io.print_error(f"An unexpected error occurred while handling '{key}'. Check logs.") # Use console_io
          return None

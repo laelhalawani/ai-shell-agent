@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Any, Type # Add Type
 
 # Langchain imports
 from langchain_core.tools import BaseTool
-from prompt_toolkit import prompt
+from prompt_toolkit import prompt as prompt_toolkit_prompt
 from pydantic import BaseModel, Field # Import BaseModel and Field
 
 # Local imports
@@ -955,42 +955,41 @@ class SubmitFileEditorInputTool_HITL(BaseTool):
     args_schema: Type[BaseModel] = UserResponseSchema # Specify schema
 
     def _run(self, user_response: str) -> str:
+        """Handles HITL for submitting input to Aider."""
         chat_id = get_current_chat()
-        if not chat_id:
-            return "Error: No active chat session found."
+        if not chat_id: return "Error: No active chat session found."
 
         aider_json_path = get_toolset_data_path(chat_id, toolset_id)
         state = ensure_active_coder_state(aider_json_path)
-        if not state:
-            return "Error: No active editor session found or state could not be restored."
-            
-        # --- HITL Modification START ---
-        logger.info(f"Proposing editor input: {user_response}")
-        print(f"\n[Proposed response to File Editor]:")
+        if not state: return "Error: No active editor session found or state could not be restored."
+
+        # --- HITL Prompt (Tool's responsibility) ---
+        # Proposal notification is printed by chat_manager BEFORE this runs
         try:
-            # Use the LLM's proposed response as the default
-            edited_response = prompt("(Accept or Edit) > ", default=user_response)
+            edited_response = prompt_toolkit_prompt(
+                "(edit or confirm) > ",
+                default=user_response,
+                multiline=True # Allow multi-line editing
+            )
         except EOFError:
              logger.warning("User cancelled input submission (EOF).")
              return "Input submission cancelled by user."
+        except KeyboardInterrupt:
+             logger.warning("User cancelled input submission (KeyboardInterrupt).")
+             return "Input submission cancelled by user."
 
-        # If the user provided an empty response, treat it as a cancellation
         if not edited_response.strip():
             logger.warning("User cancelled input submission by submitting empty input.")
             return "Input submission cancelled by user (empty input)."
-        # --- HITL Modification END ---
+        # --- End HITL Prompt ---
 
         # Acquire lock for the specific session
         with state.lock:
-             # Check if the thread is actually running and waiting
              if not state.thread or not state.thread.is_alive():
                   remove_active_coder_state(aider_json_path)
                   return "Error: The editing process is not waiting for input."
-
-             # --- Use the potentially edited response ---
              logger.debug(f"Putting user confirmed/edited response on input_q: '{edited_response}' for {chat_id}")
              state.input_q.put(edited_response)
-             # --- End Use edited response ---
 
         # Release lock before waiting on queue
         logger.debug(f"Main thread waiting for *next* message from output_q for {chat_id}...")
@@ -1006,9 +1005,8 @@ class SubmitFileEditorInputTool_HITL(BaseTool):
              remove_active_coder_state(aider_json_path)
              return f"Error: Exception while waiting for Aider after submitting input: {e}"
 
-        # Process the message (identical logic to RunCodeEditTool's processing part)
+        # Process the message (logic remains the same)
         message_type = message.get('type')
-
         if message_type == 'prompt':
             prompt_data = message
             prompt_type = prompt_data.get('prompt_type', 'unknown')
@@ -1016,56 +1014,35 @@ class SubmitFileEditorInputTool_HITL(BaseTool):
             subject = prompt_data.get('subject')
             default = prompt_data.get('default')
             allow_never = prompt_data.get('allow_never')
-
-            # Update the state before returning the prompt
-            with state.lock:
-                update_aider_state_from_coder(aider_json_path, state.coder)
-
-            response_guidance = f"Aider requires further input. Please respond using 'submit_editor_input'. Prompt: '{question}'"
+            # Update state before returning prompt signal
+            with state.lock: update_aider_state_from_coder(aider_json_path, state.coder)
+            response_guidance = f"Aider requires further input. Respond using 'submit_editor_input'. Prompt: '{question}'"
             if subject: response_guidance += f" (Regarding: {subject[:100]}{'...' if len(subject)>100 else ''})"
             if default: response_guidance += f" [Default: {default}]"
             if prompt_type == 'confirm':
-                 options = "(yes/no"
-                 if prompt_data.get('group_id'): options += "/all/skip"
-                 if allow_never: options += "/don't ask"
-                 options += ")"
+                 options = "(yes/no"; options += "/all/skip" if prompt_data.get('group_id') else ""; options += "/don't ask" if allow_never else ""; options += ")"
                  response_guidance += f" Options: {options}"
-                 
             return f"{SIGNAL_PROMPT_NEEDED} {response_guidance}"
-
         elif message_type == 'result':
              logger.info(f"Aider edit completed successfully for {chat_id} after input.")
-             with state.lock:  # Re-acquire lock
-                  update_aider_state_from_coder(aider_json_path, state.coder)
-                  state.thread = None
+             with state.lock: update_aider_state_from_coder(aider_json_path, state.coder); state.thread = None
              return f"Edit completed. {message.get('content', 'No output captured.')}"
-
         elif message_type == 'error':
              logger.error(f"Aider edit failed for {chat_id} after input.")
              error_content = message.get('message', 'Unknown error')
-             
-             # Even on error, try to update state to preserve any partial changes
              try:
-                 with state.lock:
-                     update_aider_state_from_coder(aider_json_path, state.coder)
-             except Exception:
-                 pass  # Ignore errors during final state update
-                 
+                 with state.lock: update_aider_state_from_coder(aider_json_path, state.coder)
+             except Exception: pass
              remove_active_coder_state(aider_json_path)
              return f"Error during edit:\n{error_content}"
         else:
              logger.error(f"Received unknown message type from Aider thread: {message_type}")
-             
-             # Try to update state before cleanup
              try:
-                 with state.lock:
-                     update_aider_state_from_coder(aider_json_path, state.coder)
-             except Exception:
-                 pass  # Ignore errors during final state update
-                 
+                 with state.lock: update_aider_state_from_coder(aider_json_path, state.coder)
+             except Exception: pass
              remove_active_coder_state(aider_json_path)
              return f"Error: Unknown response type '{message_type}' from Aider process."
-             
+
     async def _arun(self, user_response: str) -> str:
         # Consider running sync in threadpool if needed
         return self._run(user_response)

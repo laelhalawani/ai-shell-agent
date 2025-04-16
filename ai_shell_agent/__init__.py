@@ -7,13 +7,15 @@ import os
 import logging
 import sys
 from pathlib import Path
-
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,  # Default to INFO level
-    format='%(levelname)s [%(filename)s:%(funcName)s:%(lineno)d]: %(message)s', # Added line number
+    format='%(levelname)s [%(filename)s:%(funcName)s:%(lineno)d]: %(message)s',  # Added line number
 )
 logger = logging.getLogger('ai_shell_agent')
+
+# Disable all logging messages
+#logging.disable(logging.CRITICAL)
 
 # Get the root directory
 ROOT_DIR = Path(__file__).parent.parent

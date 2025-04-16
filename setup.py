@@ -29,6 +29,7 @@ setup(
         'aider-chat>=0.38.0',
         'gitpython>=3.1.40',
         'watchfiles>=0.20.0',
+        'rich>=13.0.0',
     ],
     cmdclass={
         'install': CustomInstallCommand,
