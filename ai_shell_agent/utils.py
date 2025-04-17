@@ -8,7 +8,11 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional # Added Dict, Optional
 
-from . import logger, console_io # Add console_io import
+from . import logger
+from .console_manager import get_console_manager # Replace console_io import
+
+# Get console manager instance
+console = get_console_manager()
 
 def read_json(file_path: Path, default_value=None) -> Any:
     """Reads a JSON file or returns a default value if not found.
@@ -109,7 +113,7 @@ def write_dotenv(dotenv_path: Path, env_vars: Dict[str, str]) -> None:
 
 def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = None) -> Optional[str]:
     """
-    Ensures a key exists in the environment and .env file using console_io for prompts.
+    Ensures a key exists in the environment and .env file using ConsoleManager for prompts.
 
     Checks os.environ first. If not found, prompts the user.
     If the user provides a value, it's saved to the .env file and os.environ.
@@ -128,18 +132,21 @@ def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = 
         return value
 
     logger.warning(f"Environment variable '{key}' not found.")
-    # Use console_io for system/info messages
-    console_io.print_system(f"\nConfiguration required: Missing environment variable '{key}'.")
+    # Use ConsoleManager for system/info messages
+    console.display_message("SYSTEM:", f"\nConfiguration required: Missing environment variable '{key}'.", 
+                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     if description:
-        console_io.print_info(f"Description: {description}")
+        console.display_message("INFO:", f"Description: {description}", 
+                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
 
     try:
-        # Use console_io prompt
-        user_input = console_io.prompt_for_input(f"Please enter the value for {key}").strip()
+        # Use ConsoleManager prompt
+        user_input = console.prompt_for_input(f"Please enter the value for {key}", is_password=True).strip()
 
         if not user_input:
             logger.warning(f"User skipped providing value for '{key}'.")
-            console_io.print_warning("Input skipped.") # Use console_io
+            console.display_message("WARNING:", "Input skipped.", 
+                                  console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             return None
 
         # Value provided, save it
@@ -151,14 +158,16 @@ def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = 
         os.environ[key] = user_input
 
         logger.info(f"Saved '{key}' to {dotenv_path} and updated environment.")
-        console_io.print_info(f"Value for '{key}' saved.") # Use console_io
+        console.display_message("INFO:", f"Value for '{key}' saved.", 
+                              console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return user_input
 
     except KeyboardInterrupt:
-         # Handled by console_io.prompt_for_input
-         # logger.warning(f"User cancelled input for key '{key}'.") # Already logged by console_io
+         # Handled by ConsoleManager.prompt_for_input
+         # logger.warning is already done in console.prompt_for_input
          return None
     except Exception as e:
          logger.error(f"Error during ensure_dotenv_key for '{key}': {e}", exc_info=True)
-         console_io.print_error(f"An unexpected error occurred while handling '{key}'. Check logs.") # Use console_io
+         console.display_message("ERROR:", f"An unexpected error occurred while handling '{key}'. Check logs.", 
+                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
          return None

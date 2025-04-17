@@ -40,7 +40,13 @@ from ...config_manager import (
 )
 # --- NEW: Import .env utilities ---
 from ...utils import ensure_dotenv_key, read_json as _read_json, write_json as _write_json
-from ... import console_io
+# Remove console_io import
+# Import console manager
+from ...console_manager import get_console_manager
+
+# Get console manager instance
+console = get_console_manager()
+
 # Import integration module for aider features
 from .integration.integration import (
     recreate_coder,
@@ -92,66 +98,92 @@ toolset_config_defaults = {
 
 def _prompt_for_single_model_config(role_name: str, current_value: Optional[str], default_value: Optional[str]) -> Optional[str]:
     """Helper to prompt for one of the coder models within configure_toolset."""
-    print(f"\n--- Select File Editor '{role_name}' Model ---")
-    print("Available models:")
+    console.display_message("SYSTEM:", f"\n--- Select File Editor '{role_name}' Model ---", 
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.display_message("SYSTEM:", "Available models:", 
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    
     all_model_names = sorted(list(set(ALL_MODELS.values())))
     effective_current = current_value if current_value is not None else default_value
+    
     for model in all_model_names:
         marker = " <- Current Setting" if model == effective_current else ""
-        print(f"- {model}{marker}")
+        console.display_message("SYSTEM:", f"- {model}{marker}", 
+                              console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
         aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
-        if aliases: print(f"  (aliases: {', '.join(aliases)})")
+        if aliases: 
+            console.display_message("SYSTEM:", f"  (aliases: {', '.join(aliases)})", 
+                                  console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     prompt_msg = (f"Enter model name for '{role_name}'"
                   f" (leave empty to keep '{effective_current or 'Default'}',"
-                  f" enter 'none' to reset to default): ")
+                  f" enter 'none' to reset to default)")
 
     while True:
-        selected = input(prompt_msg).strip()
-        if not selected:
-            print(f"Keeping current setting: {effective_current or 'Default'}")
-            # Return the value that *was* current (could be None)
-            return current_value
-        elif selected.lower() == 'none':
-            print(f"Resetting {role_name} model to default ('{default_value or 'Agent Default' if role_name == 'Main' else 'Aider Default'}').")
-            return None # Use None to signify reset/default
-        else:
-            normalized_model = normalize_model_name(selected)
-            if normalized_model in all_model_names:
-                return normalized_model # Return the selected normalized name
+        try:
+            selected = console.prompt_for_input(prompt_msg).strip()
+            if not selected:
+                console.display_message("INFO:", f"Keeping current setting: {effective_current or 'Default'}", 
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+                # Return the value that *was* current (could be None)
+                return current_value
+            elif selected.lower() == 'none':
+                console.display_message("INFO:", f"Resetting {role_name} model to default ('{default_value or 'Agent Default' if role_name == 'Main' else 'Aider Default'}')", 
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+                return None # Use None to signify reset/default
             else:
-                print(f"Error: Unknown model '{selected}'. Please choose from the list or enter 'none'.")
+                normalized_model = normalize_model_name(selected)
+                if normalized_model in all_model_names:
+                    return normalized_model # Return the selected normalized name
+                else:
+                    console.display_message("ERROR:", f"Unknown model '{selected}'. Please choose from the list or enter 'none'", 
+                                          console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+        except KeyboardInterrupt:
+            console.display_message("WARNING:", "Selection cancelled. Keeping current setting.", 
+                                  console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            return current_value
 
 def _prompt_for_edit_format_config(current_value: Optional[str]) -> Optional[str]:
-    """Prompts the user to select an Aider edit format."""
-    print("\n--- Select File Editor Edit Format ---")
+    """Prompts the user to select an Aider edit format using ConsoleManager."""
+    console.display_message("SYSTEM:", "\n--- Select File Editor Edit Format ---", 
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    
     i = 0
     valid_choices = {}
     default_display = "Aider Default (model-specific)"
-    print(f"  0: {default_display} {'<- Current Setting' if current_value is None else ''}")
+    
+    console.display_message("SYSTEM:", f"  0: {default_display} {'<- Current Setting' if current_value is None else ''}", 
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     valid_choices['0'] = None
 
     format_list = sorted(AIDER_EDIT_FORMATS.keys())
     for idx, fmt in enumerate(format_list, 1):
         description = AIDER_EDIT_FORMATS[fmt]
         marker = " <- Current Setting" if fmt == current_value else ""
-        print(f"  {idx}: {fmt}{marker} - {description}")
+        console.display_message("SYSTEM:", f"  {idx}: {fmt}{marker} - {description}", 
+                              console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
         valid_choices[str(idx)] = fmt
 
     while True:
         try:
-            choice = input(f"Enter choice (0-{len(format_list)}), leave empty to keep current: ").strip()
+            # Use ConsoleManager for input
+            choice = console.prompt_for_input(f"Enter choice (0-{len(format_list)}), leave empty to keep current: ").strip()
+            
             if not choice:
-                print(f"Keeping current setting: {current_value or default_display}")
+                console.display_message("INFO:", f"Keeping current setting: {current_value or default_display}", 
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                 return current_value
             elif choice in valid_choices:
                 selected_format = valid_choices[choice]
-                print(f"Selected format: {selected_format or default_display}")
+                console.display_message("INFO:", f"Selected format: {selected_format or default_display}", 
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                 return selected_format
             else:
-                print("Invalid choice. Please try again.")
-        except (EOFError, KeyboardInterrupt):
-            print("\nSelection cancelled. Keeping current setting.")
+                console.display_message("ERROR:", "Invalid choice. Please try again.", 
+                                      console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+        except KeyboardInterrupt:
+            console.display_message("WARNING:", "Selection cancelled. Keeping current setting.", 
+                                  console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             return current_value
 
 # Import utils for JSON I/O
@@ -933,115 +965,145 @@ class SubmitFileEditorInputTool(BaseTool):
         return self._run(user_response)
 
 
+from ...errors import PromptNeededError # Import the custom exception
+
+# ... (in SubmitFileEditorInputTool_HITL class) ...
+
 class SubmitFileEditorInputTool_HITL(BaseTool):
-    name: str = "submit_editor_input" # Keep original name for LLM
+    name: str = "submit_editor_input"
     description: str = (
          "Use to provide input when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
          "The proposed input will be shown to the user for confirmation or editing before being submitted."
     )
-    args_schema: Type[BaseModel] = UserResponseSchema # Specify schema
+    args_schema: Type[BaseModel] = UserResponseSchema
+    requires_confirmation: bool = True # Mark this tool as requiring HITL
 
-    # Modify _run to use console_io
-    def _run(self, user_response: str) -> str:
-        """Handles HITL for submitting input to Aider via console_io."""
+    # Modify _run to use the PromptNeededError approach
+    def _run(self, user_response: str, confirmed_input: Optional[str] = None) -> str:
+        """Handles submitting input to Aider using the PromptNeededError approach."""
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session found."
+        if not chat_id:
+            return "Error: No active chat session found."
 
         aider_json_path = get_toolset_data_path(chat_id, toolset_id)
         state = ensure_active_coder_state(aider_json_path)
-        if not state: return "Error: No active editor session found or state could not be restored."
+        if not state:
+            return "Error: No active editor session found or state could not be restored."
 
-        # --- HITL Prompt via console_io ---
-        # The LLM's proposed 'user_response' is the default for editing
-        edited_response = console_io.request_tool_edit(
-            tool_name=self.name,
-            proposed_args={"user_response": user_response},
-            edit_key="user_response",
-            prompt_suffix="(edit or confirm response) > " # Custom prompt
-        )
-        # --- End HITL Prompt ---
+        # --- HITL Prompt via PromptNeededError ---
+        if confirmed_input is None:  # First call - needs confirmation
+            logger.debug(f"SubmitFileEditorInputTool: Raising PromptNeededError for input")
+            raise PromptNeededError(
+                tool_name=self.name,
+                proposed_args={"user_response": user_response},
+                edit_key="user_response",
+                prompt_suffix="(edit or confirm response) > "  # Custom suffix
+            )
 
-        # --- Handle Cancellation ---
-        if edited_response is None:
-            logger.warning("User cancelled input submission.")
-            # Return cancellation message for ToolMessage
-            return "Input submission cancelled by user."
-        # --- End Cancellation ---
+        # --- Handle Confirmed Input (second invocation) ---
+        edited_response = confirmed_input
+        
+        # Check again after confirmation
+        if not edited_response.strip():
+             logger.warning("SubmitFileEditorInputTool: Received empty confirmed input.")
+             return "Error: Confirmed response is empty."
 
-        # --- Print Confirmation Line ---
-        console_io.print_tool_execution_info(
-            tool_name=self.name,
-            final_args={"user_response": edited_response} # Show the final response being sent
-        )
-        # --- End Confirmation Line ---
-
-        # --- Logic to send to Aider and get response (remains the same) ---
+        # --- Logic to send to Aider and get response ---
         processed_result = "" # Initialize result string
+        
         # Acquire lock for the specific session
         with state.lock:
-             if not state.thread or not state.thread.is_alive():
-                  remove_active_coder_state(aider_json_path)
-                  processed_result = "Error: The editing process is not waiting for input."
-             else:
-                logger.debug(f"Putting user confirmed/edited response on input_q: '{edited_response}' for {chat_id}")
-                state.input_q.put(edited_response)
-
-        # Release lock before waiting if we put something on the queue
-        if not processed_result: # Only wait if we actually sent something
-            logger.debug(f"Main thread waiting for *next* message from output_q for {chat_id}...")
-            try:
-                 message = state.output_q.get(timeout=TIMEOUT)
-                 logger.debug(f"Main thread received message from output_q: {message.get('type')}")
-
-                 # Process the message (identical logic to direct tool's processing part)
-                 message_type = message.get('type')
-                 if message_type == 'prompt':
-                     prompt_data = message; prompt_type = prompt_data.get('prompt_type', 'unknown'); question = prompt_data.get('question', 'Input needed'); subject = prompt_data.get('subject'); default = prompt_data.get('default'); allow_never = prompt_data.get('allow_never')
-                     with state.lock: update_aider_state_from_coder(aider_json_path, state.coder)
-                     response_guidance = f"Aider requires further input. Respond using 'submit_editor_input'. Prompt: '{question}'"
-                     if subject: response_guidance += f" (Regarding: {subject[:100]}{'...' if len(subject)>100 else ''})"
-                     if default: response_guidance += f" [Default: {default}]"
-                     if prompt_type == 'confirm': options = "(yes/no"; options += "/all/skip" if prompt_data.get('group_id') else ""; options += "/don't ask" if allow_never else ""; options += ")"; response_guidance += f" Options: {options}"
-                     processed_result = f"{SIGNAL_PROMPT_NEEDED} {response_guidance}" # Return signal + prompt
-                 elif message_type == 'result':
-                      logger.info(f"Aider edit completed successfully for {chat_id} after input.")
-                      with state.lock: update_aider_state_from_coder(aider_json_path, state.coder); state.thread = None
-                      processed_result = f"Edit completed. {message.get('content', 'No output captured.')}"
-                 elif message_type == 'error':
-                      logger.error(f"Aider edit failed for {chat_id} after input."); error_content = message.get('message', 'Unknown error')
-                      try:
-                          with state.lock: update_aider_state_from_coder(aider_json_path, state.coder)
-                      except Exception: pass
-                      remove_active_coder_state(aider_json_path); processed_result = f"Error during edit:\n{error_content}"
-                 else:
-                      logger.error(f"Received unknown message type from Aider thread: {message_type}")
-                      try:
-                          with state.lock: update_aider_state_from_coder(aider_json_path, state.coder)
-                      except Exception: pass
-                      remove_active_coder_state(aider_json_path); processed_result = f"Error: Unknown response type '{message_type}'."
-
-            except queue.Empty:
-                 logger.error(f"Timeout or queue error waiting for Aider response ({chat_id}).")
-                 remove_active_coder_state(aider_json_path)
-                 processed_result = "Error: Timed out waiting for Aider response after submitting input."
-            except Exception as e:
-                 logger.error(f"Exception waiting on output_q for {chat_id}: {e}")
-                 remove_active_coder_state(aider_json_path)
-                 processed_result = f"Error: Exception while waiting for Aider after submitting input: {e}"
-        # --- End Aider interaction ---
-
-        # --- Print Tool Output ---
-        # Only print if it's not another prompt signal
-        if not processed_result.startswith(SIGNAL_PROMPT_NEEDED):
-            console_io.print_tool_output(processed_result)
-        # --- End Print Tool Output ---
-
-        # Return the processed result for the ToolMessage
+            if not state.thread or not state.thread.is_alive():
+                remove_active_coder_state(aider_json_path)
+                return "Error: The editing process is not waiting for input."
+            
+            logger.debug(f"Putting confirmed response on input_q: '{edited_response[:50]}...' for {chat_id}")
+            state.input_q.put(edited_response)
+        
+        # Release lock before waiting
+        logger.debug(f"Main thread waiting for response from output_q for {chat_id}...")
+        try:
+            message = state.output_q.get(timeout=TIMEOUT)
+            logger.debug(f"Main thread received message from output_q: {message.get('type')}")
+            
+            # Process the message
+            message_type = message.get('type')
+            if message_type == 'prompt':
+                # Another prompt needed - raise another PromptNeededError
+                prompt_data = message
+                question = prompt_data.get('question', 'Input needed')
+                subject = prompt_data.get('subject')
+                default = prompt_data.get('default')
+                
+                # Update state before returning prompt signal
+                with state.lock:
+                    update_aider_state_from_coder(aider_json_path, state.coder)
+                
+                # Raise a new PromptNeededError with the details from Aider
+                prompt_msg = question
+                if subject:
+                    prompt_msg += f" (Re: {subject[:50]}{'...' if len(subject) > 50 else ''})"
+                
+                new_args = {"user_response": default or ""}
+                
+                raise PromptNeededError(
+                    tool_name=self.name,
+                    proposed_args=new_args,
+                    edit_key="user_response",
+                    prompt_suffix=f"({prompt_msg}) > "
+                )
+            
+            elif message_type == 'result':
+                logger.info(f"Aider edit completed successfully for {chat_id} after input.")
+                with state.lock:
+                    update_aider_state_from_coder(aider_json_path, state.coder)
+                    state.thread = None
+                processed_result = f"Edit completed. {message.get('content', 'No output captured.')}"
+            
+            elif message_type == 'error':
+                logger.error(f"Aider edit failed for {chat_id} after input.")
+                error_content = message.get('message', 'Unknown error')
+                try:
+                    with state.lock:
+                        update_aider_state_from_coder(aider_json_path, state.coder)
+                except Exception:
+                    pass
+                remove_active_coder_state(aider_json_path)
+                processed_result = f"Error during edit:\n{error_content}"
+            
+            else:
+                logger.error(f"Received unknown message type from Aider thread: {message_type}")
+                try:
+                    with state.lock:
+                        update_aider_state_from_coder(aider_json_path, state.coder)
+                except Exception:
+                    pass
+                remove_active_coder_state(aider_json_path)
+                processed_result = f"Error: Unknown response type '{message_type}'."
+                
+        except queue.Empty:
+            logger.error(f"Timeout waiting for Aider response ({chat_id}).")
+            remove_active_coder_state(aider_json_path)
+            processed_result = "Error: Timed out waiting for Aider response after submitting input."
+        except PromptNeededError:
+            # Re-raise any PromptNeededError to be handled by chat_manager
+            raise
+        except Exception as e:
+            logger.error(f"Exception waiting on output_q for {chat_id}: {e}", exc_info=True)
+            remove_active_coder_state(aider_json_path)
+            processed_result = f"Error: Exception while waiting for Aider after submitting input: {e}"
+            
+        # Return the result string
         return processed_result
+        
+    async def _arun(self, user_response: str, confirmed_input: Optional[str] = None) -> str:
+        return await run_in_executor(None, self._run, user_response, confirmed_input)
 
-    async def _arun(self, user_response: str) -> str:
-        return await run_in_executor(None, self._run, user_response)
+# Replace the old implementation
+submit_code_editor_input_tool = SubmitFileEditorInputTool_HITL()
 
+# Remove the non-HITL version as it's no longer needed
+# submit_code_editor_input_direct_tool = SubmitFileEditorInputTool()
 
 # --- Create tool instances ---
 start_code_editor_tool = OpenFileEditor()
@@ -1049,8 +1111,6 @@ add_code_file_tool = OpenFileTool()
 drop_code_file_tool = CloseFileTool()
 list_code_files_tool = ListOpenFilesTool()
 edit_code_tool = RequestEditsTool()
-submit_code_editor_input_tool = SubmitFileEditorInputTool_HITL()
-submit_code_editor_input_direct_tool = SubmitFileEditorInputTool()
 view_diff_tool = ViewDiffTool()
 undo_last_edit_tool = UndoLastEditTool()
 close_code_editor_tool = CloseFileEditorTool()
@@ -1062,7 +1122,6 @@ toolset_tools = [
     list_code_files_tool,
     edit_code_tool,
     submit_code_editor_input_tool,
-    submit_code_editor_input_direct_tool,
     view_diff_tool,
     undo_last_edit_tool,
     close_code_editor_tool
@@ -1077,7 +1136,6 @@ register_tools([
     list_code_files_tool,
     edit_code_tool,
     submit_code_editor_input_tool,
-    submit_code_editor_input_direct_tool,
     view_diff_tool,
     undo_last_edit_tool,
     close_code_editor_tool

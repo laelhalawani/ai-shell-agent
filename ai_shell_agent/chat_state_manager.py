@@ -178,6 +178,11 @@ def _read_chat_map() -> Dict[str, str]:
 def _write_chat_map(chat_map: Dict[str, str]) -> None: 
     _write_json(CHAT_MAP_FILE, chat_map)
 
+# --- Chat Map Access ---
+def get_chat_map() -> Dict[str, str]:
+    """Gets the map of chat IDs to chat titles."""
+    return _read_chat_map()
+
 # --- Session Management ---
 def get_current_chat() -> Optional[str]: 
     return _read_json(SESSION_FILE, {}).get("current_chat")

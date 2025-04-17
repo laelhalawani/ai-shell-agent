@@ -19,19 +19,19 @@ from pydantic import Field, BaseModel
 # Import the sanitize_input function directly from the module
 from langchain_experimental.tools.python.tool import sanitize_input, _get_default_python_repl
 
-# External imports
-# Remove prompt_toolkit import from here, use console_io's version
-# from prompt_toolkit import prompt
-
 # Local imports
-# --- ADD console_io import ---
-from ... import logger, console_io
+from ... import logger
 from ...tool_registry import register_tools
 from ...chat_state_manager import (
     get_current_chat,
     get_active_toolsets,
     update_active_toolsets,
 )
+# Import console manager instead of console_io
+from ...console_manager import get_console_manager
+# Import the new custom exceptions
+from ...errors import PromptNeededError
+
 # Import the prompt content to be returned by the start tool
 from .prompts import TERMINAL_TOOLSET_PROMPT
 
@@ -44,6 +44,9 @@ toolset_id = "terminal"
 toolset_description = "Provides tools to execute shell commands and Python code."
 toolset_required_secrets: Dict[str, str] = {}
 toolset_config_defaults = {}
+
+# --- Get console manager instance ---
+console = get_console_manager()
 
 # --- configure_toolset ---
 def configure_toolset(
@@ -79,7 +82,7 @@ def configure_toolset(
          logger.error(f"Failed to write empty config for Terminal toolset to global path {global_config_path}: {e}")
 
     if not save_success:
-        print(f"\nWarning: Failed to write configuration files for Terminal toolset. Check logs.")
+        console.display_message("WARNING:", "Failed to write configuration files for Terminal toolset. Check logs.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
 
     return final_config
 
@@ -135,98 +138,87 @@ class TerminalTool_HITL(BaseTool):
         "Use this for file operations, system checks, installations, etc."
     )
     args_schema: Type[BaseModel] = TerminalToolArgs # Use specific schema
+    requires_confirmation: bool = True # Mark this tool as requiring HITL
 
-    # Make cmd the first argument to match schema
-    def _run(self, cmd: str) -> str:
-        """Run a command in a shell, prompting the user first via console_io."""
+    # Make cmd the first argument to match schema, add confirmed_input for HITL support
+    def _run(self, cmd: str, confirmed_input: Optional[str] = None) -> str:
+        """
+        Run a command in a shell. Raises PromptNeededError if confirmation needed.
+        Executes directly if confirmed_input is provided.
+        """
         cmd_to_execute = cmd.strip()
         if not cmd_to_execute:
-            # Return error message, don't print directly
             return "Error: Empty command proposed."
 
-        # --- HITL Prompt via console_io ---
-        edited_command = console_io.request_tool_edit(
-            tool_name=self.name,
-            proposed_args={"cmd": cmd_to_execute},
-            edit_key="cmd"
-            # Default prompt suffix "(edit or confirm) > " is used
-        )
-
-        # --- Handle Cancellation ---
-        if edited_command is None:
-            logger.warning("User cancelled command execution.")
-            # Return cancellation message for ToolMessage
-            return "Command execution cancelled by user."
-        # --- End HITL ---
-
-        # --- Print Confirmation Line ---
-        console_io.print_tool_execution_info(
-            tool_name=self.name,
-            final_args={"cmd": edited_command}
-        )
-        # --- End Confirmation Line ---
-
-        logger.info(f"Executing terminal command: {edited_command}")
-        formatted_result = "" # Initialize result string
-        try:
-            result = subprocess.run(
-                edited_command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                timeout=300 # Add a reasonable timeout (e.g., 5 minutes)
+        if confirmed_input is None:
+            # First call: Raise error to request prompt from chat_manager loop
+            logger.debug(f"TerminalTool: Raising PromptNeededError for cmd: '{cmd_to_execute}'")
+            console.display_message("WARNING:", "The AI wants to run a shell command:", 
+                                    console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            console.display_message("COMMAND:", cmd_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
+            raise PromptNeededError(
+                tool_name=self.name,
+                proposed_args={"cmd": cmd_to_execute},
+                edit_key="cmd"
             )
+        else:
+            # Second call: Input has been confirmed by the user
+            final_command = confirmed_input.strip() # Use the confirmed input
+            if not final_command:
+                logger.warning("TerminalTool: Received empty confirmed input.")
+                return "Error: Confirmed command is empty."
 
-            output_parts = []
-            # Include command info in the result for clarity
-            output_parts.append(f"Executed: `{edited_command}`")
+            logger.info(f"Executing confirmed terminal command: {final_command}")
+            # --- Actual Execution Logic ---
+            formatted_result = ""
+            try:
+                result = subprocess.run(
+                    final_command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=300
+                )
+                # Format the result
+                output_parts = []
+                output_parts.append(f"Executed: `{final_command}`")
+                if result.returncode != 0: output_parts.append(f"Exit Code: {result.returncode}")
+                stdout = result.stdout.strip(); stderr = result.stderr.strip()
+                if stdout:
+                    max_out_len = 2000
+                    display_stdout = (stdout[:max_out_len] + "\n... (truncated)") if len(stdout) > max_out_len else stdout
+                    output_parts.append(f"Output:\n---\n{display_stdout}\n---")
+                if stderr:
+                    max_err_len = 1000
+                    display_stderr = (stderr[:max_err_len] + "\n... (truncated)") if len(stderr) > max_err_len else stderr
+                    output_parts.append(f"Errors/Warnings:\n---\n{display_stderr}\n---")
+                if not stdout and not stderr:
+                    status_msg = "Command completed successfully with no output." if result.returncode == 0 else "Command failed with no output."
+                    output_parts.append(f"Status: {status_msg}")
 
-            if result.returncode != 0:
-                output_parts.append(f"Exit Code: {result.returncode}")
+                formatted_result = "\n".join(output_parts)
 
-            stdout = result.stdout.strip()
-            stderr = result.stderr.strip()
+            except subprocess.TimeoutExpired:
+                 logger.error(f"Command '{final_command}' timed out.")
+                 formatted_result = f"Error: Command timed out after 300 seconds.\n(Attempted: `{final_command}`)"
+            except FileNotFoundError:
+                 logger.error(f"Error executing command '{final_command}': Command not found.")
+                 formatted_result = f"Error: Command not found: '{final_command.split()[0]}'. Ensure it's installed/in PATH.\n(Attempted: `{final_command}`)"
+            except Exception as e:
+                logger.error(f"Error executing command '{final_command}': {e}", exc_info=True)
+                formatted_result = f"Error executing command: {str(e)}\n(Attempted: `{final_command}`)"
+            # --- End Execution Logic ---
 
-            if stdout:
-                # Limit output length to avoid overwhelming the console/LLM
-                max_out_len = 2000
-                display_stdout = (stdout[:max_out_len] + "\n... (truncated)") if len(stdout) > max_out_len else stdout
-                output_parts.append(f"Output:\n---\n{display_stdout}\n---")
-            if stderr:
-                max_err_len = 1000
-                display_stderr = (stderr[:max_err_len] + "\n... (truncated)") if len(stderr) > max_err_len else stderr
-                output_parts.append(f"Errors/Warnings:\n---\n{display_stderr}\n---")
+            # Return the result string (ConsoleManager will display it)
+            return formatted_result
 
-            if not stdout and not stderr and result.returncode == 0:
-                output_parts.append("Status: Command completed successfully with no output.")
-            elif not stdout and not stderr and result.returncode != 0:
-                 output_parts.append("Status: Command failed with no output.")
-
-            formatted_result = "\n".join(output_parts)
-
-        except subprocess.TimeoutExpired:
-             logger.error(f"Command '{edited_command}' timed out.")
-             formatted_result = f"Error: Command timed out after 300 seconds.\n(Attempted: `{edited_command}`)"
-        except FileNotFoundError:
-             logger.error(f"Error executing command '{edited_command}': Command not found.")
-             formatted_result = f"Error: Command not found: '{edited_command.split()[0]}'. Please ensure it's installed and in the system's PATH.\n(Attempted: `{edited_command}`)"
-        except Exception as e:
-            logger.error(f"Error executing command '{edited_command}': {e}", exc_info=True)
-            formatted_result = f"Error executing command: {str(e)}\n(Attempted: `{edited_command}`)"
-
-        # --- Print Tool Output ---
-        console_io.print_tool_output(formatted_result)
-        # --- End Print Tool Output ---
-
-        # Return the formatted result for the ToolMessage
-        return formatted_result
-
-    # Use run_in_executor for async calls if needed, adjust signature
-    async def _arun(self, cmd: str) -> str:
-        return await run_in_executor(None, self._run, cmd)
-
+    async def _arun(self, cmd: str, confirmed_input: Optional[str] = None) -> str:
+        """
+        Async version of _run that delegates to the synchronous implementation
+        """
+        return await run_in_executor(None, self._run, cmd, confirmed_input)
 
 # Define schema for PythonREPLTool_HITL
 class PythonREPLToolArgs(BaseModel):
@@ -244,74 +236,70 @@ class PythonREPLTool_HITL(BaseTool):
     args_schema: Type[BaseModel] = PythonREPLToolArgs # Use specific schema
     python_repl: PythonREPL = Field(default_factory=_get_default_python_repl)
     sanitize_input: bool = True # Keep sanitize option
+    requires_confirmation: bool = True # Mark this tool as requiring HITL
 
-    # Make query the first argument to match schema
+    # Make query the first argument to match schema, add confirmed_input for HITL support
     def _run(
         self,
-        query: str
+        query: str,
+        confirmed_input: Optional[str] = None
     ) -> str:
-        """HITL version of the tool using console_io."""
+        """
+        Evaluates Python code. Raises PromptNeededError if confirmation needed.
+        Executes directly if confirmed_input is provided.
+        """
         code_to_execute = query
-
         if not code_to_execute:
-             # Return error message
              return "Error: No Python code provided to execute."
 
-        # Keep sanitize logic
+        # Apply sanitization on the *initial* proposal
         if self.sanitize_input:
             original_code = code_to_execute
             code_to_execute = sanitize_input(code_to_execute)
+            # Log only if changed
             if original_code != code_to_execute:
-                logger.debug(f"Sanitized Python code: {code_to_execute}")
+                 logger.debug(f"Sanitized Python code: {code_to_execute}")
 
-        # --- HITL Prompt via console_io ---
-        edited_query = console_io.request_tool_edit(
-            tool_name=self.name,
-            proposed_args={"query": code_to_execute},
-            edit_key="query",
-            prompt_suffix="(edit or confirm python code) > " # Custom suffix
-        )
-        # --- End HITL Prompt ---
 
-        # --- Handle Cancellation ---
-        if edited_query is None:
-            logger.warning("User cancelled Python code execution.")
-            # Return cancellation message
-            return "Python code execution cancelled by user."
-        # --- End Cancellation ---
+        if confirmed_input is None:
+            # First call: Raise error to request prompt
+            logger.debug(f"PythonREPLTool: Raising PromptNeededError for query: '{code_to_execute[:50]}...'")
+            console.display_message("WARNING:", "The AI wants to run a Python code snippet:", 
+                                    console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            console.display_message("CODE:", code_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
+            raise PromptNeededError(
+                tool_name=self.name,
+                proposed_args={"query": code_to_execute}, # Pass potentially sanitized code
+                edit_key="query",
+                prompt_suffix="(edit or confirm python code) > "
+            )
+        else:
+            # Second call: Input has been confirmed
+            final_query = confirmed_input # Use the raw confirmed input (user might bypass sanitization)
+            if not final_query.strip():
+                 logger.warning("PythonREPLTool: Received empty confirmed input.")
+                 return "Error: Confirmed Python code is empty."
 
-        # --- Print Confirmation Line ---
-        console_io.print_tool_execution_info(
-            tool_name=self.name,
-            final_args={"query": edited_query} # Show the final code being executed
-        )
-        # --- End Confirmation Line ---
+            logger.info(f"Executing confirmed Python code: {final_query[:100]}...")
+            # --- Actual Execution Logic ---
+            formatted_result = ""
+            try:
+                result = self.python_repl.run(final_query)
+                # Format result
+                max_res_len = 2000
+                result_str = str(result)
+                display_result = (result_str[:max_res_len] + "\n... (truncated)") if len(result_str) > max_res_len else result_str
+                formatted_result = f"Executed: `python_repl(query='''{final_query}''')`\nResult:\n---\n{display_result}\n---"
+            except Exception as e:
+                logger.error(f"Error executing Python code '{final_query}': {e}", exc_info=True)
+                formatted_result = f"Error executing Python code:\n---\n{str(e)}\n---\n(Attempted Code:\n'''\n{final_query}\n'''\n)"
+            # --- End Execution Logic ---
 
-        logger.info(f"Executing Python code: {edited_query}")
-        formatted_result = "" # Initialize result string
-        try:
-            # Execute the CONFIRMED/EDITED code
-            result = self.python_repl.run(edited_query)
-            # Format result consistently
-            # Limit result length
-            max_res_len = 2000
-            result_str = str(result)
-            display_result = (result_str[:max_res_len] + "\n... (truncated)") if len(result_str) > max_res_len else result_str
-            formatted_result = f"Executed: `python_repl(query='''{edited_query}''')`\nResult:\n---\n{display_result}\n---"
-        except Exception as e:
-            logger.error(f"Error executing Python code '{edited_query}': {e}", exc_info=True)
-            formatted_result = f"Error executing Python code:\n---\n{str(e)}\n---\n(Attempted Code:\n'''\n{edited_query}\n'''\n)"
+            # Return the result string
+            return formatted_result
 
-        # --- Print Tool Output ---
-        console_io.print_tool_output(formatted_result)
-        # --- End Print Tool Output ---
-
-        # Return the formatted result for the ToolMessage
-        return formatted_result
-
-    async def _arun(self, query: str) -> str:
-        """Runs the tool asynchronously."""
-        return await run_in_executor(None, self._run, query)
+    async def _arun(self, query: str, confirmed_input: Optional[str] = None) -> str:
+        return await run_in_executor(None, self._run, query, confirmed_input)
 
 
 # --- Tool Instances ---

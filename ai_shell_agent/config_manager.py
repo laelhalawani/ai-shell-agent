@@ -1,7 +1,13 @@
 import os
 import json
 from typing import Dict, Optional, Tuple, List
-from . import logger, console_io, ROOT_DIR # Added console_io and ROOT_DIR imports
+from . import logger, ROOT_DIR # Removed console_io import
+
+# Import ConsoleManager
+from .console_manager import get_console_manager
+
+# Get console manager instance
+console = get_console_manager()
 
 # Define model mappings
 OPENAI_MODELS = {
@@ -112,7 +118,7 @@ def set_model(model_name: str) -> None:
     logger.info(f"Model set to: {normalized_name}")
 
 def prompt_for_model_selection() -> Optional[str]:
-    """Prompts user for model selection using console_io with highlighting."""
+    """Prompts user for model selection using ConsoleManager with highlighting."""
     current_model = get_current_model()
     
     # Create a map of model names to their aliases
@@ -130,8 +136,8 @@ def prompt_for_model_selection() -> Optional[str]:
     
     from rich.text import Text # Import Text
 
-    console_io.print_system("Available models:")
-    console_io.print_system("OpenAI:")
+    console.display_message("SYSTEM:", "Available models:", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.display_message("SYSTEM:", "OpenAI:", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     openai_lines = []
     for model in set(OPENAI_MODELS.values()):
         aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
@@ -141,9 +147,9 @@ def prompt_for_model_selection() -> Optional[str]:
         line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
         openai_lines.append(line_text)
     for line in openai_lines:
-        console_io.console.print(line) # Print directly
+        console.console.print(line) # Print directly
     
-    console_io.print_system("Google:")
+    console.display_message("SYSTEM:", "Google:", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     google_lines = []
     for model in set(GOOGLE_MODELS.values()):
         aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
@@ -153,29 +159,31 @@ def prompt_for_model_selection() -> Optional[str]:
         line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
         google_lines.append(line_text)
     for line in google_lines:
-        console_io.console.print(line) # Print directly
+        console.console.print(line) # Print directly
     
     try:
-        # Use console_io prompt
+        # Use ConsoleManager prompt
         prompt_msg = f"\nPlease input the model you want to use, or leave empty to keep using '{current_model}'"
-        selected_model = console_io.prompt_for_input(prompt_msg).strip()
+        selected_model = console.prompt_for_input(prompt_msg).strip()
         
         if not selected_model:
             return current_model
         
         normalized_model = normalize_model_name(selected_model)
         if normalized_model not in set(OPENAI_MODELS.values()) and normalized_model not in set(GOOGLE_MODELS.values()):
-            # Use console_io warning
-            console_io.print_warning(f"Unknown model: {selected_model}. Keeping current model: {current_model}")
+            # Use ConsoleManager warning
+            console.display_message("WARNING:", f"Unknown model: {selected_model}. Keeping current model: {current_model}", 
+                                  console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             logger.warning(f"Unknown model selected: {selected_model}. Using current: {current_model}")
             return current_model
         
         return normalized_model
     except KeyboardInterrupt:
-        # Handled by console_io.prompt_for_input
+        # Handled by ConsoleManager.prompt_for_input
         return None # Indicate cancellation
     except Exception as e:
-        console_io.print_error(f"An error occurred during model selection: {e}")
+        console.display_message("ERROR:", f"An error occurred during model selection: {e}", 
+                              console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
         logger.error(f"Model selection error: {e}", exc_info=True)
         return None
 
@@ -223,7 +231,7 @@ def get_api_key_for_model(model_name: str) -> Tuple[Optional[str], str]:
 
 def set_api_key_for_model(model_name: str, api_key: Optional[str] = None) -> None:
     """
-    Prompt for and save the appropriate API key using console_io.
+    Prompt for and save the appropriate API key using ConsoleManager.
     """
     provider = get_model_provider(model_name)
     provider_name = "OpenAI" if provider == "openai" else "Google"
@@ -236,22 +244,24 @@ def set_api_key_for_model(model_name: str, api_key: Optional[str] = None) -> Non
 Please enter your {provider_name} API key.
 You can get it from: {api_key_link}
 """
-        console_io.print_system(prompt_info.strip())
+        console.display_message("SYSTEM:", prompt_info.strip(), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
         try:
-            # Use console_io prompt, marking as password
-            api_key = console_io.prompt_for_input(f"Enter {provider_name} API key", is_password=True).strip()
+            # Use ConsoleManager prompt, marking as password
+            api_key = console.prompt_for_input(f"Enter {provider_name} API key", is_password=True).strip()
         except KeyboardInterrupt:
-            # Already handled by console_io.prompt_for_input printing "Input cancelled."
+            # Already handled by ConsoleManager.prompt_for_input
             logger.warning(f"API key input cancelled for {provider_name}.")
             return # Abort
         except Exception as e:
-            console_io.print_error(f"An error occurred during API key input: {e}")
+            console.display_message("ERROR:", f"An error occurred during API key input: {e}", 
+                                  console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             logger.error(f"API key input error: {e}", exc_info=True)
             return # Abort
     
     if not api_key:
-        # Use console_io warning
-        console_io.print_warning(f"No {provider_name} API key provided. Aborting.")
+        # Use ConsoleManager warning
+        console.display_message("WARNING:", f"No {provider_name} API key provided. Aborting.", 
+                              console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
         logger.warning(f"No {provider_name} API key provided.")
         return
     
@@ -264,8 +274,9 @@ You can get it from: {api_key_link}
     env_vars[env_var_name] = api_key
     write_dotenv(env_path, env_vars)
     
-    # Use console_io info
-    console_io.print_info(f"{provider_name} API key saved successfully to .env")
+    # Use ConsoleManager info
+    console.display_message("INFO:", f"{provider_name} API key saved successfully to .env", 
+                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
     logger.info(f"{provider_name} API key saved successfully to .env")
 
 def ensure_api_key_for_current_model() -> bool:
