@@ -432,6 +432,12 @@ def update_aider_state_from_coder(aider_json_path: Path, coder) -> None:
     except Exception as e:
         logger.error(f"Failed to update persistent Aider state in {aider_json_path}: {e}", exc_info=True)
 
+
+# --- ADD the missing function ---
+def is_file_editor_prompt_signal(content: Optional[str]) -> bool:
+    """Checks if the provided content string starts with the Aider prompt signal."""
+    return isinstance(content, str) and content.strip().startswith(SIGNAL_PROMPT_NEEDED)
+
 # --- Run Aider in Thread ---
 def _run_aider_in_thread(coder, instruction: str, output_q: queue.Queue):
     """Run an Aider command in a separate thread."""

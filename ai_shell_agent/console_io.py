@@ -14,7 +14,8 @@ from rich.console import Console, Group
 from rich.columns import Columns # Add Columns import
 from rich.live import Live
 from rich.spinner import Spinner
-from rich.style import Style
+# --- Change Rich Style import ---
+from rich.style import Style as RichStyle # Rename to avoid conflict
 from rich.text import Text
 from rich.markup import escape
 from rich.traceback import install as rich_traceback_install
@@ -23,29 +24,33 @@ rich_traceback_install(show_locals=False) # Install rich tracebacks
 # Prompt Toolkit for input - directly import required modules
 from prompt_toolkit import prompt as prompt_toolkit_prompt
 from prompt_toolkit.shortcuts import confirm as prompt_toolkit_confirm
+# --- ADD prompt_toolkit FormattedText and Style ---
+from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.styles import Style as PromptToolkitStyle # Rename Style import
+from prompt_toolkit.styles import merge_styles
 
 # --- Console and Styles ---
 console = Console(stderr=True) # Print status/errors to stderr to not interfere with stdout piping if needed
 
 # Define styles (adjust colors as needed)
-STYLE_AI_LABEL = Style(color="blue", bold=True) # Renamed for clarity 
-STYLE_AI_CONTENT = Style(color="blue")          # New style for AI message content
-STYLE_USER = Style(color="purple", bold=True) # Note: User prefix not typically printed
-STYLE_INFO_LABEL = Style(color="green", bold=True)
-STYLE_INFO_CONTENT = Style(color="green")
-STYLE_WARNING_LABEL = Style(color="yellow", bold=True)
-STYLE_WARNING_CONTENT = Style(color="yellow")
-STYLE_ERROR_LABEL = Style(color="red", bold=True)
-STYLE_ERROR_CONTENT = Style(color="red")
-STYLE_SYSTEM_LABEL = Style(color="cyan", bold=True) # Add bold to system label
-STYLE_SYSTEM_CONTENT = Style(color="cyan")        # Style for system message content
-STYLE_TOOL_NAME = Style(bold=True) # Italic often not supported well
-STYLE_ARG_NAME = Style(dim=True) # Dim or grey
-STYLE_ARG_VALUE = Style(dim=True)
-STYLE_THINKING = Style(color="blue") # Style for the thinking spinner/text
+STYLE_AI_LABEL = RichStyle(color="blue", bold=True) # Renamed for clarity 
+STYLE_AI_CONTENT = RichStyle(color="blue")          # New style for AI message content
+STYLE_USER = RichStyle(color="purple", bold=True) # Note: User prefix not typically printed
+STYLE_INFO_LABEL = RichStyle(color="green", bold=True)
+STYLE_INFO_CONTENT = RichStyle(color="green")
+STYLE_WARNING_LABEL = RichStyle(color="yellow", bold=True)
+STYLE_WARNING_CONTENT = RichStyle(color="yellow")
+STYLE_ERROR_LABEL = RichStyle(color="red", bold=True)
+STYLE_ERROR_CONTENT = RichStyle(color="red")
+STYLE_SYSTEM_LABEL = RichStyle(color="cyan", bold=True) # Add bold to system label
+STYLE_SYSTEM_CONTENT = RichStyle(color="cyan")        # Style for system message content
+STYLE_TOOL_NAME = RichStyle(bold=True) # Italic often not supported well
+STYLE_ARG_NAME = RichStyle(dim=True) # Dim or grey
+STYLE_ARG_VALUE = RichStyle(dim=True)
+STYLE_THINKING = RichStyle(color="blue") # Style for the thinking spinner/text
 
 # Add Input Option Style
-STYLE_INPUT_OPTION = Style(underline=True)
+STYLE_INPUT_OPTION = RichStyle(underline=True)
 
 # --- Live Display State ---
 _live_context: Optional[Live] = None # type: ignore
@@ -64,9 +69,10 @@ def _stop_live():
                 live.stop()
                 console.print("", end="") # Force a clear/redraw
                 # Add a small flush just in case
-                console.file.flush()
+                console.file.flush() # <<< ADDED FLUSH
             except Exception as e:
-                 print(f"\nWarning: Error stopping Rich Live display: {e}", file=sys.stderr)
+                 # Use print directly here as console might be unusable
+                 print(f"\nWarning: Error stopping Rich Live display: {e}", file=sys.stderr) # Modified print
 
 # --- Public API ---
 
@@ -80,7 +86,7 @@ def start_ai_thinking():
     renderable_columns = Columns([prefix, spinner], padding=(0, 1), expand=False)
 
     with _live_lock:
-        if _live_context is None: # Prevent starting if already started
+        if (_live_context is None): # Prevent starting if already started
             try:
                 # --- REMOVE transient=True ---
                 _live_context = Live(renderable_columns, console=console, refresh_per_second=10) # Removed transient=True
@@ -90,6 +96,7 @@ def start_ai_thinking():
                 console.print(f"{prefix.plain} Thinking...", style=STYLE_THINKING) # Fallback print
                 print(f"Warning: Failed to start Rich Live display: {e}", file=sys.stderr)
 
+# --- request_tool_edit (MODIFIED for FormattedText) ---
 def request_tool_edit(
     tool_name: str,
     proposed_args: Dict[str, Any],
@@ -97,7 +104,8 @@ def request_tool_edit(
     prompt_suffix: str = "(edit or confirm) > "
 ) -> Optional[str]:
     """
-    Stops live display, prepares prompt message, and prompts user for editable input using prompt_toolkit.
+    Stops live display, prepares prompt message using prompt_toolkit FormattedText
+    with direct style strings, and prompts user for editable input.
 
     Args:
         tool_name: Name of the tool being used.
@@ -108,7 +116,7 @@ def request_tool_edit(
     Returns:
         The confirmed or edited string value, or None if cancelled.
     """
-    _stop_live() # Crucial: Stop spinner before printing/prompting
+    _stop_live() # Stop spinner
 
     if edit_key not in proposed_args:
         print_error(f"Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.")
@@ -116,63 +124,89 @@ def request_tool_edit(
 
     value_to_edit = proposed_args[edit_key]
 
-    # --- Construct the prefix text OBJECT (for plain text extraction) ---
-    prefix_text_obj = Text.assemble( # Renamed variable
-        ("AI: ", STYLE_AI_LABEL),
-        ("Using tool '", STYLE_AI_CONTENT),
-        (escape(tool_name), STYLE_TOOL_NAME),
-        ("'", STYLE_AI_CONTENT)
-    )
-    # Append non-editable arguments for context in the prefix string
+    # --- Build FormattedText list using DIRECT style strings ---
+    # List of (style_string, text_fragment) tuples
+    prompt_fragments = []
+
+    # Define direct style strings (Map from Rich Styles)
+    ptk_style_ai_label = 'bold fg:blue'
+    ptk_style_ai_content = 'fg:blue'
+    ptk_style_tool_name = 'bold'
+    ptk_style_arg_name = 'fg:#888888' # Grey
+    ptk_style_arg_value = 'fg:#888888' # Grey
+    ptk_style_suffix = '' # Default terminal style
+
+    # Helper to add fragment with direct style string
+    def add_fragment(style_string, text):
+        prompt_fragments.append((style_string, text))
+
+    add_fragment(ptk_style_ai_label, "AI: ")
+    add_fragment(ptk_style_ai_content, "Using tool '")
+    add_fragment(ptk_style_tool_name, escape(tool_name))
+    add_fragment(ptk_style_ai_content, "'")
+
     if proposed_args:
-        prefix_text_obj.append(" with ", style=STYLE_AI_CONTENT)
-        args_parts: List[str] = [] # Store plain strings for the message
-        # Iterate through all args
+        add_fragment(ptk_style_ai_content, " with ")
+        arg_fragments = []
         for i, (arg_name, arg_val) in enumerate(proposed_args.items()):
-             arg_part = f"{escape(str(arg_name))}: "
-             if arg_name == edit_key:
-                 # For the editable key, just show the key name in the prefix part
-                 args_parts.append(arg_part)
-             else:
-                 # For non-editable keys, show key: value (truncated)
-                 val_str = escape(str(arg_val))
-                 max_len = 50
-                 display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
-                 args_parts.append(f"{arg_part}{display_val}") # Append formatted value
+            current_part = []
+            # Key
+            current_part.append((ptk_style_arg_name, escape(str(arg_name)) + ": "))
 
-        # Join argument strings with commas
-        prefix_text_obj.append(", ".join(args_parts), style=STYLE_AI_CONTENT) # Use the appropriate style
+            # Value (or skip for editable key)
+            if arg_name != edit_key:
+                val_str = escape(str(arg_val))
+                max_len = 50
+                display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
+                current_part.append((ptk_style_arg_value, display_val))
 
-    # --- Get the plain text version of the prefix ---
-    prefix_plain = prefix_text_obj.plain # Use .plain to get string representation
+            arg_fragments.append(current_part)
 
-    # --- Construct the FULL message for prompt_toolkit ---
-    # Example: "AI: Using tool 'terminal' with cmd: (edit or confirm) > "
-    # Ensure there's a space between the prefix and the suffix
-    full_prompt_message = f"{prefix_plain.rstrip()} {prompt_suffix}" # rstrip to remove potential trailing space before adding one
+        # Join the argument fragments with commas
+        for i, part_list in enumerate(arg_fragments):
+            prompt_fragments.extend(part_list)
+            is_last_arg = (i == len(arg_fragments) - 1)
+            arg_name_of_part = list(proposed_args.keys())[i]
 
-    # --- Prompt user using prompt_toolkit with the full message ---
+            # Add comma and space if not last and not the editable key
+            if not is_last_arg and arg_name_of_part != edit_key:
+                add_fragment(ptk_style_ai_content, ", ")
+            # Add space after the last non-editable arg or the editable key name's colon
+            elif is_last_arg or arg_name_of_part == edit_key:
+                 add_fragment(ptk_style_ai_content, " ") # Add space before prompt suffix
+
+    # Add the prompt suffix with its own style
+    add_fragment(ptk_style_suffix, prompt_suffix)
+
+    # Create FormattedText object
+    formatted_prompt_message = FormattedText(prompt_fragments)
+    # --- End FormattedText Build ---
+
+    # --- Prompt user using prompt_toolkit with FormattedText ---
     try:
-        # Pass the combined message string to prompt_toolkit
         user_input = prompt_toolkit_prompt(
-            message=full_prompt_message, # Use the constructed message
-            default=str(value_to_edit), # Ensure default is a string
-            # Determine multiline based on key - adjust as needed
-            multiline=(edit_key == 'query' or edit_key == 'user_response' or edit_key == 'instruction')
-        ).strip() # Strip whitespace from user input
+            message=formatted_prompt_message, # Pass the list of fragments
+            default=str(value_to_edit),
+            # REMOVED: style=PROMPT_TOOLKIT_STYLES, # Apply the custom styles
+            multiline=(edit_key == 'query' or edit_key == 'user_response' or edit_key == 'instruction') # Removed 'cmd' from multiline keys
+        ).strip()
 
         if not user_input:
-             print("\nInput cancelled (empty).", file=sys.stderr)
+             # Use console.print for consistency, writing to stderr
+             console.print("\nInput cancelled (empty).", style=STYLE_WARNING_CONTENT, stderr=True) # Use Rich print
              return None
 
         return user_input
 
     except (EOFError, KeyboardInterrupt):
-         print("\nInput cancelled.", file=sys.stderr)
+         # Use console.print for consistency, writing to stderr
+         console.print("\nInput cancelled.", style=STYLE_WARNING_CONTENT, stderr=True) # Use Rich print
          return None
     except Exception as e:
-         # Print error using Rich console for consistency
+         # Print error using the defined function
          print_error(f"Error during input prompt: {e}")
+         # Optionally log the full traceback if needed
+         # logger.error("Exception during prompt:", exc_info=True)
          return None
 
 def print_tool_execution_info(tool_name: str, final_args: Dict[str, Any]):
@@ -188,7 +222,7 @@ def print_tool_execution_info(tool_name: str, final_args: Dict[str, Any]):
     # Check if stderr is a TTY before writing control codes
     if sys.stderr.isatty():
         sys.stderr.write('\x1b[1A\x1b[K')
-        sys.stderr.flush()
+        sys.stderr.flush() # <<< ADDED FLUSH
 
     # Build the final Text object (logic remains the same)
     text = Text.assemble(
@@ -205,7 +239,8 @@ def print_tool_execution_info(tool_name: str, final_args: Dict[str, Any]):
             arg_text.append(escape(str(arg_name)), style=STYLE_ARG_NAME)
             arg_text.append(": ", style=STYLE_ARG_NAME)
             val_str = escape(str(arg_val))
-            max_len = 100
+            # Increased max_len for better visibility in confirmation line
+            max_len = 150 # Increased from 100
             display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
             arg_text.append(display_val, style=STYLE_ARG_VALUE)
             args_parts.append(arg_text)
@@ -215,7 +250,7 @@ def print_tool_execution_info(tool_name: str, final_args: Dict[str, Any]):
                   text.append(", ", style=STYLE_AI_CONTENT)
 
     # Print the final confirmation line
-    console.print(text)
+    console.print(text) # Print to stderr by default
 
 # --- ADD print_tool_output ---
 def print_tool_output(output: str):
@@ -240,7 +275,7 @@ def update_ai_response(content: str):
     if sys.stderr.isatty():
         # Move cursor up one line and clear the entire line
         sys.stderr.write('\x1b[1A\x1b[K')
-        sys.stderr.flush() # Ensure the control codes are processed
+        sys.stderr.flush() # Ensure the control codes are processed # <<< ADDED FLUSH
 
     # 3. Build and print the final AI response text
     text = Text.assemble(
@@ -271,7 +306,7 @@ def print_system(message: str):
     _stop_live()
     console.print(Text.assemble(("SYSTEM: ", STYLE_SYSTEM_LABEL), (escape(message), STYLE_SYSTEM_CONTENT)))
 
-def print_message_block(title: str, content: str, style: Optional[Style] = None): # type: ignore
+def print_message_block(title: str, content: str, style: Optional[RichStyle] = None): # type: ignore
      """Prints a block of text, often used for history or list output."""
      _stop_live()
      from rich.panel import Panel # Import locally

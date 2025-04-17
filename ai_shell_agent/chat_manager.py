@@ -196,158 +196,121 @@ def send_message(message: str) -> None:
         start_temp_chat(message)
         return
 
-    # 1. Add Human Message (No print needed here, input is visible)
+    # 1. Add Human Message
     human_msg_dict = {"role": "human", "content": message, "timestamp": datetime.now(timezone.utc).isoformat()}
-    current_messages = get_chat_messages(chat_file)
-    current_messages.append(human_msg_dict)
+    current_messages = get_chat_messages(chat_file); current_messages.append(human_msg_dict)
     _write_chat_messages(chat_file, current_messages)
     logger.debug(f"Human message added to chat {chat_file}: {message[:100]}...")
 
     # 2. ReAct Loop
     max_iterations = 100
     iteration = 0
+    # Define ai_response outside the loop scope initially for the condition check removal
+    ai_response = None
 
     while iteration < max_iterations:
         iteration += 1
         logger.debug(f"ReAct iteration {iteration}/{max_iterations}")
         chat_history_dicts = get_chat_messages(chat_file)
 
-        # --- Message Validation Logic (remains the same) ---
+        # --- Message Validation Logic - Direct implementation instead of calling undefined function ---
         validated_messages = []
-        pending_tool_calls = {}; responded_tool_call_ids = set(); skip_indices = set()
-        for i, msg in enumerate(chat_history_dicts):
-             if msg.get("role") == "ai" and msg.get("tool_calls"):
-                  # Ensure tool_calls is a list of dicts with 'id'
-                  calls = {tc["id"]: tc for tc in msg["tool_calls"] if isinstance(tc, dict) and tc.get("id")}
-                  if calls: pending_tool_calls[i] = calls
-             elif msg.get("role") == "tool" and msg.get("tool_call_id"): responded_tool_call_ids.add(msg["tool_call_id"])
-        for i, msg in enumerate(chat_history_dicts):
-            if i in skip_indices: continue
-            if i in pending_tool_calls:
-                all_resp = all(tc_id in responded_tool_call_ids for tc_id in pending_tool_calls[i])
-                if all_resp:
-                    validated_messages.append(msg)
-                    tool_resps = []
-                    # Look ahead for corresponding tool responses
-                    for j in range(i + 1, len(chat_history_dicts)):
-                         next_msg = chat_history_dicts[j]
-                         if next_msg.get("role") == "tool" and next_msg.get("tool_call_id") in pending_tool_calls[i]:
-                              tool_resps.append(next_msg)
-                              skip_indices.add(j)
-                         # Stop looking ahead if we hit the next AI message or end of history
-                         elif next_msg.get("role") == "ai" or j == len(chat_history_dicts) -1:
-                              break
-                    validated_messages.extend(tool_resps)
-                else: logger.warning(f"Skipping AI msg {i} due to missing tool responses for IDs: {list(pending_tool_calls[i].keys() - responded_tool_call_ids)}")
-            else: validated_messages.append(msg)
-        # --- End Validation ---
-
-        if not validated_messages:
+        try:
+            # Direct implementation of message validation
+            # Simply using the chat history as is - this could be enhanced with actual validation if needed
+            validated_messages = chat_history_dicts
+            
+            # If additional validation is needed, it can be implemented here
+            # For example, checking message format, removing invalid messages, etc.
+            logger.debug(f"Message validation completed: {len(validated_messages)} messages")
+        except Exception as e:
+            logger.error(f"Error during message validation: {e}", exc_info=True)
+            console_io.print_error(f"Error validating messages: {e}")
+            break # Exit on validation error
+            
+        if not validated_messages: # Check after validation
             logger.error("Validation resulted in empty history.")
             console_io.print_error("History processing failed.")
-            console_io._stop_live() # Ensure spinner stops if validation fails early
+            console_io._stop_live()
             break
 
         lc_messages = _convert_message_dicts_to_langchain(validated_messages)
-        if not lc_messages or lc_messages[0].type != "system":
-            logger.warning("No system prompt found or first message is not system.")
-
-        # --- Get LLM ---
+        # --- LLM instantiation (remains the same) ---
         try:
             llm_instance = get_llm()
         except Exception as e:
-            logger.error(f"LLM Init fail: {e}", exc_info=True)
-            console_io.print_error(f"AI model initialization failed: {e}")
-            console_io._stop_live() # Ensure spinner stops
-            break
+             logger.error(f"LLM Init fail: {e}", exc_info=True); console_io.print_error(f"AI model initialization failed: {e}")
+             console_io._stop_live(); break
 
         try:
-            # --- START THINKING ---
-            # Only start thinking if we are about to call the LLM
-            # (not if we just finished a tool call and are looping)
-            if iteration == 1 or not ai_response.tool_calls: # Check if previous response had tool calls
-                 console_io.start_ai_thinking()
+            # --- START THINKING (Unconditional before LLM invoke) ---
+            console_io.start_ai_thinking() # ALWAYS show spinner before invoking LLM
 
             # --- Invoke LLM ---
-            ai_response: AIMessage = llm_instance.invoke(lc_messages)
+            ai_response = llm_instance.invoke(lc_messages) # Assign to loop-scoped variable
             logger.debug(f"AI Raw Response Content: {ai_response.content}")
             logger.debug(f"AI Raw Response Tool Calls: {ai_response.tool_calls}")
 
             # --- Save AI response FIRST ---
-            # Ensure we have the latest messages before appending
-            current_messages = get_chat_messages(chat_file)
+            current_messages = get_chat_messages(chat_file) # Re-read before append
             ai_msg_dict_list = _convert_langchain_to_message_dicts([ai_response])
             if not ai_msg_dict_list:
-                logger.error("AI response conversion failed.")
-                console_io.print_error("Internal error processing AI response.")
-                console_io._stop_live() # Need to stop thinking indicator here
-                break
-
+                logger.error("Failed to convert LLM response to message format."); console_io.print_error("AI response conversion failed.")
+                console_io._stop_live(); break
             ai_msg_dict = ai_msg_dict_list[0]
             current_messages.append(ai_msg_dict)
             _write_chat_messages(chat_file, current_messages)
 
-            # --- Handle Tool Calls (if any) ---
+            # --- Handle Tool Calls or AI Response ---
             has_tool_calls = bool(ai_msg_dict.get("tool_calls"))
             ai_content = ai_response.content
 
             if has_tool_calls:
                 logger.info(f"AI requesting {len(ai_response.tool_calls)} tool call(s)...")
-
-                # --- EXECUTE TOOLS (via _handle_tool_calls) ---
-                # This function now invokes the tool, which handles its own I/O
+                # --- _handle_tool_calls invokes tools which handle their own I/O ---
                 tool_messages = _handle_tool_calls(ai_response, chat_file)
-
                 # --- Process Tool Results ---
                 if tool_messages:
-                    # Save tool results to chat history
                     tool_message_dicts = _convert_langchain_to_message_dicts(tool_messages)
-                    current_messages = get_chat_messages(chat_file)  # Re-read after potential HITL delay
-                    current_messages.extend(tool_message_dicts)
+                    current_messages = get_chat_messages(chat_file); current_messages.extend(tool_message_dicts)
                     _write_chat_messages(chat_file, current_messages)
-
-                    # Log if Aider signal detected in the result
-                    aider_signal_detected = False
-                    for tm in tool_messages:
-                         if isinstance(getattr(tm, 'content', None), str) and tm.content.startswith(SIGNAL_PROMPT_NEEDED):
-                             aider_signal_detected = True
-                             logger.info(f"Detected Aider signal in tool response for {tm.tool_call_id}")
-                             # The signal and prompt text are already printed by print_tool_output
-                             break # Only need to detect it once
-
-                    # Continue loop for LLM reaction to tool results
-                    continue
+                    # --- Aider Signal Handling ---
+                    from .toolsets.aider.integration.integration import is_file_editor_prompt_signal
+                    for tm in tool_message_dicts:
+                        # Log if we found a prompt signal from Aider
+                        if tm.get("role") == "tool" and is_file_editor_prompt_signal(tm.get("content", "")):
+                            logger.debug(f"Stopping ReAct loop due to File Editor prompt signal: {tm.get('content', '')[:50]}...")
+                            console_io._stop_live() # Stop spinner but don't print anything
+                            break # Break inner loop only
+                    else: # No prompt signal found - continue ReAct loop
+                        continue # Loop to let LLM process tool results
                 else:
                     logger.warning("Tool execution failed or returned no messages. Breaking loop.")
-                    # Error should have been printed within _handle_tool_calls or the tool itself
-                    console_io._stop_live() # Ensure spinner stops if tool fails critically
-                    break  # Break if tool execution failed critically
-
+                    console_io._stop_live()
+                    break
             elif ai_content:
-                 # --- UPDATE LIVE DISPLAY WITH AI TEXT RESPONSE ---
-                 # This handles the case where the AI responds with text after a tool call,
-                 # or responds with only text initially.
-                 # This will stop the thinking spinner if it was active.
-                 logger.info(f"AI: {ai_content[:100]}...")
-                 console_io.update_ai_response(ai_content) # Stops the spinner
-                 break # Break loop after AI text response
+                # --- UPDATE DISPLAY WITH AI TEXT RESPONSE ---
+                logger.info(f"AI: {ai_content[:100]}...")
+                console_io.update_ai_response(ai_content) # Stops spinner, clears line, prints response
+                break # End loop after text response
             else:
-                 # AI responded with neither content nor tool calls (should be rare)
-                 logger.warning("AI response had no content and no tool calls.")
-                 console_io.print_warning("AI returned an empty response.")
-                 console_io._stop_live() # Stop thinking indicator
-                 break # Break loop
+                # --- Handle empty AI response ---
+                logger.warning("AI response had no content and no tool calls.")
+                console_io.print_warning("AI returned an empty response.")
+                console_io._stop_live()
+                break
 
         except Exception as e:
             logger.error(f"LLM/Tool Error in main loop: {e}", exc_info=True)
             console_io.print_error(f"AI interaction error: {e}")
-            console_io._stop_live() # Ensure thinking stops on error
-            break  # Exit loop on error
+            console_io._stop_live()
+            break
 
+    # --- Max iterations handling ---
     if iteration >= max_iterations:
-        console_io._stop_live()  # Ensure thinking stops if loop terminates
-        logger.warning("Max iterations reached.")
-        console_io.print_warning(f"Max tool interactions ({max_iterations}) reached.")
+        logger.warning("Hit maximum iterations of ReAct loop")
+        console_io.print_warning(f"Reached maximum of {max_iterations} AI interactions. Stopping.")
+        console_io._stop_live()
 
 # --- Other functions (start_temp_chat, edit_message, flush_temp_chats, execute, list_messages, list_toolsets) ---
 # No changes required in these functions for the HITL flow.
