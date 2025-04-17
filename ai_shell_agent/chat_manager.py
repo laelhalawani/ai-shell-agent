@@ -37,22 +37,19 @@ from .chat_state_manager import (
     get_chat_messages,
     get_chat_map,
     create_or_load_chat,
-    _write_chat_messages,
-    _write_json,
-    _read_json,
-    _get_chat_path,
-    update_chat_map,
-    CHAT_MAP_FILE,
+    _write_chat_messages,       # Used directly for saving history
+    # _get_chat_dir_path,       # Not needed directly, used by delete_chat_state
+    # _write_chat_map,          # Not needed directly, used by delete_chat_state/rename_chat_state
     get_current_chat_title,
     get_enabled_toolsets,
     get_active_toolsets,
-    rename_chat_state,
-    delete_chat_state
+    rename_chat as rename_chat_state, # Import 'rename_chat' and alias it
+    delete_chat as delete_chat_state  # Import 'delete_chat' and alias it
 )
 
 # --- Import tool integrations/registry ---
 from .toolsets.toolsets import get_registered_toolsets, get_toolset_names
-from .tool_registry import get_all_tools, get_all_tools_dict, get_tool_by_name
+from .tool_registry import get_all_tools, get_all_tools_dict # Removed get_tool_by_name
 
 
 # Get console manager instance
@@ -371,36 +368,75 @@ def send_message(message: str) -> None:
 
             result_item = tool_call_results[0]  # Process the single result
 
-            # --- Create and save ToolMessage ---
+            # --- Determine final tool content ---
             tool_content = ""
-            if isinstance(result_item, str):  # Includes ToolResult and ErrorResult strings
+            prompt_needed_again = False # Flag if prompt is needed again
+            if isinstance(result_item, str): # Includes ToolResult and ErrorResult strings
                 tool_content = result_item
+                # --- Display tool output ON THE NEXT LINE --- # (Display call remains)
                 console.display_tool_output(tool_content)
             elif isinstance(result_item, PromptNeededError):
-                # Should not happen ideally after providing input, but handle defensively
+                # Handle case where tool immediately asks for input again
                 logger.warning("Tool requested input again immediately after receiving input.")
-                tool_content = f"{SIGNAL_PROMPT_NEEDED} Tool requires further input unexpectedly."
-                pending_prompt = (tool_call_id, result_item)  # Set pending for next iteration
+                tool_content = f"{SIGNAL_PROMPT_NEEDED} Tool '{result_item.tool_name}' requires further input unexpectedly."
+                pending_prompt = (tool_call_id, result_item) # Set pending for next iteration
+                prompt_needed_again = True
             else:
                 logger.error(f"Unexpected result type after confirmed input: {type(result_item)}")
                 tool_content = "Error: Unexpected tool result type."
+                # Display error message directly
                 console.display_message("ERROR: ", tool_content, console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
 
-            tool_response = ToolMessage(content=tool_content, tool_call_id=tool_call_id)
-            tool_message_dicts = _convert_langchain_to_message_dicts([tool_response])
+            # --- Find and Update Placeholder ToolMessage ---
+            logger.debug(f"Attempting to find and update placeholder ToolMessage for ID: {tool_call_id}")
             current_messages = get_chat_messages(chat_file)
-            current_messages.extend(tool_message_dicts)
-            _write_chat_messages(chat_file, current_messages)
+            message_updated = False
+            placeholder_index = -1
 
-            if pending_prompt:
-                # If prompt needed again, loop will handle it
+            # Search backwards for efficiency
+            for i in range(len(current_messages) - 1, -1, -1):
+                msg = current_messages[i]
+                if (msg.get("role") == "tool" and
+                    msg.get("tool_call_id") == tool_call_id and
+                    isinstance(msg.get("content"), str) and
+                    msg.get("content", "").startswith(SIGNAL_PROMPT_NEEDED)):
+                    placeholder_index = i
+                    break
+
+            if placeholder_index != -1:
+                logger.debug(f"Found placeholder ToolMessage at index {placeholder_index}. Updating content.")
+                current_messages[placeholder_index]["content"] = tool_content
+                current_messages[placeholder_index]["timestamp"] = datetime.now(timezone.utc).isoformat()
+                # Optionally add metadata about the update if needed
+                # if "metadata" not in current_messages[placeholder_index]:
+                #     current_messages[placeholder_index]["metadata"] = {}
+                # current_messages[placeholder_index]["metadata"]["updated_after_hitl"] = True
+                message_updated = True
+            else:
+                logger.error(f"Could not find placeholder ToolMessage for ID {tool_call_id} to update!")
+                # Decide how to handle this - maybe append anyway as a fallback?
+                # For now, we'll just log the error and proceed. The history might be inconsistent.
+                # Consider adding a new message if the placeholder wasn't found, although it shouldn't happen.
+
+            # Save the potentially modified history
+            if message_updated:
+                _write_chat_messages(chat_file, current_messages)
+                logger.debug("Chat history updated with tool result after HITL.")
+            else:
+                logger.warning("Chat history NOT updated as placeholder message wasn't found.")
+            # --- End Find and Update ---
+
+            # --- Decide next step ---
+            if prompt_needed_again:
+                # If prompt needed again, loop will handle it based on pending_prompt being set
                 continue
-            elif "Error" in tool_content:  # Check if it was an error result string
+            elif "Error:" in tool_content: # Check if it was an error result string
                 logger.warning("Tool execution resulted in an error after input. Stopping loop.")
-                break
+                break # Stop loop if error occurred
             else:
                 # Success after input, continue to next LLM call
-                continue
+                logger.debug("HITL step completed successfully. Proceeding to next LLM call.")
+                continue # Explicitly continue loop
 
         # --- Normal LLM Invocation Flow ---
         chat_history_dicts = get_chat_messages(chat_file)
@@ -452,11 +488,15 @@ def send_message(message: str) -> None:
 
                 tool_messages_to_save = []
                 prompt_needed_for_next_iteration = None  # Track if any prompt is needed
+                any_tool_ran_successfully = False # Track if we should show "Used tool"
 
                 # Process results from potentially multiple tool calls
                 for i, result_item in enumerate(tool_call_results):
-                    # Get corresponding tool_call_id (assuming order is preserved)
-                    tool_call_id = ai_response.tool_calls[i].get("id", f"unknown_call_{i}")
+                    # Get corresponding tool_call and id
+                    tool_call = ai_response.tool_calls[i] # Get corresponding call
+                    tool_call_id = tool_call.get("id", f"unknown_call_{i}")
+                    tool_name = tool_call.get("name") # Get tool name
+                    tool_args = tool_call.get("args", {}) # Get args
                     tool_content = ""
 
                     if isinstance(result_item, PromptNeededError):
@@ -467,11 +507,15 @@ def send_message(message: str) -> None:
 
                     elif isinstance(result_item, str):  # ToolResult or ErrorResult
                         tool_content = result_item
-                        # Display output/error via console manager *immediately* after tool runs
-                        if "Error:" in tool_content:
-                            console.display_message("ERROR:", tool_content, console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-                        else:
+                        if "Error:" not in tool_content:
+                            any_tool_ran_successfully = True # Mark success
+                            # Display "Used tool..." confirmation first
+                            console.display_tool_confirmation(tool_name, tool_args)
+                            # Display tool output ON THE NEXT LINE
                             console.display_tool_output(tool_content)
+                        else:
+                            # Display error message directly
+                            console.display_message("ERROR:", tool_content, console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
                     else:
                         logger.error(f"Unexpected result type from tool handling: {type(result_item)}")
                         tool_content = "Error: Unexpected tool result type."
@@ -492,15 +536,12 @@ def send_message(message: str) -> None:
                     logger.debug("Prompt needed, setting pending_prompt for next iteration.")
                     pending_prompt = prompt_needed_for_next_iteration
                     # Loop continues implicitly
-
-                else:  # No prompt needed, continue ReAct or break if errors
-                    # Check if any result was an error string
-                    if any("Error:" in m.content for m in tool_messages_to_save):
-                        logger.warning("One or more tools failed. Stopping loop.")
-                        break  # Stop loop if any tool errored out
-                    else:
-                        logger.debug("Tool calls handled successfully. Continuing ReAct loop.")
-                        # Loop continues implicitly
+                elif any_tool_ran_successfully or tool_messages_to_save: # If any tool ran or message saved
+                    # Now start thinking for the next step ON A NEW LINE
+                    console.start_thinking()
+                else: # No tools ran, no prompts, maybe all errors?
+                    logger.warning("Tool handling finished with no success or prompts.")
+                    break # Stop the loop
 
             elif ai_content:
                 # --- DISPLAY FINAL AI TEXT RESPONSE ---
@@ -517,17 +558,12 @@ def send_message(message: str) -> None:
         except Exception as e:
             logger.error(f"LLM/Tool Error in main loop: {e}", exc_info=True)
             console.display_message("ERROR:", f"AI interaction error: {e}", console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-            # Stop spinner cleanly even on unexpected errors
-            console._stop_live_display()
             break  # End loop on error
 
     # --- Max iterations handling ---
     if iteration >= max_iterations:
         logger.warning("Hit maximum iterations of ReAct loop")
         console.display_message("WARNING:", f"Reached maximum of {max_iterations} AI interactions. Stopping.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-
-    # Final cleanup of spinner just in case
-    console._stop_live_display()
 
 # --- Temporary Chat Management ---
 def start_temp_chat(message: str) -> None:
@@ -546,40 +582,39 @@ def start_temp_chat(message: str) -> None:
 
 def flush_temp_chats() -> None:
     """Removes all temporary chat sessions."""
+    # Import state manager functions needed specifically here
+    from .chat_state_manager import get_chat_map, get_current_chat, delete_chat_state
+
     chat_map = get_chat_map()
     current_chat_id = get_current_chat()
-    
-    temp_chat_ids = []
+
+    temp_chats_to_remove = [] # Store titles to delete
     for chat_id, title in chat_map.items():
         if title.startswith("Temp Chat "):
-            temp_chat_ids.append(chat_id)
-    
-    if not temp_chat_ids:
-        console.display_message("INFO: ", "No temporary chats found.", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            if chat_id == current_chat_id:
+                # Don't delete current chat
+                console.display_message("INFO: ", f"Skipping current temp chat: {title}", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            else:
+                temp_chats_to_remove.append(title) # Add title to list
+
+    if not temp_chats_to_remove:
+        console.display_message("INFO: ", "No temporary chats found to remove.", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
-    
-    for chat_id in temp_chat_ids:
-        if chat_id == current_chat_id:
-            # Don't delete current chat
-            console.display_message("INFO: ", f"Skipping current temp chat: {chat_map[chat_id]}", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-            continue
-            
-        try:
-            # Delete chat directory
-            chat_path = _get_chat_path(chat_id)
-            import shutil
-            if os.path.exists(chat_path):
-                shutil.rmtree(chat_path)
-                
-            # Remove from chat map
-            del chat_map[chat_id]
-            logger.debug(f"Deleted temporary chat: {chat_id}")
-        except Exception as e:
-            logger.error(f"Error deleting temporary chat {chat_id}: {e}", exc_info=True)
-    
-    # Update chat map
-    update_chat_map(chat_map)
-    console.display_message("INFO: ", f"Removed {len(temp_chat_ids)} temporary chat(s).", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+
+    removed_count = 0
+    for title in temp_chats_to_remove:
+         # Use the public delete function which handles map update and directory removal
+         if delete_chat_state(title): # delete_chat_state returns bool
+             removed_count += 1
+         else:
+             # Error message printed within delete_chat_state/delete_chat
+             logger.warning(f"Failed to delete temporary chat '{title}' during flush.")
+
+    # delete_chat_state handles clearing the session if the current one is deleted,
+    # but we explicitly skip deleting the current one above.
+
+    # Map is updated internally by delete_chat_state calls
+    console.display_message("INFO: ", f"Removed {removed_count} temporary chat(s).", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
 
 # --- Message Editing ---
 def edit_message(idx: Optional[int], new_message: str) -> None:

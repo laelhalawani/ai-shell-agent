@@ -56,10 +56,28 @@ from .prompts.prompts import SYSTEM_PROMPT
 
 # --- API Key/Setup Functions ---
 def first_time_setup():
-    if check_if_first_run():
-        console.display_message("INFO:", "Welcome to AI Shell Agent! Performing first-time setup.", 
-                              console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+    # Add log right inside the function start
+    logger.debug("Entering first_time_setup function.")
+    is_first = check_if_first_run()
+    logger.debug(f"check_if_first_run() returned: {is_first}")
+    if is_first:
+        # Add log immediately after the 'if'
+        logger.debug("First run condition met. Preparing for setup prompts.")
+        # Add log right before the console call
+        logger.debug("Attempting to display 'Welcome...' message via console manager.")
+        try:
+            console.display_message("INFO:", "Welcome to AI Shell Agent! Performing first-time setup.", 
+                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            logger.debug("Successfully displayed 'Welcome...' message.") # Log success after call
+        except Exception as e:
+            logger.error(f"Error calling console.display_message for Welcome: {e}", exc_info=True)
+            # Decide how to handle this - maybe exit? For now, just log.
+            # sys.exit(1) # Or perhaps raise
+
+        logger.debug("Attempting to call prompt_for_model_selection.")
         selected_model = prompt_for_model_selection() # This now uses console_manager internally
+        logger.debug(f"prompt_for_model_selection returned: {selected_model}")
+
         if selected_model:
             set_model(selected_model) # set_model logs internally
         else:
@@ -68,15 +86,25 @@ def first_time_setup():
             console.display_message("ERROR:", "No model selected during first run. Exiting.", 
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             sys.exit(1)
+
+        logger.debug("Attempting to call ensure_api_key.")
         if not ensure_api_key(): # ensure_api_key uses console_manager internally
             logger.critical("API Key not provided. Exiting.")
             console.display_message("ERROR:", "API Key not provided. Exiting.", 
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             sys.exit(1)
+        logger.debug("ensure_api_key successful.")
+
         # Add prompt for initial toolsets
+        logger.debug("Attempting to call prompt_for_initial_toolsets.")
         prompt_for_initial_toolsets() # This uses console_manager internally
+        logger.debug("prompt_for_initial_toolsets finished.")
+
         console.display_message("INFO:", "First-time setup complete.", 
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        logger.debug("Displayed 'First-time setup complete.'")
+    else:
+        logger.debug("Not the first run, skipping setup.")
 
 def ensure_api_key() -> bool:
     # Only ensures key for the main agent model
