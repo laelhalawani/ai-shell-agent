@@ -344,9 +344,9 @@ class UserResponseSchema(BaseModel):
 
 # --- Tool Classes (MODIFIED) ---
 
-class OpenFileEditor(BaseTool):
-    name: str = "open_file_editor"
-    description: str = "Use this to start the file editor, whenever asked to edit contents of any text file. The editor works for any text file including advanced code editing. You operate it using natural language commands. Useful only for modifying files."
+class StartTextEditorTool(BaseTool):
+    name: str = "start_editor"
+    description: str = "Use this to start file editing session with an AI editing copilot, whenever asked to edit contents of any text format file. This only opens the session and enables further usage after."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
     # Removed **kwargs as no args expected
@@ -428,8 +428,8 @@ class OpenFileEditor(BaseTool):
 
 
 class OpenFileTool(BaseTool):
-    name: str = "open_file"
-    description: str = "Opens a file for editing in the File Editor, files can be added by absolute or relative paths. The file must exist in the filesystem."
+    name: str = "submit_file_to_editor"
+    description: str = "Sends file for edits or context to the File Editor, files to be added can be specified by absolute or relative paths. The file must exist in the filesystem."
     args_schema: Type[BaseModel] = FilePathSchema # Specify schema
     
     def _run(self, file_path: str) -> str:
@@ -496,8 +496,8 @@ class OpenFileTool(BaseTool):
 
 
 class CloseFileTool(BaseTool):
-    name: str = "close_file"
-    description: str = "Closes a file from the File Editor. Files can be closed by relative or absolute paths, for files that were previously opened."
+    name: str = "withdraw_file_from_editor"
+    description: str = "Remove a file from the File Editor context. Files to be withdrawn can specified by relative or absolute paths, for files that were previously opened."
     args_schema: Type[BaseModel] = FilePathSchema # Specify schema
     
     def _run(self, file_path: str) -> str:
@@ -541,7 +541,7 @@ class CloseFileTool(BaseTool):
 
 
 class ListOpenFilesTool(BaseTool):
-    name: str = "list_files"
+    name: str = "list_files_in_editor"
     description: str = "Lists all files currently in the File Editor's context. Can be used to preview what files are open for editing."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
@@ -588,8 +588,8 @@ class ListOpenFilesTool(BaseTool):
 
 
 class RequestEditsTool(BaseTool):
-    name: str = "request_edit"
-    description: str = "Using natural language, request an edit to the files opened in the File Editor. The editor is AI powered, the editor AI will respond with a plan and then execute it. Use this tool after adding files."
+    name: str = "request_edits"
+    description: str = "Explain to the editor what needs to be done. The editor will complete the request based on own knowledge and submitted files."
     args_schema: Type[BaseModel] = InstructionSchema # Specify schema
     
     def _run(self, instruction: str) -> str:
@@ -715,7 +715,7 @@ class RequestEditsTool(BaseTool):
 
 
 class ViewDiffTool(BaseTool):
-    name: str = "view_changes"
+    name: str = "view_edits_diff"
     description: str = "Shows the git diff of changes made by the 'request_edit' tool in the current session. This is useful to see what changes have been made to the files. Works only if there was a git repository initialized in the project root."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
@@ -826,8 +826,8 @@ class UndoLastEditTool(BaseTool):
 
 
 class CloseFileEditorTool(BaseTool):
-    name: str = "close_file_editor"
-    description: str = "Closes the File Editor and all the files. Changes are saved automatically. Close it as soon as you verified with the user they don't want to edit the files anymore, once verified close the File Editor right away."
+    name: str = "lose_file_editor"
+    description: str = "Closes the file editing session and withdraws all the files. Changes are saved automatically. Close it as soon as you verified with the user they don't want to edit the files anymore, once verified close the File Editor right away."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
     def _run(self) -> str:
@@ -873,8 +873,7 @@ class CloseFileEditorTool(BaseTool):
 class SubmitFileEditorInputTool(BaseTool):
     name: str = "submit_editor_input" # Keep the original intended name for LLM use
     description: str = (
-         "Use to provide input when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
-         "The proposed input will be shown to the user for confirmation or editing before being submitted."
+         "Use to provide input only when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
     )
     args_schema: Type[BaseModel] = UserResponseSchema # Specify schema
     is_hitl: bool = True # Mark this tool as requiring human-in-the-loop confirmation
@@ -1106,7 +1105,7 @@ submit_code_editor_input_tool = SubmitFileEditorInputTool_HITL()
 # submit_code_editor_input_direct_tool = SubmitFileEditorInputTool()
 
 # --- Create tool instances ---
-start_code_editor_tool = OpenFileEditor()
+start_code_editor_tool = StartTextEditorTool()
 add_code_file_tool = OpenFileTool()
 drop_code_file_tool = CloseFileTool()
 list_code_files_tool = ListOpenFilesTool()

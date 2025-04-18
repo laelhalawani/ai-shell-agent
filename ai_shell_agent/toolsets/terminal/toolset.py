@@ -94,7 +94,7 @@ class StartTerminalToolArgs(BaseModel):
 
 class StartTerminalTool(BaseTool):
     name: str = "start_terminal"
-    description: str = "Activates the Terminal toolset, enabling execution of shell commands and Python code."
+    description: str = "start system terminal whenever  command execution. This only opens the session and enables further usage after."
     args_schema: Type[BaseModel] = StartTerminalToolArgs # Use empty schema
 
     def _run(self, *args, **kwargs) -> str:
@@ -138,9 +138,7 @@ class TerminalTool_HITL(BaseTool):
     """
     name: str = "terminal"
     description: str = (
-        "Executes a command in the system's terminal (e.g., bash, cmd, powershell). "
-        "User will be prompted to confirm or edit the command before execution."
-        "Use this for file operations, system checks, installations, etc."
+        "Run a command in the system shell. Do not use for editing files. "
     )
     args_schema: Type[BaseModel] = TerminalToolArgs # Use specific schema
     requires_confirmation: bool = True # Mark this tool as requiring HITL
@@ -238,8 +236,7 @@ class PythonREPLTool_HITL(BaseTool):
     """
     name: str = "python_repl"
     description: str = (
-        "Evaluates Python code snippets in a REPL environment. "
-        "User will be prompted to confirm or edit the code before execution."
+        "Evaluates Python code snippets in a REPL environment, use only when requested to run a script or automation."
     )
     args_schema: Type[BaseModel] = PythonREPLToolArgs # Use specific schema
     python_repl: PythonREPL = Field(default_factory=_get_default_python_repl)
