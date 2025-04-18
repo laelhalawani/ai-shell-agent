@@ -346,7 +346,7 @@ class UserResponseSchema(BaseModel):
 
 class OpenFileEditor(BaseTool):
     name: str = "open_file_editor"
-    description: str = "Use this to start the file editor, whenever asked to edit contents of any text file. The editor works for any text file including advanced code editing. You operate it using natural language commands. Useful only for modifying files."
+    description: str = "Use this to start the file editor application, whenever asked to edit contents of any text file including code and scripts. Once you start the editor additional commands become available."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
     # Removed **kwargs as no args expected
