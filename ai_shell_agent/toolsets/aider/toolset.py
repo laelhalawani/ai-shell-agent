@@ -344,15 +344,9 @@ class UserResponseSchema(BaseModel):
 
 # --- Tool Classes (MODIFIED) ---
 
-<<<<<<< HEAD
-class StartTextEditorTool(BaseTool):
-    name: str = "start_editor"
-    description: str = "Use this to start file editing session with an AI editing copilot, whenever asked to edit contents of any text format file. This only opens the session and enables further usage after."
-=======
 class OpenFileEditor(BaseTool):
     name: str = "open_file_editor"
     description: str = "Use this to start the file editor application, whenever asked to edit contents of any text file including code and scripts. Once you start the editor additional commands become available."
->>>>>>> last_prints
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
     # Removed **kwargs as no args expected
@@ -1111,7 +1105,7 @@ submit_code_editor_input_tool = SubmitFileEditorInputTool_HITL()
 # submit_code_editor_input_direct_tool = SubmitFileEditorInputTool()
 
 # --- Create tool instances ---
-start_code_editor_tool = StartTextEditorTool()
+start_code_editor_tool = OpenFileEditor()
 add_code_file_tool = OpenFileTool()
 drop_code_file_tool = CloseFileTool()
 list_code_files_tool = ListOpenFilesTool()
