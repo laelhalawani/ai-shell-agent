@@ -94,7 +94,7 @@ class StartTerminalToolArgs(BaseModel):
 
 class StartTerminalTool(BaseTool):
     name: str = "start_terminal"
-    description: str = "Use this to start the terminal application, whenever asked to perform terminal or console operations, or when you need more information to gather complete the task. You can use the terminal to explor the system, understand the current directory, find files and check and modify system settings." 
+    description: str = "Use this to start the terminal application, whenever asked to perform terminal or console operations, or when you need more information to gather complete the task. You can use the terminal to explor the system, understand the current directory, find files and check and modify system settings. Before running any commands first start the terminal and await a confirmation." 
     args_schema: Type[BaseModel] = StartTerminalToolArgs # Use empty schema
 
     def _run(self, *args, **kwargs) -> str:
