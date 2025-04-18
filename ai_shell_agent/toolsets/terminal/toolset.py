@@ -161,7 +161,7 @@ class TerminalTool_HITL(BaseTool):
             #                        console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             logger.debug("The AI wants to run a shell command.") # Changed to debug log
             # --- END MODIFIED LINE ---
-            console.display_message("COMMAND:", cmd_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
+            #console.display_message("COMMAND:", cmd_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
             raise PromptNeededError(
                 tool_name=self.name,
                 proposed_args={"cmd": cmd_to_execute},
