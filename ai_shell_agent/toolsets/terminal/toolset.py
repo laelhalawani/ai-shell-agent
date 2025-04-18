@@ -111,14 +111,19 @@ class StartTerminalTool(BaseTool):
         current_toolsets = get_active_toolsets(chat_id)
         if toolset_name in current_toolsets:
             logger.debug(f"'{toolset_name}' toolset is already active.")
-            return f"'{toolset_name}' toolset is already active.\n\n{TERMINAL_TOOLSET_PROMPT}"
+            # If already active, still return the full prompt content for context
+            return TERMINAL_TOOLSET_PROMPT
+            # return f"'{toolset_name}' toolset is already active.\n\n{TERMINAL_TOOLSET_PROMPT}" # Alternative with prefix
 
+        # Activate it
         new_toolsets = list(current_toolsets)
         new_toolsets.append(toolset_name)
         update_active_toolsets(chat_id, new_toolsets)
-
         logger.debug(f"Successfully activated '{toolset_name}' toolset for chat {chat_id}")
+
+        # --- MODIFIED: Return the full prompt content ---
         return TERMINAL_TOOLSET_PROMPT
+        # --- END MODIFIED ---
 
     async def _arun(self, *args, **kwargs) -> str:
         return self._run(*args, **kwargs)
@@ -153,8 +158,11 @@ class TerminalTool_HITL(BaseTool):
         if confirmed_input is None:
             # First call: Raise error to request prompt from chat_manager loop
             logger.debug(f"TerminalTool: Raising PromptNeededError for cmd: '{cmd_to_execute}'")
-            console.display_message("WARNING:", "The AI wants to run a shell command:", 
-                                    console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            # --- MODIFIED LINE ---
+            # console.display_message("WARNING:", "The AI wants to run a shell command:", 
+            #                        console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            logger.debug("The AI wants to run a shell command.") # Changed to debug log
+            # --- END MODIFIED LINE ---
             console.display_message("COMMAND:", cmd_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
             raise PromptNeededError(
                 tool_name=self.name,
@@ -264,8 +272,11 @@ class PythonREPLTool_HITL(BaseTool):
         if confirmed_input is None:
             # First call: Raise error to request prompt
             logger.debug(f"PythonREPLTool: Raising PromptNeededError for query: '{code_to_execute[:50]}...'")
-            console.display_message("WARNING:", "The AI wants to run a Python code snippet:", 
-                                    console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            # --- MODIFIED LINE ---
+            # console.display_message("WARNING:", "The AI wants to run a Python code snippet:", 
+            #                        console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            logger.debug("The AI wants to run a Python code snippet.") # Changed to debug log
+            # --- END MODIFIED LINE ---
             console.display_message("CODE:", code_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
             raise PromptNeededError(
                 tool_name=self.name,
@@ -325,6 +336,7 @@ class TerminalTool_Direct(BaseTool):
     # Add args_schema for consistency, even if used internally
     class DirectArgs(BaseModel):
         command: str = Field(...)
+
     args_schema: Type[BaseModel] = DirectArgs
 
     def _run(self, command: str) -> str:

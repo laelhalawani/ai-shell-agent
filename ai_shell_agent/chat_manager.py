@@ -321,6 +321,12 @@ def send_message(message: str) -> None:
             # Get user input via ConsoleManager
             confirmed_input_str = console.display_tool_prompt(prompt_error)
 
+            # --- LINE CLEARING LOGIC ---
+            if confirmed_input_str is not None:
+                # If input was successful (not cancelled), clear the prompt line
+                console.clear_current_line()
+            # --- END LINE CLEARING LOGIC ---
+
             if confirmed_input_str is None:  # User cancelled
                 logger.warning("User cancelled prompt. Stopping ReAct loop.")
                 # Tool message indicating cancellation
@@ -331,7 +337,7 @@ def send_message(message: str) -> None:
                 _write_chat_messages(chat_file, current_messages)
                 break  # Stop the loop
 
-            # User provided input - display confirmation
+            # User provided input - display confirmation now (AFTER clearing the line)
             final_args = {prompt_error.edit_key: confirmed_input_str}
             console.display_tool_confirmation(prompt_error.tool_name, final_args)
 
@@ -367,14 +373,16 @@ def send_message(message: str) -> None:
                 break
 
             result_item = tool_call_results[0]  # Process the single result
+            # Get tool name for display
+            tool_name = prompt_error.tool_name  # Use the tool name from the original prompt error
 
             # --- Determine final tool content ---
             tool_content = ""
             prompt_needed_again = False # Flag if prompt is needed again
             if isinstance(result_item, str): # Includes ToolResult and ErrorResult strings
                 tool_content = result_item
-                # --- Display tool output ON THE NEXT LINE --- # (Display call remains)
-                console.display_tool_output(tool_content)
+                # --- Display condensed tool output passing the tool_name ---
+                console.display_tool_output(tool_name, tool_content)
             elif isinstance(result_item, PromptNeededError):
                 # Handle case where tool immediately asks for input again
                 logger.warning("Tool requested input again immediately after receiving input.")
@@ -511,8 +519,8 @@ def send_message(message: str) -> None:
                             any_tool_ran_successfully = True # Mark success
                             # Display "Used tool..." confirmation first
                             console.display_tool_confirmation(tool_name, tool_args)
-                            # Display tool output ON THE NEXT LINE
-                            console.display_tool_output(tool_content)
+                            # Display condensed tool output with tool name
+                            console.display_tool_output(tool_name, tool_content)
                         else:
                             # Display error message directly
                             console.display_message("ERROR:", tool_content, console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)

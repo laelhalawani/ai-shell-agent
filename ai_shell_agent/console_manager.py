@@ -4,6 +4,7 @@ Manages all console input and output using Rich and prompt_toolkit,
 ensuring clean state transitions without using rich.Live.
 """
 import sys
+import io  # Added for StringIO capture
 import threading
 from threading import Lock
 from typing import Dict, Optional, Any
@@ -45,6 +46,8 @@ STYLE_THINKING = RichStyle(color="blue")
 STYLE_INPUT_OPTION = RichStyle(underline=True)
 STYLE_COMMAND_LABEL = RichStyle(color="magenta", bold=True) # Added for consistency
 STYLE_COMMAND_CONTENT = RichStyle(color="magenta") # Added for consistency
+# --- ADDED NEW STYLE ---
+STYLE_TOOL_OUTPUT_DIM = RichStyle(dim=True)
 
 # --- ConsoleManager Class (Refactored) ---
 
@@ -54,6 +57,9 @@ class ConsoleManager:
     Handles thinking indicator, messages, and prompts via direct printing
     and ANSI escape codes.
     """
+    # --- Added constant for truncating output ---
+    CONDENSED_OUTPUT_LENGTH = 150
+    # --------------------------------------------
 
     def __init__(self, stderr_output: bool = True):
         """Initialize the ConsoleManager."""
@@ -82,6 +88,7 @@ class ConsoleManager:
         self.STYLE_INPUT_OPTION = STYLE_INPUT_OPTION
         self.STYLE_COMMAND_LABEL = STYLE_COMMAND_LABEL
         self.STYLE_COMMAND_CONTENT = STYLE_COMMAND_CONTENT
+        self.STYLE_TOOL_OUTPUT_DIM = STYLE_TOOL_OUTPUT_DIM
 
 
     # REMOVED: _stop_live_display method
@@ -100,6 +107,22 @@ class ConsoleManager:
                 logger.error(f"Error clearing line: {e}", exc_info=True)
                 print("\nWarning: Could not clear previous line.", file=sys.stderr)
         self._spinner_active = False # Always reset flag after attempt
+        
+    # --- ADDED METHOD ---
+    def clear_current_line(self):
+        """Clears the current line using ANSI escape codes."""
+        # No lock needed here as it will be called by methods that already hold the lock
+        if self.console.is_terminal:
+            try:
+                # \r moves cursor to beginning of line
+                # \x1b[K clears from cursor to end of line
+                self.console.file.write('\r\x1b[K')
+                self.console.file.flush()
+                logger.debug("clear_current_line: Cleared current line using ANSI codes.")
+            except Exception as e:
+                logger.error(f"Error clearing current line: {e}", exc_info=True)
+                print("\nWarning: Could not clear current line.", file=sys.stderr)
+    # --- END ADDED METHOD ---
 
     def start_thinking(self):
         """Displays the 'AI: thinking...' status indicator on the current line."""
@@ -132,13 +155,29 @@ class ConsoleManager:
                 print(f"{prefix}{content}", file=sys.stderr)
                 logger.error(f"ConsoleManager: Error during console.print: {e}", exc_info=True)
 
-    def display_tool_output(self, output: str):
-        """Displays the output received from a tool execution ON A NEW LINE."""
+    def display_tool_output(self, tool_name: str, output: str):
+        """
+        Displays a condensed, dimmed version of the tool output/prompt.
+        The full output should be saved in the message history.
+        """
         with self._lock:
-            # Do not clear the previous line here
-            text = Text.assemble(("TOOL: ", STYLE_INFO_LABEL), (escape(output), STYLE_INFO_CONTENT))
+            self._clear_previous_line() # Clear spinner if it was active
+
+            # Format the output - replace newlines and truncate if needed
+            formatted_output = str(output).replace('\n', ' ').replace('\r', '')
+            if len(formatted_output) > self.CONDENSED_OUTPUT_LENGTH:
+                formatted_output = formatted_output[:self.CONDENSED_OUTPUT_LENGTH] + "..."
+
+            # --- MODIFIED: Apply styles correctly ---
+            # Create the condensed text with dim style for content, normal for label
+            text = Text.assemble(
+                ("TOOL: ", self.STYLE_INFO_LABEL), # Use standard info label style
+                (f"({escape(tool_name)}) ", self.STYLE_TOOL_OUTPUT_DIM), # Dim tool name
+                (escape(formatted_output), self.STYLE_TOOL_OUTPUT_DIM) # Dim content
+            )
+            # --- END MODIFIED ---
             self.console.print(text) # Print on a new line
-            logger.debug(f"ConsoleManager: Displayed tool output: {output[:50]}...")
+            logger.debug(f"ConsoleManager: Displayed condensed tool output for '{tool_name}': {formatted_output[:50]}...")
 
     def display_ai_response(self, content: str):
         """Displays the final AI text response."""
@@ -179,6 +218,7 @@ class ConsoleManager:
     def display_tool_prompt(self, error: PromptNeededError) -> Optional[str]:
         """
         Displays the prompt for a HITL tool and gets user input on the same line.
+        Uses Rich Console capture to preserve formatting before prompt_toolkit.
 
         Args:
             error: The PromptNeededError containing prompt details.
@@ -195,7 +235,6 @@ class ConsoleManager:
             prompt_suffix = error.prompt_suffix
 
             if edit_key not in proposed_args:
-                # Use display_message for consistency
                 self.display_message(
                     "ERROR: ",
                     f"Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.",
@@ -206,15 +245,14 @@ class ConsoleManager:
 
             value_to_edit = proposed_args[edit_key]
 
-            # --- Build and print the prompt prefix using Rich ---
+            # --- Build the Rich Text prefix object ---
             prompt_prefix = Text.assemble(
                 ("AI: ", STYLE_AI_LABEL),
                 ("Using tool '", STYLE_AI_CONTENT),
                 (escape(tool_name), STYLE_TOOL_NAME),
                 ("'", STYLE_AI_CONTENT)
             )
-
-            # Add non-editable args to the prefix
+            # Add non-editable args
             non_editable_args_parts = []
             for arg_name, arg_val in proposed_args.items():
                 if arg_name != edit_key:
@@ -222,7 +260,7 @@ class ConsoleManager:
                     arg_text.append(escape(str(arg_name)), style=STYLE_ARG_NAME)
                     arg_text.append(": ", style=STYLE_ARG_NAME)
                     val_str = escape(str(arg_val))
-                    max_len = 50 # Shorter for prefix
+                    max_len = 50
                     display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
                     arg_text.append(display_val, style=STYLE_ARG_VALUE)
                     non_editable_args_parts.append(arg_text)
@@ -230,26 +268,54 @@ class ConsoleManager:
             if non_editable_args_parts:
                 prompt_prefix.append(" with ", style=STYLE_AI_CONTENT)
                 prompt_prefix.append(Text(", ", style=STYLE_AI_CONTENT).join(non_editable_args_parts))
-                prompt_prefix.append(" ", style=STYLE_AI_CONTENT) # Space before editable part
+                prompt_prefix.append(" ", style=STYLE_AI_CONTENT)
 
-            # Add the editable key name and suffix
+            # Add editable key name and suffix
             prompt_prefix.append(escape(edit_key), style=STYLE_ARG_NAME)
             prompt_prefix.append(" ", style=STYLE_ARG_NAME)
-            prompt_prefix.append(prompt_suffix, style=STYLE_AI_CONTENT) # Suffix like "(edit or confirm) > "
+            prompt_prefix.append(prompt_suffix, style=STYLE_AI_CONTENT)
+            # --- End building Rich Text prefix ---
 
-            # Print the prefix WITHOUT newline
-            self.console.print(prompt_prefix, end="")
-            # --- End Prefix Printing ---
+            # --- MODIFICATION: Capture Rich output and write to stdout ---
+            try:
+                # Create a temporary console that writes to a string buffer
+                string_io = io.StringIO()
+                # Use main console's settings where possible, but force terminal for ANSI
+                capture_console = Console(
+                    file=string_io,
+                    force_terminal=True, # Force codes even if stdout isn't detected as TTY
+                    color_system="auto", # Use detected or default color system
+                    width=self.console.width, # Inherit width
+                    stderr=self.console.stderr # Inherit stderr setting
+                )
+
+                # Print the Rich Text object to the buffer (without newline)
+                capture_console.print(prompt_prefix, end="")
+
+                # Get the captured string (contains ANSI codes)
+                captured_output = string_io.getvalue()
+
+                # Write the captured string to the actual stdout
+                sys.stdout.write(captured_output)
+                sys.stdout.flush()
+                logger.debug("Printed prompt prefix using captured Rich output with ANSI codes.")
+
+            except Exception as e:
+                logger.error(f"Error capturing or writing Rich prompt prefix: {e}", exc_info=True)
+                # Fallback to plain text if capture fails
+                plain_prefix = str(prompt_prefix)
+                sys.stdout.write(plain_prefix)
+                sys.stdout.flush()
+            # --- END MODIFICATION ---
 
             # --- Prompt user using prompt_toolkit on the same line ---
             user_input: Optional[str] = None
             try:
                 logger.debug(f"ConsoleManager: Prompting user for tool '{tool_name}', key '{edit_key}'.")
-                # Use empty message as Rich printed the prefix
+                # Use empty message as the prefix was printed above
                 user_input = prompt_toolkit_prompt(
-                    "",
+                    "", # Empty message
                     default=str(value_to_edit),
-                    # Simplified multiline check
                     multiline=(len(str(value_to_edit)) > 60 or '\n' in str(value_to_edit))
                 )
 
@@ -257,17 +323,18 @@ class ConsoleManager:
                     raise EOFError("Prompt returned None unexpectedly.")
 
             except (EOFError, KeyboardInterrupt):
-                self.console.print("\nInput cancelled.", style=STYLE_WARNING_CONTENT)
+                 # We printed without newline, so add one before the cancel message
+                self.console.print() # Add newline
+                self.console.print("Input cancelled.", style=STYLE_WARNING_CONTENT)
                 logger.warning(f"ConsoleManager: User cancelled input for tool '{tool_name}'.")
                 return None
             except Exception as e:
                 logger.error(f"ConsoleManager: Error during input prompt: {e}", exc_info=True)
-                # Print error on a new line
                 self.console.print(f"\nError during input prompt: {e}", style=STYLE_ERROR_CONTENT)
                 return None
 
             logger.debug(f"ConsoleManager: Received input: '{user_input[:50]}...'")
-            return user_input
+            return user_input # Return the input; chat_manager will clear line and print confirmation
 
     def prompt_for_input(self, prompt_text: str, default: Optional[str] = None, is_password: bool = False) -> str:
         """
@@ -316,7 +383,7 @@ _console_manager_lock = Lock()
 def get_console_manager() -> ConsoleManager:
     """Gets the singleton ConsoleManager instance."""
     global _console_manager_instance
-    if _console_manager_instance is None:
+    if (_console_manager_instance is None):
         with _console_manager_lock:
             if _console_manager_instance is None:
                 _console_manager_instance = ConsoleManager()
