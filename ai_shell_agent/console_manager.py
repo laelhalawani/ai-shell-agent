@@ -337,12 +337,12 @@ class ConsoleManager:
 
     def prompt_for_input(self, prompt_text: str, default: Optional[str] = None, is_password: bool = False) -> str:
         """
-        Prompts the user for input using prompt_toolkit on the same line.
+        Prompts the user for input using prompt_toolkit, handling the prefix correctly.
 
         Args:
-            prompt_text: The prompt text to display
-            default: Optional default value
-            is_password: Whether to hide input as password
+            prompt_text: The prompt text to display (without trailing colon/space).
+            default: Optional default value.
+            is_password: Whether to hide input as password.
 
         Returns:
             The user's input as a string, or raises KeyboardInterrupt on cancel.
@@ -350,29 +350,41 @@ class ConsoleManager:
         with self._lock:
             self._clear_previous_line() # Clear spinner if needed
 
-            # Construct prompt text using Rich Text
-            prompt_message = Text(prompt_text)
+            # --- Build FormattedText for prompt_toolkit ---
+            prompt_parts: List[Tuple[str, str]] = [
+                ('', prompt_text) # Use default style for main prompt text
+            ]
             if default:
-                prompt_message.append(f" [{escape(default)}]", style="dim")
-            prompt_message.append(": ")
+                # Add default value hint with specific style
+                prompt_parts.append(('class:default', f" [{escape(default)}]"))
 
-            # Print the prompt text WITHOUT newline
-            self.console.print(prompt_message, end="")
+            # Add the trailing colon and space
+            prompt_parts.append(('', ": "))
+            # --- END FormattedText construction ---
 
             try:
-                # Prompt toolkit only captures input
+                # Pass FormattedText to prompt_toolkit
                 user_input = prompt_toolkit_prompt(
-                    "", # Empty message, as Rich printed it
+                    FormattedText(prompt_parts), # Pass the constructed prompt parts
                     default=default or "",
                     is_password=is_password,
+                    style=PTK_STYLE # Use the main style object
                 )
+
+                if user_input is None: # Handle case where prompt might return None unexpectedly
+                    raise EOFError("Prompt returned None.")
+
                 return user_input # Return directly
             except (EOFError, KeyboardInterrupt):
+                # Print cancellation message using Rich console on a new line
                 self.console.print("\nInput cancelled.", style=STYLE_WARNING_CONTENT)
+                logger.warning(f"User cancelled input for prompt: '{prompt_text}'")
                 raise KeyboardInterrupt("User cancelled input.")
             except Exception as e:
                 logger.error(f"ConsoleManager: Error during prompt_for_input: {e}", exc_info=True)
+                # Print error using Rich console on a new line
                 self.console.print(f"\nError getting input: {e}", style=STYLE_ERROR_CONTENT)
+                # Reraise as KeyboardInterrupt to signal failure upwards similarly to cancellation
                 raise KeyboardInterrupt(f"Error getting input: {e}")
 
 # --- Singleton Instance (Remains the same) ---
