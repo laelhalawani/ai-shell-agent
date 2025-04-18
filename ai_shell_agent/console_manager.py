@@ -7,7 +7,7 @@ import sys
 import io  # Added for StringIO capture
 import threading
 from threading import Lock
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List, Tuple
 
 # Rich imports
 from rich.console import Console
@@ -22,32 +22,86 @@ from rich.panel import Panel # Keep for potential future use
 # Prompt Toolkit imports
 from prompt_toolkit import prompt as prompt_toolkit_prompt
 from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.styles import Style as PTKStyle
 
 # Local imports
 from . import logger
 from .errors import PromptNeededError
 
-# --- Styles (Remain the same) ---
-STYLE_AI_LABEL = RichStyle(color="blue", bold=True)
-STYLE_AI_CONTENT = RichStyle(color="blue")
-STYLE_USER_LABEL = RichStyle(color="purple", bold=True)
-STYLE_INFO_LABEL = RichStyle(color="green", bold=True)
-STYLE_INFO_CONTENT = RichStyle(color="green")
-STYLE_WARNING_LABEL = RichStyle(color="yellow", bold=True)
-STYLE_WARNING_CONTENT = RichStyle(color="yellow")
-STYLE_ERROR_LABEL = RichStyle(color="red", bold=True)
-STYLE_ERROR_CONTENT = RichStyle(color="red")
-STYLE_SYSTEM_LABEL = RichStyle(color="cyan", bold=True)
-STYLE_SYSTEM_CONTENT = RichStyle(color="cyan")
-STYLE_TOOL_NAME = RichStyle(bold=True)
-STYLE_ARG_NAME = RichStyle(dim=True)
-STYLE_ARG_VALUE = RichStyle(dim=True)
-STYLE_THINKING = RichStyle(color="blue")
+# --- Define color constants with semantic names ---
+AI_COLOR = "#B19CD9"           # Pastel purple for AI responses
+USER_COLOR = "#FFAA99"         # Pastel tuna pink/orange for user interaction
+INFO_COLOR = "#8FD9A8"         # Bleached pale warm green for informational messages
+WARNING_COLOR = "#CCAA00"      # Yellow/amber for warnings (unchanged)
+ERROR_COLOR = "#FF0000"        # Red for errors (unchanged)
+SYSTEM_COLOR = "#7FDBCA"       # Pastel turquoise for system messages
+TOOL_COLOR = "#FFC0CB"         # Pastel pink for tool-related items
+COMMAND_COLOR = "#FFAA99"      # Same as USER_COLOR (pastel tuna pink/orange)
+DIM_TEXT_COLOR = "#888888"     # Mid-gray for less important text (unchanged)
+NEUTRAL_COLOR = "#FFFFFF"      # White/neutral for default text (unchanged)
+
+# --- Rich Styles using semantic color constants ---
+STYLE_AI_LABEL = RichStyle(color=AI_COLOR, bold=True)
+STYLE_AI_CONTENT = RichStyle(color=AI_COLOR)
+STYLE_USER_LABEL = RichStyle(color=USER_COLOR, bold=True)
+STYLE_INFO_LABEL = RichStyle(color=INFO_COLOR, bold=True)
+STYLE_INFO_CONTENT = RichStyle(color=INFO_COLOR)
+STYLE_WARNING_LABEL = RichStyle(color=WARNING_COLOR, bold=True)
+STYLE_WARNING_CONTENT = RichStyle(color=WARNING_COLOR)
+STYLE_ERROR_LABEL = RichStyle(color=ERROR_COLOR, bold=True)
+STYLE_ERROR_CONTENT = RichStyle(color=ERROR_COLOR)
+STYLE_SYSTEM_LABEL = RichStyle(color=SYSTEM_COLOR, bold=True)
+STYLE_SYSTEM_CONTENT = RichStyle(color=SYSTEM_COLOR)
+STYLE_TOOL_NAME = RichStyle(color=TOOL_COLOR, bold=False)  # Now using defined tool color
+STYLE_ARG_NAME = RichStyle(color=DIM_TEXT_COLOR)  # Use explicit color instead of dim
+STYLE_ARG_VALUE = RichStyle(color=DIM_TEXT_COLOR)  # Use explicit color instead of dim
+STYLE_THINKING = RichStyle(color=AI_COLOR)  # Same as AI color
 STYLE_INPUT_OPTION = RichStyle(underline=True)
-STYLE_COMMAND_LABEL = RichStyle(color="magenta", bold=True) # Added for consistency
-STYLE_COMMAND_CONTENT = RichStyle(color="magenta") # Added for consistency
-# --- ADDED NEW STYLE ---
-STYLE_TOOL_OUTPUT_DIM = RichStyle(dim=True)
+STYLE_COMMAND_LABEL = RichStyle(color=COMMAND_COLOR, bold=True)
+STYLE_COMMAND_CONTENT = RichStyle(color=COMMAND_COLOR)
+STYLE_TOOL_OUTPUT_DIM = RichStyle(color=DIM_TEXT_COLOR)  # Use explicit color instead of dim
+
+# --- Define prompt_toolkit Styles using the same semantic color constants ---
+PTK_STYLE = PTKStyle.from_dict({
+    # Labels (match Rich style names for clarity)
+    'style_ai_label':          f'bold fg:{AI_COLOR}',
+    'style_user_label':        f'bold fg:{USER_COLOR}',
+    'style_info_label':        f'bold fg:{INFO_COLOR}',
+    'style_warning_label':     f'bold fg:{WARNING_COLOR}',
+    'style_error_label':       f'bold fg:{ERROR_COLOR}',
+    'style_system_label':      f'bold fg:{SYSTEM_COLOR}',
+    'style_command_label':     f'bold fg:{COMMAND_COLOR}',
+    'style_tool_name':         f'fg:{TOOL_COLOR}',  # Now using defined tool color
+
+    # Content (match Rich style names)
+    'style_ai_content':        f'fg:{AI_COLOR}',
+    'style_info_content':      f'fg:{INFO_COLOR}',
+    'style_warning_content':   f'fg:{WARNING_COLOR}',
+    'style_error_content':     f'fg:{ERROR_COLOR}',
+    'style_system_content':    f'fg:{SYSTEM_COLOR}',
+    'style_command_content':   f'fg:{COMMAND_COLOR}',
+
+    # Args/Specifics (use explicit colors instead of 'dim')
+    'style_arg_name':          f'fg:{DIM_TEXT_COLOR}',
+    'style_arg_value':         f'fg:{DIM_TEXT_COLOR}',
+    'style_tool_output_dim':   f'fg:{DIM_TEXT_COLOR}',
+
+    # Other UI
+    'style_thinking':          f'fg:{AI_COLOR}',
+    'style_input_option':      'underline',
+
+    # Prompt-specific names (used by FormattedText construction)
+    'prompt.prefix':           'bold',
+    'prompt.suffix':           '',
+    'prompt.argname':          f'fg:{DIM_TEXT_COLOR}',
+    'prompt.argvalue':         f'fg:{DIM_TEXT_COLOR}',
+    'prompt.toolname':         f'bold fg:{TOOL_COLOR}',  # Now using defined tool color
+
+    # Default for input text
+    '':                        '',  # Default text style
+    'default':                 f'fg:{DIM_TEXT_COLOR}',  # Default value hint
+})
+# --- End prompt_toolkit Styles ---
 
 # --- ConsoleManager Class (Refactored) ---
 
@@ -168,14 +222,12 @@ class ConsoleManager:
             if len(formatted_output) > self.CONDENSED_OUTPUT_LENGTH:
                 formatted_output = formatted_output[:self.CONDENSED_OUTPUT_LENGTH] + "..."
 
-            # --- MODIFIED: Apply styles correctly ---
-            # Create the condensed text with dim style for content, normal for label
+            # Create the condensed text with proper tool styles
             text = Text.assemble(
-                ("TOOL: ", self.STYLE_INFO_LABEL), # Use standard info label style
+                ("TOOL: ", self.STYLE_TOOL_NAME), # Now using tool name style
                 (f"({escape(tool_name)}) ", self.STYLE_TOOL_OUTPUT_DIM), # Dim tool name
                 (escape(formatted_output), self.STYLE_TOOL_OUTPUT_DIM) # Dim content
             )
-            # --- END MODIFIED ---
             self.console.print(text) # Print on a new line
             logger.debug(f"ConsoleManager: Displayed condensed tool output for '{tool_name}': {formatted_output[:50]}...")
 
@@ -217,124 +269,71 @@ class ConsoleManager:
 
     def display_tool_prompt(self, error: PromptNeededError) -> Optional[str]:
         """
-        Displays the prompt for a HITL tool and gets user input on the same line.
-        Uses Rich Console capture to preserve formatting before prompt_toolkit.
-
-        Args:
-            error: The PromptNeededError containing prompt details.
-
-        Returns:
-            The confirmed/edited string input, or None if cancelled.
+        Displays the prompt for a HITL tool using prompt_toolkit for the full line.
+        Uses the format: SYSTEM: AI wants to perform an action 'tool_name', edit or confirm: value_to_edit
         """
         with self._lock:
-            self._clear_previous_line() # Clear spinner if it was active
+            self._clear_previous_line() # Clear spinner if needed
 
             tool_name = error.tool_name
             proposed_args = error.proposed_args
             edit_key = error.edit_key
-            prompt_suffix = error.prompt_suffix
+            # prompt_suffix = error.prompt_suffix # No longer used directly for the main prompt text
 
-            if edit_key not in proposed_args:
+            if (edit_key not in proposed_args):
+                # Use Rich-based display_message for this internal error
+                # Ensure STYLE_ERROR_LABEL and STYLE_ERROR_CONTENT are accessible (defined globally or as self attributes)
                 self.display_message(
                     "ERROR: ",
                     f"Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.",
-                    STYLE_ERROR_LABEL,
-                    STYLE_ERROR_CONTENT
+                    self.STYLE_ERROR_LABEL,
+                    self.STYLE_ERROR_CONTENT
                 )
                 return None
 
             value_to_edit = proposed_args[edit_key]
 
-            # --- Build the Rich Text prefix object ---
-            prompt_prefix = Text.assemble(
-                ("AI: ", STYLE_AI_LABEL),
-                ("Using tool '", STYLE_AI_CONTENT),
-                (escape(tool_name), STYLE_TOOL_NAME),
-                ("'", STYLE_AI_CONTENT)
-            )
-            # Add non-editable args
-            non_editable_args_parts = []
-            for arg_name, arg_val in proposed_args.items():
-                if arg_name != edit_key:
-                    arg_text = Text()
-                    arg_text.append(escape(str(arg_name)), style=STYLE_ARG_NAME)
-                    arg_text.append(": ", style=STYLE_ARG_NAME)
-                    val_str = escape(str(arg_val))
-                    max_len = 50
-                    display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
-                    arg_text.append(display_val, style=STYLE_ARG_VALUE)
-                    non_editable_args_parts.append(arg_text)
+            # --- Build prompt_toolkit FormattedText prefix ---
+            # NEW FORMAT: SYSTEM: AI wants to perform an action 'tool_name', edit or confirm:
+            prompt_prefix_parts: List[Tuple[str, str]] = [
+                ('class:style_system_label', "SYSTEM:"), # Changed label and style
+                ('class:style_system_content', " AI wants to perform an action '"), # Changed wording and style
+                ('class:style_tool_name', escape(tool_name)), # Keep tool name style
+                ('class:style_system_content', "', edit or confirm: ") # Changed wording, separator, and style
+            ]
+            # --- End building FormattedText ---
 
-            if non_editable_args_parts:
-                prompt_prefix.append(" with ", style=STYLE_AI_CONTENT)
-                prompt_prefix.append(Text(", ", style=STYLE_AI_CONTENT).join(non_editable_args_parts))
-                prompt_prefix.append(" ", style=STYLE_AI_CONTENT)
-
-            # Add editable key name and suffix
-            prompt_prefix.append(escape(edit_key), style=STYLE_ARG_NAME)
-            prompt_prefix.append(" ", style=STYLE_ARG_NAME)
-            prompt_prefix.append(prompt_suffix, style=STYLE_AI_CONTENT)
-            # --- End building Rich Text prefix ---
-
-            # --- MODIFICATION: Capture Rich output and write to stdout ---
-            try:
-                # Create a temporary console that writes to a string buffer
-                string_io = io.StringIO()
-                # Use main console's settings where possible, but force terminal for ANSI
-                capture_console = Console(
-                    file=string_io,
-                    force_terminal=True, # Force codes even if stdout isn't detected as TTY
-                    color_system="auto", # Use detected or default color system
-                    width=self.console.width, # Inherit width
-                    stderr=self.console.stderr # Inherit stderr setting
-                )
-
-                # Print the Rich Text object to the buffer (without newline)
-                capture_console.print(prompt_prefix, end="")
-
-                # Get the captured string (contains ANSI codes)
-                captured_output = string_io.getvalue()
-
-                # Write the captured string to the actual stdout
-                sys.stdout.write(captured_output)
-                sys.stdout.flush()
-                logger.debug("Printed prompt prefix using captured Rich output with ANSI codes.")
-
-            except Exception as e:
-                logger.error(f"Error capturing or writing Rich prompt prefix: {e}", exc_info=True)
-                # Fallback to plain text if capture fails
-                plain_prefix = str(prompt_prefix)
-                sys.stdout.write(plain_prefix)
-                sys.stdout.flush()
-            # --- END MODIFICATION ---
-
-            # --- Prompt user using prompt_toolkit on the same line ---
+            # --- Prompt user using prompt_toolkit ---
             user_input: Optional[str] = None
             try:
                 logger.debug(f"ConsoleManager: Prompting user for tool '{tool_name}', key '{edit_key}'.")
-                # Use empty message as the prefix was printed above
                 user_input = prompt_toolkit_prompt(
-                    "", # Empty message
+                    FormattedText(prompt_prefix_parts), # Pass the new simplified prefix
                     default=str(value_to_edit),
+                    style=PTK_STYLE, # Use PTK style object
                     multiline=(len(str(value_to_edit)) > 60 or '\n' in str(value_to_edit))
                 )
-
-                if user_input is None:
-                    raise EOFError("Prompt returned None unexpectedly.")
+                if user_input is None: raise EOFError("Prompt returned None.") # Use specific error
 
             except (EOFError, KeyboardInterrupt):
-                 # We printed without newline, so add one before the cancel message
-                self.console.print() # Add newline
-                self.console.print("Input cancelled.", style=STYLE_WARNING_CONTENT)
+                 # Use Rich console to print cancel message on a new line
+                self.console.print()
+                # Ensure STYLE_WARNING_CONTENT is accessible (defined globally or as self attribute)
+                self.console.print("Input cancelled.", style=self.STYLE_WARNING_CONTENT)
                 logger.warning(f"ConsoleManager: User cancelled input for tool '{tool_name}'.")
                 return None
             except Exception as e:
-                logger.error(f"ConsoleManager: Error during input prompt: {e}", exc_info=True)
-                self.console.print(f"\nError during input prompt: {e}", style=STYLE_ERROR_CONTENT)
+                logger.error(f"ConsoleManager: Error during prompt_toolkit prompt: {e}", exc_info=True)
+                # Use Rich console to print error message on a new line
+                self.console.print()
+                # Ensure STYLE_ERROR_CONTENT is accessible (defined globally or as self attribute)
+                self.console.print(f"Error during input prompt: {e}", style=self.STYLE_ERROR_CONTENT)
                 return None
 
             logger.debug(f"ConsoleManager: Received input: '{user_input[:50]}...'")
-            return user_input # Return the input; chat_manager will clear line and print confirmation
+            # Return input. The calling function (ChatManager) is responsible
+            # for clearing this line if needed before printing confirmation.
+            return user_input
 
     def prompt_for_input(self, prompt_text: str, default: Optional[str] = None, is_password: bool = False) -> str:
         """

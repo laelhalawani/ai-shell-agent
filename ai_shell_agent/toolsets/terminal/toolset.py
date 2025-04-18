@@ -94,7 +94,11 @@ class StartTerminalToolArgs(BaseModel):
 
 class StartTerminalTool(BaseTool):
     name: str = "start_terminal"
+<<<<<<< HEAD
     description: str = "start system terminal whenever  command execution. This only opens the session and enables further usage after."
+=======
+    description: str = "Use this to start the terminal application, whenever asked to perform terminal or console operations, or when you need more information to gather complete the task. You can use the terminal to explor the system, understand the current directory, find files and check and modify system settings. Before running any commands first start the terminal and await a confirmation." 
+>>>>>>> last_prints
     args_schema: Type[BaseModel] = StartTerminalToolArgs # Use empty schema
 
     def _run(self, *args, **kwargs) -> str:
@@ -136,20 +140,24 @@ class TerminalTool_HITL(BaseTool):
     """
     Tool for interacting with the system's shell with human-in-the-loop confirmation.
     """
-    name: str = "terminal"
+    name: str = "run_terminal_command"
     description: str = (
+<<<<<<< HEAD
         "Run a command in the system shell. Do not use for editing files. "
+=======
+        "Use to run any command in the terminal and return the output."
+>>>>>>> last_prints
     )
     args_schema: Type[BaseModel] = TerminalToolArgs # Use specific schema
     requires_confirmation: bool = True # Mark this tool as requiring HITL
 
     # Make cmd the first argument to match schema, add confirmed_input for HITL support
-    def _run(self, cmd: str, confirmed_input: Optional[str] = None) -> str:
+    def _run(self, command: str, confirmed_input: Optional[str] = None) -> str:
         """
         Run a command in a shell. Raises PromptNeededError if confirmation needed.
         Executes directly if confirmed_input is provided.
         """
-        cmd_to_execute = cmd.strip()
+        cmd_to_execute = command.strip()
         if not cmd_to_execute:
             return "Error: Empty command proposed."
 
@@ -161,11 +169,15 @@ class TerminalTool_HITL(BaseTool):
             #                        console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             logger.debug("The AI wants to run a shell command.") # Changed to debug log
             # --- END MODIFIED LINE ---
+<<<<<<< HEAD
             #console.display_message("COMMAND:", cmd_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
+=======
+            logger.debug("COMMAND:", cmd_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
+>>>>>>> last_prints
             raise PromptNeededError(
                 tool_name=self.name,
-                proposed_args={"cmd": cmd_to_execute},
-                edit_key="cmd"
+                proposed_args={"command": cmd_to_execute},
+                edit_key="command"
             )
         else:
             # Second call: Input has been confirmed by the user
