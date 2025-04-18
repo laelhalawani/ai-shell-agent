@@ -21,6 +21,8 @@ pip-delete-this-directory.txt
 
 # Chat data
 data/
+data/*
+data/**
 user_data/
 chats/
 session.json
