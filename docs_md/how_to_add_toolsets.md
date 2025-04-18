@@ -15,26 +15,28 @@ Within your new tool directory, include the following files:
 - **toolset.py**: The main file for your tool.
 - **Optional: prompts.py**: If your tool requires custom prompts, add this file modeled after existing implementations.
 
-## 3. Register Your Tool (Auto-Discovery and Local Registration)
+## 3. Register and Configure Your Tool (Auto-Discovery and Local Registration)
 
-In the new architecture, tool registration happens locally within each toolset's own `toolset.py`. To integrate your tool:
+Tool registration and configuration now happens locally within each toolset's own `toolset.py`. To integrate your tool:
 
-- Within `toolset.py`, create instances of your tool classes (inheriting from BaseTool or similar).
-- Organize these instances into lists, for example:
+- Within `toolset.py`, create instances of your tool classes (inheriting from BaseTool or the appropriate abstract class).
+- Organize these instances into lists:
   
   ```python
   # Example tool instances
   tool_instance = MyTool()
   toolset_tools = [tool_instance]
-  toolset_start_tool = []  # if you have a preferred start tool, else leave this list empty
+  toolset_start_tool = []  # if you have a preferred start tool; leave empty otherwise
   ```
 
-- At the bottom of the `toolset.py` file, import `register_tools` from `ai_shell_agent.tool_registry` and register your tool instances by calling:
+- At the bottom of the file, import `register_tools` from `ai_shell_agent.tool_registry` and register your tool instances by calling:
 
   ```python
   from ai_shell_agent.tool_registry import register_tools
   register_tools(toolset_start_tool + toolset_tools)
   ```
+
+- **Note:** Also ensure your toolset supplies fallback default configuration values and necessary secrets.
 
 This approach makes your tool automatically discovered without needing manual edits in central files.
 
@@ -54,12 +56,13 @@ Tool configuration is now handled within the toolset itself, eliminating the nee
   toolset_required_secrets: Dict[str, str] = {}
   ```
 
-- **Implement Configuration Logic:** Create a function called `configure_toolset` with the signature:
+- **Implement Configuration Logic and Validation:** Create a function called `configure_toolset` with the signature:
 
   ```python
   def configure_toolset(global_config_path: Path, local_config_path: Path, dotenv_path: Path, current_chat_config: Optional[Dict]) -> Dict:
       # Prompt user for configuration values, utilize ensure_dotenv_key from ai_shell_agent.utils for secrets,
       # and save the final configuration to both local_config_path and global_config_path.
+      # Validate the configuration parameters to ensure no required value is missing.
       return final_config
   ```
 
