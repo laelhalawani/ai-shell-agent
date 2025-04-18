@@ -26,7 +26,7 @@ from ....utils import read_json, write_json
 from ....config_manager import get_current_model as get_agent_model
 
 # Constants for Aider integration
-SIGNAL_PROMPT_NEEDED = "[FILE_EDITOR_INPUT_NEEDED]"
+SIGNAL_PROMPT_NEEDED = "[CODE_COPILOT_INPUT_REQUEST]"
 TIMEOUT = 300  # 5 minutes timeout for Aider operations
 
 # Direct imports for Aider components

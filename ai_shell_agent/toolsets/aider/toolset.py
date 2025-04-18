@@ -78,12 +78,12 @@ AIDER_EDIT_FORMATS = {
 }
 
 # --- Toolset metadata for discovery ---
-toolset_name = "File Editor"
+toolset_name = "Aider Code Editor **EXPERIMENTAL**"
 toolset_id = "aider" # Explicitly define ID for consistency
-toolset_description = "Provides tools for editing and managing code files using AI"
+toolset_description = "Provides tools for interacting with the Aider code editor. "
 
 # --- Configuration ---
-DEFAULT_EDITOR_MODEL = "gpt-4o-mini" # Example default
+DEFAULT_EDITOR_MODEL = "o3-mini" # Example default
 DEFAULT_WEAK_MODEL = "gpt-4o-mini" # Example default
 
 toolset_config_defaults = {
@@ -339,14 +339,14 @@ class InstructionSchema(BaseModel):
 
 class UserResponseSchema(BaseModel):
     """Input schema for tools accepting a user response to a prompt."""
-    user_response: str = Field(description="The user's response to the editor's prompt.")
+    user_response: str = Field(description="Your response to the editor's prompt.")
 
 
 # --- Tool Classes (MODIFIED) ---
 
-class OpenFileEditor(BaseTool):
-    name: str = "open_file_editor"
-    description: str = "Use this to start the file editor application, whenever asked to edit contents of any text file including code and scripts. Once you start the editor additional commands become available."
+class StartCodeCopilot(BaseTool):
+    name: str = "start_code_copilot"
+    description: str = "Use this to start the ai code copilot, whenever asked to edit contents of any text file including code and scripts. After starting additional documentation and instructions will be provided."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
     # Removed **kwargs as no args expected
@@ -359,7 +359,7 @@ class OpenFileEditor(BaseTool):
         if not chat_id:
             return "Error: No active chat session found."
 
-        toolset_name = "File Editor"  # The name used in active_toolsets
+        toolset_name = toolset_name  # The name used in active_toolsets
 
         # --- Toolset Activation ---
         current_toolsets = get_active_toolsets(chat_id)
@@ -370,7 +370,6 @@ class OpenFileEditor(BaseTool):
             new_toolsets.append(toolset_name)
             update_active_toolsets(chat_id, new_toolsets)  # Save updated toolsets list
             activation_feedback = f"'{toolset_name}' toolset activated.\n\n"
-            logger.debug(f"System prompt will be implicitly updated by LLM using new toolset state.")
 
         # --- Get paths ---
         chat_config_path = get_toolset_data_path(chat_id, toolset_id)
@@ -427,9 +426,9 @@ class OpenFileEditor(BaseTool):
         return self._run()
 
 
-class OpenFileTool(BaseTool):
-    name: str = "submit_file_to_editor"
-    description: str = "Sends file for edits or context to the File Editor, files to be added can be specified by absolute or relative paths. The file must exist in the filesystem."
+class AddFileToConext(BaseTool):
+    name: str = "add_file_to_copilot_context"
+    description: str = "Adds a file to the Code Copilot context, files in context can be used to understand the codebase and perform edits. Files to be added can be specified by absolute or relative paths. The file must exist in the filesystem."
     args_schema: Type[BaseModel] = FilePathSchema # Specify schema
     
     def _run(self, file_path: str) -> str:
@@ -495,9 +494,9 @@ class OpenFileTool(BaseTool):
         return self._run(file_path)
 
 
-class CloseFileTool(BaseTool):
-    name: str = "withdraw_file_from_editor"
-    description: str = "Remove a file from the File Editor context. Files to be withdrawn can specified by relative or absolute paths, for files that were previously opened."
+class RemoveFileFromContext(BaseTool):
+    name: str = "remove_file_from_copilot_context"
+    description: str = "Removes a file from the Code Copilot context. Files to be removed can be specified by absolute or relative paths. The file must have been added to the context previously."
     args_schema: Type[BaseModel] = FilePathSchema # Specify schema
     
     def _run(self, file_path: str) -> str:
@@ -540,9 +539,9 @@ class CloseFileTool(BaseTool):
         return self._run(file_path)
 
 
-class ListOpenFilesTool(BaseTool):
-    name: str = "list_files_in_editor"
-    description: str = "Lists all files currently in the File Editor's context. Can be used to preview what files are open for editing."
+class ListFilesInContext(BaseTool):
+    name: str = "list_files_in_copilot_context"
+    description: str = "Lists all files in the Code Copilot context. This is useful to see what files are currently being edited or added for context."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
     def _run(self) -> str:
@@ -587,9 +586,9 @@ class ListOpenFilesTool(BaseTool):
         return self._run()
 
 
-class RequestEditsTool(BaseTool):
-    name: str = "request_edits"
-    description: str = "Explain to the editor what needs to be done. The editor will complete the request based on own knowledge and submitted files."
+class RequestEdits(BaseTool):
+    name: str = "request_copilot_edit"
+    description: str = "Explain to the copilot what needs to be done. The editor will complete the request based on own knowledge and submitted files. Use clear instructions using natural language, you can include specific code snippets."
     args_schema: Type[BaseModel] = InstructionSchema # Specify schema
     
     def _run(self, instruction: str) -> str:
@@ -714,9 +713,9 @@ class RequestEditsTool(BaseTool):
         return self._run(instruction)
 
 
-class ViewDiffTool(BaseTool):
-    name: str = "view_edits_diff"
-    description: str = "Shows the git diff of changes made by the 'request_edit' tool in the current session. This is useful to see what changes have been made to the files. Works only if there was a git repository initialized in the project root."
+class ViewDiffs(BaseTool):
+    name: str = "view_code_copilot_edit_diffs"
+    description: str = "Shows the git diff of changes made by the Code Copilot based on 'request_edit' tool in the current session. This is useful to see what changes have been made to the files. Works only if there was a git repository initialized in the project root."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
     def _run(self) -> str:
@@ -769,8 +768,8 @@ class ViewDiffTool(BaseTool):
         return self._run()
 
 class UndoLastEditTool(BaseTool):
-    name: str = "undo_last_edit"
-    description: str = "Undoes the last edit commit made by the 'request_edit' tool. This is useful to revert changes made to the files, might not work if the commit was made outside of the File Editor or if there is no git repository initialized."
+    name: str = "undo_last_code_copilot_edit"
+    description: str = "Undoes the last edit commit made by the Code Copilot. This is useful to revert changes made to the files, might not work if the commit was made outside of the File Editor or if there is no git repository initialized."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
     
     def _run(self) -> str:
@@ -824,10 +823,9 @@ class UndoLastEditTool(BaseTool):
     async def _arun(self) -> str:
         return self._run()
 
-
-class CloseFileEditorTool(BaseTool):
-    name: str = "lose_file_editor"
-    description: str = "Closes the file editing session and withdraws all the files. Changes are saved automatically. Close it as soon as you verified with the user they don't want to edit the files anymore, once verified close the File Editor right away."
+class CloseCodeCopilot(BaseTool):
+    name: str = "close_code_copilot"
+    description: str = "Closes the file editing session with AI Code Copilot. Changes are saved automatically. Close it after you verified with the user they don't want to edit the files anymore."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
     def _run(self) -> str:
@@ -870,10 +868,10 @@ class CloseFileEditorTool(BaseTool):
         return self._run()
 
 
-class SubmitFileEditorInputTool(BaseTool):
-    name: str = "submit_editor_input" # Keep the original intended name for LLM use
+class SubmitInput(BaseTool):
+    name: str = "respond_to_code_copilot_input_request" # Keep the original intended name for LLM use
     description: str = (
-         "Use to provide input only when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
+         "Use to provide respond to Code Copilot only when requested (marked by '[CODE_COPILOT_INPUT_REQUEST]'). "
     )
     args_schema: Type[BaseModel] = UserResponseSchema # Specify schema
     is_hitl: bool = True # Mark this tool as requiring human-in-the-loop confirmation
@@ -968,11 +966,10 @@ from ...errors import PromptNeededError # Import the custom exception
 
 # ... (in SubmitFileEditorInputTool_HITL class) ...
 
-class SubmitFileEditorInputTool_HITL(BaseTool):
-    name: str = "submit_editor_input"
+class SubmitInput_HITL(BaseTool):
+    name: str = "respond_to_code_copilot_input_request" # Keep the original intended name for LLM use
     description: str = (
-         "Use to provide input when the File Editor requests it (marked by '[FILE_EDITOR_INPUT_NEEDED]'). "
-         "The proposed input will be shown to the user for confirmation or editing before being submitted."
+         "Use to provide respond to Code Copilot only when requested (marked by '[CODE_COPILOT_INPUT_REQUEST]'). "
     )
     args_schema: Type[BaseModel] = UserResponseSchema
     requires_confirmation: bool = True # Mark this tool as requiring HITL
@@ -1099,20 +1096,20 @@ class SubmitFileEditorInputTool_HITL(BaseTool):
         return await run_in_executor(None, self._run, user_response, confirmed_input)
 
 # Replace the old implementation
-submit_code_editor_input_tool = SubmitFileEditorInputTool_HITL()
+submit_code_editor_input_tool = SubmitInput_HITL()
 
 # Remove the non-HITL version as it's no longer needed
 # submit_code_editor_input_direct_tool = SubmitFileEditorInputTool()
 
 # --- Create tool instances ---
-start_code_editor_tool = OpenFileEditor()
-add_code_file_tool = OpenFileTool()
-drop_code_file_tool = CloseFileTool()
-list_code_files_tool = ListOpenFilesTool()
-edit_code_tool = RequestEditsTool()
-view_diff_tool = ViewDiffTool()
+start_code_editor_tool = StartCodeCopilot()
+add_code_file_tool = AddFileToConext()
+drop_code_file_tool = RemoveFileFromContext()
+list_code_files_tool = ListFilesInContext()
+edit_code_tool = RequestEdits()
+view_diff_tool = ViewDiffs()
 undo_last_edit_tool = UndoLastEditTool()
-close_code_editor_tool = CloseFileEditorTool()
+close_code_editor_tool = CloseCodeCopilot()
 
 # Define the tools that belong to this toolset
 toolset_tools = [
