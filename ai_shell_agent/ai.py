@@ -35,10 +35,10 @@ from .config_manager import (
 from .chat_state_manager import (
     create_or_load_chat,
     save_session, get_current_chat, get_enabled_toolsets, update_enabled_toolsets,
-    get_active_toolsets,
     get_current_chat_title,
     # --- Import path helpers and JSON read needed here ---
-    get_toolset_data_path, get_toolset_global_config_path
+    get_toolset_data_path, get_toolset_global_config_path,
+    DEFAULT_ENABLED_TOOLSETS_NAMES
 )
 # --- Import utils for JSON reading ---
 from .utils import read_json as _read_json, read_dotenv, write_dotenv # Alias if preferred
@@ -121,6 +121,7 @@ These toolsets will be enabled by default when you create new chats.
 
     from .toolsets.toolsets import get_registered_toolsets
     from .config_manager import set_default_enabled_toolsets
+    from .chat_state_manager import DEFAULT_ENABLED_TOOLSETS_NAMES
 
     all_toolsets = get_registered_toolsets()
     if not all_toolsets:
@@ -151,9 +152,11 @@ These toolsets will be enabled by default when you create new chats.
         console.console.print(line) # Use console.print directly for Text objects
 
     # Combine prompt instructions
-    prompt_instructions = """
+    default_toolsets_str = ", ".join(DEFAULT_ENABLED_TOOLSETS_NAMES) if DEFAULT_ENABLED_TOOLSETS_NAMES else "None"
+    prompt_instructions = f"""
 Enter comma-separated numbers TO ENABLE by default (e.g., 1,3).
-To enable none by default, leave empty or enter 'none'.
+To enable none by default, enter 'none'.
+Leave empty to use {default_toolsets_str} as defaults.
 """
     console.display_message("SYSTEM:", prompt_instructions.strip(), 
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
@@ -163,7 +166,12 @@ To enable none by default, leave empty or enter 'none'.
             # Use console manager for prompting
             choice_str = console.prompt_for_input("> ").strip()
             selected_names = []
-            if not choice_str or choice_str.lower() == 'none':
+            if not choice_str:
+                # Use DEFAULT_ENABLED_TOOLSETS_NAMES when no selection is made
+                selected_names = list(DEFAULT_ENABLED_TOOLSETS_NAMES)
+                console.display_message("INFO:", f"No selection made. Using default toolsets: {', '.join(selected_names)}", 
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            elif choice_str.lower() == 'none':
                 pass # selected_names remains empty
             else:
                 selected_indices = {c.strip() for c in choice_str.split(',') if c.strip()}
@@ -184,16 +192,17 @@ To enable none by default, leave empty or enter 'none'.
 
             # Save as global default
             set_default_enabled_toolsets(final_selection)
-            # Use console manager for confirmation
-            console.display_message("INFO:", f"Default enabled toolsets set to: {', '.join(final_selection) or 'None'}", 
+            # Use console manager for confirmation with updated wording
+            console.display_message("INFO:", f"Selected toolsets set to: {', '.join(final_selection) or 'None'}", 
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             return
 
         except (EOFError, KeyboardInterrupt):
             # console.prompt_for_input handles the KeyboardInterrupt print
-            console.display_message("WARNING:", "Selection cancelled. Setting no default toolsets.", 
+            default_toolsets_str = ", ".join(DEFAULT_ENABLED_TOOLSETS_NAMES) if DEFAULT_ENABLED_TOOLSETS_NAMES else "None"
+            console.display_message("WARNING:", f"Selection cancelled. Setting {default_toolsets_str} as default toolsets.", 
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-            set_default_enabled_toolsets([])
+            set_default_enabled_toolsets(list(DEFAULT_ENABLED_TOOLSETS_NAMES))
             return
         except Exception as e: # Catch other potential errors
             console.display_message("ERROR:", f"An error occurred: {e}", 
@@ -201,72 +210,86 @@ To enable none by default, leave empty or enter 'none'.
             logger.error(f"Error in toolset prompt: {e}", exc_info=True)
             return # Exit for now
 
-# --- Toolset Selection Command ---
-def select_tools_for_chat():
-    """Interactive prompt for selecting enabled toolsets for the current chat."""
+# --- Toolset Selection Command (RENAMED and MODIFIED) ---
+def select_enabled_toolsets(): # Renamed from select_tools_for_chat
+    """Interactive prompt for selecting enabled toolsets (chat-specific or global default)."""
     chat_id = get_current_chat() # Use chat_id
-    if not chat_id:
-        console.display_message("ERROR:", "No active chat session.", 
-                              console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        console.display_message("SYSTEM:", "Please load or create a chat first (e.g., `ai -c <chat_title>`).", 
-                              console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-        return
-
-    chat_title = get_current_chat_title() # Use new function name
-    
-    # Combine intro messages
-    intro_text = f"""
---- Select Enabled Toolsets for Chat: '{chat_title}' ---
-Toolsets determine which capabilities the agent can potentially use in this chat.
-"""
-    console.display_message("SYSTEM:", intro_text.strip(), 
-                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     all_toolsets = get_registered_toolsets() # Dict[id, ToolsetMetadata]
     if not all_toolsets:
-        console.display_message("WARNING:", "No toolsets found/registered.", 
+        console.display_message("WARNING:", "No toolsets found/registered.",
                               console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
         return
 
-    current_enabled_names = get_enabled_toolsets(chat_id) # Pass chat_id
-    console.display_message("SYSTEM:", "\nAvailable Toolsets:", 
+    # --- Determine Context and Get Current Settings ---
+    is_global_context = chat_id is None
+    if is_global_context:
+        from .config_manager import get_default_enabled_toolsets # Import here
+        chat_title = "Global Defaults"
+        context_explanation = "These toolsets will be enabled by default when you create new chats."
+        current_enabled_names = get_default_enabled_toolsets()
+        save_confirmation_message = "Global default enabled toolsets set to:"
+        keep_message = "Kept current global default enabled toolsets:"
+        update_global_default = True # Always update global in this context
+        update_chat_specific = False
+    else:
+        chat_title = get_current_chat_title() # Use new function name
+        if not chat_title: # Should not happen if chat_id exists
+            console.display_message("ERROR:", f"Could not determine title for active chat {chat_id}.",
+                                  console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+            return
+        context_explanation = "Toolsets determine which capabilities the agent can potentially use in this chat."
+        current_enabled_names = get_enabled_toolsets(chat_id) # Pass chat_id
+        save_confirmation_message = "Enabled toolsets for this chat set to:"
+        keep_message = "Kept current enabled toolsets for this chat:"
+        update_global_default = True # Also update global when in chat context
+        update_chat_specific = True
+
+    # --- Display Header ---
+    intro_text = f"""
+--- Select Enabled Toolsets ({'Global Defaults' if is_global_context else f'Chat: {chat_title}'}) ---
+{context_explanation}
+"""
+    console.display_message("SYSTEM:", intro_text.strip(),
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+
+    # --- Display Toolset Options ---
+    console.display_message("SYSTEM:", "\nAvailable Toolsets:",
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     options = {}
     idx = 1
-    # Sort toolsets by name for consistent display
     from rich.text import Text # Import Text here
     toolset_lines = []
+    # Sort toolsets by name for consistent display
     for ts_id, meta in sorted(all_toolsets.items(), key=lambda item: item[1].name):
         marker = "[ENABLED]" if meta.name in current_enabled_names else "[DISABLED]"
-        # Create Text object for highlighting
         line_text = Text.assemble(
             "  ",
             (f"{idx}", console.STYLE_INPUT_OPTION), # Highlight number
-            f": {meta.name.ljust(15)} {marker} - {meta.description}"
-            # Apply base system style implicitly or explicitly if needed
+            f": {meta.name.ljust(25)} {marker} - {meta.description}" # Adjusted padding
         )
         toolset_lines.append(line_text)
         options[str(idx)] = meta.name # Map index to display name
         idx += 1
-    # Print all toolset lines at once
     for line in toolset_lines:
         console.console.print(line) # Use console.print directly for Text objects
 
-    # Combine prompt instructions
+    # --- Prompt Instructions ---
     prompt_instructions = """
 Enter comma-separated numbers TO ENABLE (e.g., 1,3).
 To disable all, enter 'none'.
 Leave empty to keep current settings.
 """
-    console.display_message("SYSTEM:", prompt_instructions.strip(), 
+    console.display_message("SYSTEM:", prompt_instructions.strip(),
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
+    # --- Prompt Loop ---
     while True:
         try:
             choice_str = console.prompt_for_input("> ").strip()
             if not choice_str:
-                console.display_message("INFO:", f"Kept current enabled toolsets: {', '.join(sorted(current_enabled_names)) or 'None'}", 
-                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT) # Simplified
+                console.display_message("INFO:", f"{keep_message} {', '.join(sorted(current_enabled_names)) or 'None'}",
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                 return
 
             if choice_str.lower() == 'none':
@@ -279,50 +302,50 @@ Leave empty to keep current settings.
                     if index in options:
                         new_enabled_list_names.append(options[index])
                     else:
-                        console.display_message("ERROR:", f"Invalid selection '{index}'. Please use numbers from 1 to {idx-1}.", 
+                        console.display_message("ERROR:", f"Invalid selection '{index}'. Please use numbers from 1 to {idx-1}.",
                                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
                         valid_selection = False
                         break
                 if not valid_selection: continue # Ask again
 
             # Remove duplicates and sort
-            new_enabled_list_names = sorted(list(set(new_enabled_list_names)))
+            final_selection = sorted(list(set(new_enabled_list_names)))
 
-            # Update state - this also handles deactivating toolsets
-            update_enabled_toolsets(chat_id, new_enabled_list_names) # Pass chat_id and list of names
-            console.display_message("INFO:", f"Enabled toolsets set to: {', '.join(new_enabled_list_names) or 'None'}", 
-                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT) # Simplified confirmation
+            # --- Update State ---
+            if update_chat_specific:
+                update_enabled_toolsets(chat_id, final_selection) # Pass chat_id and list of names
+                console.display_message("INFO:", f"Selected toolsets set to: {', '.join(final_selection) or 'None'}",
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
 
-            # Also update the global default setting
-            from .config_manager import set_default_enabled_toolsets
-            set_default_enabled_toolsets(new_enabled_list_names)
-            console.display_message("INFO:", "Global default enabled toolsets also updated.", 
-                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-            console.display_message("INFO:", "Changes apply on next interaction.", 
-                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            if update_global_default:
+                from .config_manager import set_default_enabled_toolsets # Import here
+                set_default_enabled_toolsets(final_selection)
+                # Only show the global update message if we weren't already in global context
+                if not is_global_context:
+                    console.display_message("INFO:", "Global defaults also updated.",
+                                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+                elif update_chat_specific == False: # Explicitly show global confirmation when only global was updated
+                     console.display_message("INFO:", f"Selected toolsets set to: {', '.join(final_selection) or 'None'}",
+                                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+
+            # Only show essential information about when changes apply
+            if update_chat_specific:
+                 console.display_message("INFO:", "Changes apply on next interaction.",
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             return
 
         except (EOFError, KeyboardInterrupt):
-            console.display_message("WARNING:", "\nSelection cancelled. No changes made.", 
+            console.display_message("WARNING:", "\nSelection cancelled. No changes made.",
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             return
 
 # --- Toolset Configuration Command (MODIFIED) ---
 def configure_toolset_cli(toolset_name: str):
-    """Handles the --configure-toolset command."""
+    """Handles the --configure-toolset command for global or chat-specific settings."""
     chat_id = get_current_chat()
-    if not chat_id:
-        console.display_message("ERROR:", "No active chat session. Load or create one first.", 
-                              console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        return
+    is_global_context = chat_id is None
 
-    chat_title = get_current_chat_title()
-    if not chat_title: # Should not happen if chat_id exists, but check anyway
-        console.display_message("ERROR:", f"Could not determine title for active chat {chat_id}.", 
-                              console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        return
-
-    # Find the toolset metadata
+    # --- Find Toolset Metadata (Common logic) ---
     from .toolsets.toolsets import get_registered_toolsets, get_toolset_names
     registered_toolsets = get_registered_toolsets()
     target_toolset_id = None
@@ -334,60 +357,70 @@ def configure_toolset_cli(toolset_name: str):
             break
 
     if not target_metadata or not target_toolset_id:
-        console.display_message("ERROR:", f"Toolset '{toolset_name}' not found.", 
+        console.display_message("ERROR:", f"Toolset '{toolset_name}' not found.",
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        console.display_message("SYSTEM:", "Available toolsets: " + ", ".join(get_toolset_names()), 
+        console.display_message("SYSTEM:", "Available toolsets: " + ", ".join(get_toolset_names()),
                               console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
         return
 
     if not target_metadata.configure_func:
-        console.display_message("ERROR:", f"Toolset '{target_metadata.name}' (ID: {target_toolset_id}) does not have a configuration function.", 
-                              console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        # Check if config exists, maybe inform user?
-        # For now, just exit as per original logic.
+        console.display_message("INFO:", f"Toolset '{target_metadata.name}' does not require specific configuration.", # Changed to INFO
+                              console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
 
-    # --- Get required paths ---
-    # Use ROOT_DIR from __init__ for reliable .env path
+    # --- Get Paths and Config ---
     dotenv_path = ROOT_DIR / '.env'
-    # Use chat_state_manager helpers for toolset paths
-    local_config_path = get_toolset_data_path(chat_id, target_toolset_id)
     global_config_path = get_toolset_global_config_path(target_toolset_id)
 
-    # --- Read current local (chat-specific) config to pass to the function ---
-    # Use the utility function directly
-    current_local_config = _read_json(local_config_path, default_value=None) # Pass None default
-
-    # Combine system messages
-    config_info = f"""
---- Configuring '{target_metadata.name}' for chat '{chat_title}' ---
+    if is_global_context:
+        chat_title = "Global Defaults"
+        local_config_path = None # Indicate global-only context
+        # Read global config to pass as "current" state for prompting consistency
+        current_config_for_prompting = _read_json(global_config_path, default_value=None)
+        context_info = f"""
+--- Configuring Global Defaults for '{target_metadata.name}' ---
+(Applying settings to global default: {global_config_path})
+(Checking/Storing secrets in: {dotenv_path})
+"""
+    else: # Chat context
+        chat_title = get_current_chat_title()
+        if not chat_title: # Should not happen
+            console.display_message("ERROR:", f"Could not determine title for active chat {chat_id}.",
+                                  console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+            return
+        local_config_path = get_toolset_data_path(chat_id, target_toolset_id)
+        current_config_for_prompting = _read_json(local_config_path, default_value=None) # Pass None default
+        context_info = f"""
+--- Configuring '{target_metadata.name}' for Chat '{chat_title}' ---
 (Applying settings to chat config: {local_config_path})
 (Applying settings to global default: {global_config_path})
 (Checking/Storing secrets in: {dotenv_path})
 """
-    console.display_message("SYSTEM:", config_info.strip(), 
+
+    # --- Display Context ---
+    console.display_message("SYSTEM:", context_info.strip(),
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
+    # --- Execute Configuration ---
     try:
         # Call the toolset's configure function with all necessary paths and current config
         # Signature: configure_func(global_path, local_path, dotenv_path, current_local_config) -> Dict
-        # The function now handles prompting, secret checks, and saving to both paths.
+        # current_local_config here is the config read for prompting (either global or local)
         final_config = target_metadata.configure_func(
             global_config_path,
-            local_config_path,
+            local_config_path,    # Will be None in global context
             dotenv_path,
-            current_local_config # Pass the read local config (or None)
+            current_config_for_prompting # Pass the read config (or None)
         )
         # Confirmation message should be printed within configure_func now.
-        # Optional: Could check the returned dict 'final_config' if needed here.
 
     except (EOFError, KeyboardInterrupt):
          logger.warning(f"Configuration cancelled for {toolset_name} by user.")
-         console.display_message("WARNING:", "\nConfiguration cancelled.", 
+         console.display_message("WARNING:", "\nConfiguration cancelled.",
                                console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
     except Exception as e:
         logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
-        console.display_message("ERROR:", f"\nAn error occurred during configuration: {e}", 
+        console.display_message("ERROR:", f"\nAn error occurred during configuration: {e}",
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
 
 # --- Main CLI Execution Logic ---
@@ -414,10 +447,12 @@ def main():
     chat_group.add_argument("--temp-flush", action="store_true", help="Remove temp chats")
     chat_group.add_argument("-ct", "--current-chat-title", action="store_true", help="Print current chat title")
 
-    tool_group.add_argument("--select-tools", action="store_true", help="Interactively select enabled toolsets for the CURRENT chat")
-    tool_group.add_argument("--list-toolsets", action="store_true", help="List available toolsets and their status")
+    tool_group.add_argument("--select-tools", action="store_true", 
+                           help="Interactively select enabled toolsets (chat-specific if active, otherwise global defaults)")
+    tool_group.add_argument("--list-toolsets", action="store_true", 
+                           help="List available toolsets and their enabled status (chat-specific if active, otherwise global defaults)")
     tool_group.add_argument("--configure-toolset", metavar="TOOLSET_NAME", 
-                            help="Manually run configuration wizard for a toolset in the current chat")
+                           help="Manually run configuration wizard for a toolset (chat-specific if active, otherwise global defaults)")
     
     msg_group.add_argument("-m", "--send-message", metavar='"MSG"', help="Send message")
     msg_group.add_argument("-tc", "--temp-chat", metavar='"MSG"', help="Start temporary chat")
@@ -466,16 +501,17 @@ def main():
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
         sys.exit(1)
 
-    # 5. Toolset Selection (needs chat context)
+    # 5. Toolset Selection / Listing / Configuration (BEFORE chat loading)
+    # These can now run without an active chat
     if args.select_tools:
-        select_tools_for_chat()
+        select_enabled_toolsets() # MODIFIED: Call the renamed function
         return
-    if args.list_toolsets: 
-        from .chat_manager import list_toolsets
-        list_toolsets() # Needs update in chat_manager
+    if args.list_toolsets:
+        from .chat_manager import list_toolsets # Keep import location
+        list_toolsets() # This function now handles global context
         return
     if args.configure_toolset:
-        configure_toolset_cli(args.configure_toolset)
+        configure_toolset_cli(args.configure_toolset) # This function will be modified next
         return
 
     # 7. Direct Command Execution

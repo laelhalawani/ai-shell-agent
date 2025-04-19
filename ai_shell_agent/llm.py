@@ -16,15 +16,15 @@ from . import logger
 from .config_manager import get_current_model, get_model_provider
 # Import toolset registry and state manager functions
 from .toolsets.toolsets import get_registered_toolsets, ToolsetMetadata # Correct import
-from .chat_state_manager import get_current_chat, get_enabled_toolsets, get_active_toolsets # Correct import
+from .chat_state_manager import get_current_chat, get_enabled_toolsets # get_active_toolsets should NOT be here
 
 # --- LLM Instantiation and Binding ---
 
 def get_llm() -> BaseChatModel:
     """
     Get the LLM instance based on the current model configuration,
-    binding tools dynamically based on the enabled/active toolsets
-    for the *current chat session*.
+    binding tools dynamically based on the *enabled* toolsets
+    for the current chat session.
 
     Returns:
         A configured LangChain BaseChatModel instance with appropriate tools bound.
@@ -34,14 +34,13 @@ def get_llm() -> BaseChatModel:
     if not chat_file:
         logger.warning("get_llm called without an active chat session. Returning LLM without tools.")
         enabled_toolsets_names = []
-        active_toolsets_names = []
     else:
         # Fetch current state for this specific LLM invocation
         # Use display names from state manager
         enabled_toolsets_names = get_enabled_toolsets(chat_file)
-        active_toolsets_names = get_active_toolsets(chat_file)
+        # Ensure active_toolsets_names is NOT fetched here
 
-    logger.info(f"Preparing LLM for chat '{chat_file or 'None'}'. Enabled: {enabled_toolsets_names}, Active: {active_toolsets_names}")
+    logger.info(f"Preparing LLM for chat '{chat_file or 'None'}'. Enabled: {enabled_toolsets_names}")
 
     model_name = get_current_model()
     provider = get_model_provider(model_name)
@@ -51,50 +50,23 @@ def get_llm() -> BaseChatModel:
     bound_tool_names: Set[str] = set() # Track names to avoid duplicates
 
     enabled_set = set(enabled_toolsets_names) # Set of display names
-    active_set = set(active_toolsets_names) # Set of display names
+    # Ensure active_set is NOT defined or used here
 
     # Iterate through registered toolsets to decide which tools to bind
     for toolset_id, metadata in all_registered_toolsets.items():
         toolset_name = metadata.name # Use display name for checking against state
         if toolset_name in enabled_set:
-            tools_to_bind_for_this_set = []
-            if toolset_name in active_set:
-                # Toolset is Enabled and Active: Bind its main tools AND the closer tool
-                logger.debug(f"Adding tools for active toolset: '{toolset_name}'")
-                tools_to_bind_for_this_set.extend(metadata.tools) # Add all main tools
+            # If toolset is enabled, bind ALL its tools
+            logger.debug(f"Adding tools for enabled toolset: '{toolset_name}'")
 
-                # Add closer tool (convention: close_<toolset_id>) if exists
-                closer_tool_name = f"close_{toolset_id}"
-                # Check if closer tool is in the list of tools for this toolset
-                closer_tool_instance = next((t for t in metadata.tools if t.name == closer_tool_name), None)
-                 # Special case for File Editor closer
-                if metadata.id == "aider": closer_tool_instance = next((t for t in metadata.tools if t.name == "close_file_editor"), None)
-
-                if closer_tool_instance:
-                     # We expect the closer to be *part* of metadata.tools, so it should already be included.
-                     # Log if found, but no need to add again unless it wasn't in the list somehow.
-                     logger.debug(f"  - Closer tool '{closer_tool_instance.name}' identified.")
-                     if closer_tool_instance not in tools_to_bind_for_this_set:
-                          logger.warning(f"  - Adding closer tool {closer_tool_instance.name} explicitly (was missing from tool list?)")
-                          tools_to_bind_for_this_set.append(closer_tool_instance)
-                else:
-                     logger.debug(f"  - No conventional closer tool found for '{toolset_name}'.")
-
-            else:
-                # Toolset is Enabled but Inactive: Bind only its starter tool
-                if metadata.start_tool:
-                    logger.debug(f"Adding starter tool for inactive enabled toolset: '{toolset_name}'")
-                    tools_to_bind_for_this_set.append(metadata.start_tool)
-                else:
-                     logger.debug(f"Toolset '{toolset_name}' is enabled but has no starter tool defined.")
-
-            # Add the selected tools for this set to the main list, checking duplicates
-            for tool in tools_to_bind_for_this_set:
+            # Iterate through all tools defined in the toolset's metadata
+            for tool in metadata.tools: # metadata.tools now includes the UsageGuideTool
                 if tool.name not in bound_tool_names:
                     logger.debug(f"  - Binding tool: {tool.name}")
                     bound_tools.append(tool)
                     bound_tool_names.add(tool.name)
-                # else: Tool already bound from another set (less likely with this structure)
+                # else: Tool already bound
+        # Ensure there is NO 'else:' block here related to inactive toolsets
 
     # Instantiate the LLM
     llm: BaseChatModel

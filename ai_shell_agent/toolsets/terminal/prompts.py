@@ -9,7 +9,7 @@ import platform
 OS_SYSTEM = platform.system()
 
 TERMINAL_TOOLSET_INTRO = """\
-Terminal allows you to execute commands directly in the user's system.
+You have activated the system terminal.
 Use the `terminal` for operations like settings, system information retrieval, software installation, and network diagnostics, among others.
 
 ALWAYS BEGIN by running information-gathering commands to understand the environment and file structure.
@@ -21,7 +21,8 @@ Examples of good information-gathering commands:
 DO NOT proceed directly to task-specific commands without first performing these information-gathering steps.
 The terminal supports various commands as listed below.
 DO NOT ask for confirmation before running commands, run any commands continously until you have completed the task.
-DO NOT use the terminal for editing or creating files. 
+DO NOT use the terminal for reading, writing, editing or creating files. 
+CRITICAL DO NOT launch interactive applications or GUIs, as they are not supported in this environment.
 """
 
 WINDOWS_CMD_GUIDANCE = """\

@@ -19,7 +19,6 @@ class ToolsetMetadata:
     id: str # Use the directory name as ID
     name: str
     description: str
-    start_tool: Optional[BaseTool] = None
     tools: List[BaseTool] = field(default_factory=list)
     prompt_content: Optional[str] = None
     module_path: Optional[str] = None # Store module path for reference
@@ -62,7 +61,6 @@ def discover_and_register_toolsets():
                 # --- Extract Metadata ---
                 name = getattr(module, "toolset_name", None)
                 description = getattr(module, "toolset_description", None)
-                start_tool_instance = getattr(module, "toolset_start_tool", None)
                 tools_list = getattr(module, "toolset_tools", [])
                 config_defaults = getattr(module, "toolset_config_defaults", {})
                 configure_func = getattr(module, "configure_toolset", None)
@@ -96,12 +94,6 @@ def discover_and_register_toolsets():
                         all_tools_valid = False; break
                 if not all_tools_valid: continue
 
-                start_tool_valid = True
-                if start_tool_instance:
-                    if not (isinstance(start_tool_instance, BaseTool) and get_tool(start_tool_instance.name)):
-                        logger.error(f"Start tool '{getattr(start_tool_instance, 'name', 'UNKNOWN')}' in '{toolset_module_name}' not registered or invalid. Disabling.")
-                        start_tool_instance = None; start_tool_valid = False
-
                 # Get prompt content
                 prompt_content = None
                 try:
@@ -119,7 +111,6 @@ def discover_and_register_toolsets():
                     id=toolset_id,
                     name=name,
                     description=description,
-                    start_tool=start_tool_instance,
                     tools=validated_tools,
                     prompt_content=prompt_content,
                     module_path=toolset_module_name,

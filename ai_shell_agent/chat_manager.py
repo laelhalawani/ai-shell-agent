@@ -36,13 +36,12 @@ from .chat_state_manager import (
     get_current_chat,
     get_chat_messages,
     get_chat_map,
+    get_enabled_toolsets,
     create_or_load_chat,
     _write_chat_messages,       # Used directly for saving history
     # _get_chat_dir_path,       # Not needed directly, used by delete_chat_state
     # _write_chat_map,          # Not needed directly, used by delete_chat_state/rename_chat_state
     get_current_chat_title,
-    get_enabled_toolsets,
-    get_active_toolsets,
     rename_chat as rename_chat_state, # Import 'rename_chat' and alias it
     delete_chat as delete_chat_state  # Import 'delete_chat' and alias it
 )
@@ -790,63 +789,64 @@ def list_messages() -> None:
 
 # --- Toolset Listing ---
 def list_toolsets() -> None:
-    """Lists all available toolsets and their status."""
+    """Lists all available toolsets and their status (chat-specific or global)."""
     chat_id = get_current_chat()
-    
-    if not chat_id:
-        console.display_message("ERROR: ", "No active chat session.", console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        console.display_message("SYSTEM: ", "Please load or create a chat first (e.g., `ai -c <chat_title>`).", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-        return
-    
-    chat_title = get_current_chat_title()
-    registered_toolsets = get_registered_toolsets()
-    
+    registered_toolsets = get_registered_toolsets() # Dict[id, ToolsetMetadata]
+
     if not registered_toolsets:
         console.display_message("WARNING: ", "No toolsets found/registered.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
         return
-    
-    active_toolsets = get_active_toolsets(chat_id)
-    enabled_toolsets = get_enabled_toolsets(chat_id)
-    
-    console.display_message("SYSTEM: ", f"Toolsets for '{chat_title}':", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-    
-    # Combine all distinct toolset names
-    all_toolset_names = sorted(set(list(registered_toolsets.values()) + active_toolsets + enabled_toolsets))
-    
-    # Headers for table columns
-    from rich.table import Table
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Toolset", style="cyan")
-    table.add_column("Description", style="")
-    table.add_column("Registered", style="")
-    table.add_column("Enabled", style="")
-    table.add_column("Active", style="")
-    
-    # Add rows for each toolset
-    for ts_name in sorted(registered_toolsets.keys()):
-        meta = registered_toolsets[ts_name]
-        
-        is_registered = "✓"
-        is_enabled = "✓" if meta.name in enabled_toolsets else "-"
-        is_active = "✓" if meta.name in active_toolsets else "-"
-        
-        description = meta.description or "No description"
-        if len(description) > 60:
-            description = description[:57] + "..."
-            
-        table.add_row(meta.name, description, is_registered, is_enabled, is_active)
-    
-    # Output the table
-    console.console.print(table)
-    
-    # Output explanation
-    explanation = """
-• Registered: The toolset is installed and available for use
-• Enabled: The toolset is enabled in the current chat and can be activated
-• Active: The toolset is currently active and its tools are available to the AI
 
-Note: Use --select-tools to change which toolsets are enabled.
-      A toolset must be enabled before it can be activated/deactivated 
-      by the AI during conversation.
+    # Get global defaults and chat-specific states if available
+    from .config_manager import get_default_enabled_toolsets
+    default_enabled_toolsets = get_default_enabled_toolsets()
+    
+    # Context-specific setup
+    if chat_id:
+        chat_title = get_current_chat_title() or f"Chat ID: {chat_id}"
+        console.display_message("SYSTEM: ", f"Toolsets for Chat '{chat_title}':", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+        enabled_toolsets = get_enabled_toolsets(chat_id)
+        is_chat_context = True
+    else:
+        console.display_message("SYSTEM: ", "Available Toolsets:", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+        enabled_toolsets = default_enabled_toolsets
+        is_chat_context = False
+
+    # Display each toolset with its status
+    for ts_id, meta in sorted(registered_toolsets.items(), key=lambda item: item[1].name):
+        status_markers = []
+        
+        # Add appropriate status markers based on context
+        if meta.name in enabled_toolsets:
+            status_markers.append(Text("ENABLED", style="bold green"))
+            
+        # Create the display line for this toolset
+        line = Text()
+        line.append(f"- {meta.name}", style="cyan bold")
+        
+        # Add status markers if any
+        if status_markers:
+            line.append(" [")
+            for i, marker in enumerate(status_markers):
+                if i > 0:
+                    line.append(", ")
+                line.append(marker)
+            line.append("]")
+            
+        # Output the formatted line
+        console.console.print(line)
+    
+    # Show explanation based on context
+    if is_chat_context:
+        explanation = """
+Toolset Status:
+• ENABLED: Toolset's tools are available to the AI in this chat
+
+Note: Use --select-tools to change enabled toolsets for this chat.
 """
-    console.display_message("SYSTEM: ", explanation, console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    else:
+        explanation = """
+Note: Use --select-tools to change which toolsets will be enabled by default for new chats.
+"""
+    
+    console.display_message("SYSTEM: ", explanation.strip(), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)

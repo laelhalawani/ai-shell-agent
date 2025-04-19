@@ -24,8 +24,7 @@ from ... import logger
 from ...tool_registry import register_tools
 from ...chat_state_manager import (
     get_current_chat,
-    get_active_toolsets,
-    update_active_toolsets,
+    check_and_configure_toolset
 )
 # Import console manager instead of console_io
 from ...console_manager import get_console_manager
@@ -92,41 +91,19 @@ def configure_toolset(
 class StartTerminalToolArgs(BaseModel):
     pass
 
-class StartTerminalTool(BaseTool):
-    name: str = "start_terminal"
-    description: str = "Use this to start the terminal application, whenever asked to perform terminal or console operations, or when you need more information to gather complete the task. You can use the terminal to explor the system, understand the current directory, find files and check and modify system settings. Before running any commands first start the terminal and await a confirmation." 
-    args_schema: Type[BaseModel] = StartTerminalToolArgs # Use empty schema
+class TerminalUsageGuideTool(BaseTool):
+    name: str = "terminal_usage_guide"
+    description: str = "Displays usage instructions and context for the Terminal toolset."
+    args_schema: Type[BaseModel] = StartTerminalToolArgs # Keep schema name for now
 
-    def _run(self, *args, **kwargs) -> str:
-        """Activates the 'Terminal' toolset and returns usage instructions."""
-        logger.info(f"StartTerminalTool called")
-
-        chat_id = get_current_chat()
-        if not chat_id:
-            return "Error: No active chat session found."
-
-        from ...chat_state_manager import check_and_configure_toolset
-        check_and_configure_toolset(chat_id, toolset_name)
-
-        current_toolsets = get_active_toolsets(chat_id)
-        if toolset_name in current_toolsets:
-            logger.debug(f"'{toolset_name}' toolset is already active.")
-            # If already active, still return the full prompt content for context
-            return TERMINAL_TOOLSET_PROMPT
-            # return f"'{toolset_name}' toolset is already active.\n\n{TERMINAL_TOOLSET_PROMPT}" # Alternative with prefix
-
-        # Activate it
-        new_toolsets = list(current_toolsets)
-        new_toolsets.append(toolset_name)
-        update_active_toolsets(chat_id, new_toolsets)
-        logger.debug(f"Successfully activated '{toolset_name}' toolset for chat {chat_id}")
-
-        # --- MODIFIED: Return the full prompt content ---
+    def _run(self) -> str:
+        """Returns the usage instructions for the Terminal toolset."""
+        logger.debug(f"TerminalUsageGuideTool invoked.")
+        # Simply return the static prompt content
         return TERMINAL_TOOLSET_PROMPT
-        # --- END MODIFIED ---
 
-    async def _arun(self, *args, **kwargs) -> str:
-        return self._run(*args, **kwargs)
+    async def _arun(self) -> str:
+        return self._run()
 
 # Define schema for TerminalTool_HITL
 class TerminalToolArgs(BaseModel):
@@ -311,20 +288,20 @@ class PythonREPLTool_HITL(BaseTool):
 
 
 # --- Tool Instances ---
-start_terminal_tool = StartTerminalTool()
+terminal_usage_guide_tool = TerminalUsageGuideTool()
 terminal_tool = TerminalTool_HITL()
 python_repl_tool = PythonREPLTool_HITL()
 
 # --- Toolset Definition ---
-toolset_start_tool: BaseTool = start_terminal_tool
 toolset_tools: List[BaseTool] = [
+    terminal_usage_guide_tool, # Added
     terminal_tool,
     python_repl_tool,
 ]
 
 # --- Register Tools ---
-register_tools([toolset_start_tool] + toolset_tools)
-logger.debug(f"Terminal toolset tools registered: {[t.name for t in [toolset_start_tool] + toolset_tools]}")
+register_tools(toolset_tools)
+logger.debug(f"Terminal toolset tools registered: {[t.name for t in toolset_tools]}")
 
 # --- Direct Execution Helper (remains the same) ---
 class TerminalTool_Direct(BaseTool):

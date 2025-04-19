@@ -24,10 +24,9 @@ from ... import logger
 from ...tool_registry import register_tools
 from ...chat_state_manager import (
     get_current_chat,
-    get_active_toolsets,
-    update_active_toolsets,
     get_toolset_data_path
     # Removed: _read_json, _write_json imports - use utils
+    # Removed: get_active_toolsets, update_active_toolsets
 )
 # Import config manager helpers needed ONLY for model/provider info
 from ...config_manager import (
@@ -192,26 +191,31 @@ from ...utils import read_json as _read_json, write_json as _write_json
 # --- MODIFIED: configure_toolset signature and saving logic ---
 def configure_toolset(
     global_config_path: Path,
-    local_config_path: Path,
+    local_config_path: Optional[Path], # Make local_config_path optional
     dotenv_path: Path,
-    current_chat_config: Optional[Dict]
+    current_config_for_prompting: Optional[Dict] # Renamed for clarity
 ) -> Dict:
     """
     Configuration function for the File Editor (Aider) toolset.
-    Prompts user based on current_chat_config, ensures secrets via .env utils,
-    and saves the result to BOTH local_config_path and global_config_path.
+    Prompts user based on current config (local or global), ensures secrets via .env utils,
+    and saves the result appropriately (global-only or both).
     """
-    logger.info(f"Configuring File Editor toolset. Global: {global_config_path}, Local: {local_config_path}, .env: {dotenv_path}")
-    # Use current_chat_config for prompting defaults, fallback to empty dict if None
-    config_for_prompting = current_chat_config or {}
-    defaults = toolset_config_defaults
-    # Resulting config will be built fresh
-    final_config = {}
+    is_global_only = local_config_path is None
+    context_name = "Global Defaults" if is_global_only else "Current Chat"
+    logger.info(f"Configuring File Editor toolset ({context_name}). Global: {global_config_path}, Local: {local_config_path}, .env: {dotenv_path}")
 
-    print("\n--- Configure File Editor (Aider) Settings ---")
+    # Use current_config_for_prompting (read from local or global before calling)
+    config_to_prompt = current_config_for_prompting or {}
+    defaults = toolset_config_defaults
+    final_config = {} # Build fresh
+
+    print(f"\n--- Configure File Editor (Aider) Settings ({context_name}) ---")
     print("Select the models and edit format the File Editor should use.")
-    print("This configuration will be saved for the current chat AND as the global default for new chats.")
-    print("Leave input empty at any step to keep the current setting for this chat.")
+    if is_global_only:
+        print("This configuration will be saved as the global default for new chats.")
+    else:
+        print("This configuration will be saved for the current chat AND as the global default for new chats.")
+    print("Leave input empty at any step to keep the current setting.")
     print("Enter 'none' to reset a setting to its default value.")
 
     # --- Model Selection ---
@@ -220,7 +224,7 @@ def configure_toolset(
     # Main Model
     selected_main = _prompt_for_single_model_config(
         "Main/Architect",
-        config_for_prompting.get("main_model"), # Use chat config for current value
+        config_to_prompt.get("main_model"), # Use config_to_prompt for current value
         defaults["main_model"] # Default is None initially, _prompt.. handles agent fallback
     )
     final_config["main_model"] = selected_main
@@ -228,7 +232,7 @@ def configure_toolset(
     # Editor Model
     selected_editor = _prompt_for_single_model_config(
         "Editor",
-        config_for_prompting.get("editor_model"), # Use chat config for current value
+        config_to_prompt.get("editor_model"), # Use config_to_prompt for current value
         defaults["editor_model"]
     )
     final_config["editor_model"] = selected_editor
@@ -236,22 +240,19 @@ def configure_toolset(
     # Weak Model
     selected_weak = _prompt_for_single_model_config(
         "Weak (Commits etc.)",
-        config_for_prompting.get("weak_model"), # Use chat config for current value
+        config_to_prompt.get("weak_model"), # Use config_to_prompt for current value
         defaults["weak_model"]
     )
     final_config["weak_model"] = selected_weak
 
     # --- Edit Format Selection ---
-    selected_format = _prompt_for_edit_format_config(config_for_prompting.get("edit_format")) # Use chat config
+    selected_format = _prompt_for_edit_format_config(config_to_prompt.get("edit_format")) # Use config_to_prompt
     final_config["edit_format"] = selected_format
 
     # Add other default config values if they aren't model/format related
-    final_config["auto_commits"] = config_for_prompting.get("auto_commits", defaults["auto_commits"])
-    final_config["dirty_commits"] = config_for_prompting.get("dirty_commits", defaults["dirty_commits"])
-
-    # --- *** ADD ENABLED FLAG *** ---
-    final_config["enabled"] = True
-    # --- *** END ADD ENABLED FLAG *** ---
+    final_config["auto_commits"] = config_to_prompt.get("auto_commits", defaults["auto_commits"])
+    final_config["dirty_commits"] = config_to_prompt.get("dirty_commits", defaults["dirty_commits"])
+    final_config["enabled"] = True # Mark as enabled when configured
 
     # --- Ensure API Keys using ensure_dotenv_key ---
     print("\nChecking API keys for selected File Editor models...")
@@ -277,47 +278,51 @@ def configure_toolset(
     for model_name in filter(None, models_to_check): # Filter out potential None values
         try:
              provider = get_model_provider(model_name)
-             provider_name = "OpenAI" if provider == "openai" else "Google"
              env_var = "OPENAI_API_KEY" if provider == "openai" else "GOOGLE_API_KEY"
 
              if env_var not in checked_providers:
                  logger.debug(f"Ensuring dotenv key: {env_var} for model {model_name}")
                  key_value = ensure_dotenv_key(
-                     dotenv_path,
+                     dotenv_path, 
                      env_var,
-                     api_key_descriptions.get(env_var, f"{provider_name} API Key")
+                     api_key_descriptions.get(env_var)
                  )
                  if key_value is None:
-                      print(f"Warning: API key ({env_var}) required by model '{model_name}' was not provided or found. File Editor may fail.")
-                      required_keys_ok = False # Mark as potentially problematic
+                     required_keys_ok = False
                  checked_providers.add(env_var)
         except Exception as e:
             logger.error(f"Error checking API key for model '{model_name}': {e}", exc_info=True)
             print(f"\nError checking API key for model '{model_name}'. Check logs.")
             required_keys_ok = False # Mark as problematic if check fails
 
-    # --- Save Config to BOTH locations ---
-    save_success = True
-    try:
-        _write_json(local_config_path, final_config)
-        logger.info(f"File Editor configuration saved to local path: {local_config_path}")
-    except Exception as e:
-         save_success = False
-         logger.error(f"Failed to save File Editor configuration to local path {local_config_path}: {e}")
-         print(f"\nError: Failed to save configuration for current chat: {e}")
+    # --- Save Config Appropriately ---
+    save_success_global = True
+    save_success_local = True
 
+    # Always save to global
     try:
         _write_json(global_config_path, final_config)
         logger.info(f"File Editor configuration saved to global path: {global_config_path}")
     except Exception as e:
-         save_success = False
-         logger.error(f"Failed to save File Editor configuration to global path {global_config_path}: {e}")
+         save_success_global = False
+         logger.error(f"Failed to save File Editor config to global path {global_config_path}: {e}")
          print(f"\nError: Failed to save global default configuration: {e}")
 
-    if save_success:
-        print("\nFile Editor configuration updated for this chat and globally.")
-        if not required_keys_ok:
-             print("Note: Some API keys were missing or skipped. Ensure they are set in your environment or .env file.")
+    # Save to local only if local_config_path is provided (i.e., not global-only context)
+    if not is_global_only:
+        try:
+            _write_json(local_config_path, final_config)
+            logger.info(f"File Editor configuration saved to local path: {local_config_path}")
+        except Exception as e:
+             save_success_local = False
+             logger.error(f"Failed to save File Editor config to local path {local_config_path}: {e}")
+             print(f"\nError: Failed to save configuration for current chat: {e}")
+
+    # --- Confirmation Messages ---
+    if save_success_global and (is_global_only or save_success_local):
+        if is_global_only: print("\nGlobal default File Editor configuration updated.")
+        else: print("\nFile Editor configuration updated for this chat and globally.")
+        if not required_keys_ok: print("Note: Some API keys missing/skipped. Ensure they are set in .env.")
     else:
         print("\nFile Editor configuration update failed. Check logs.")
 
@@ -344,83 +349,16 @@ class UserResponseSchema(BaseModel):
 
 # --- Tool Classes (MODIFIED) ---
 
-class StartCodeCopilot(BaseTool):
-    name: str = "start_code_copilot"
-    description: str = "Use this to start the ai code copilot, whenever asked to edit contents of any text file including code and scripts. After starting additional documentation and instructions will be provided."
+class AiderUsageGuideTool(BaseTool):
+    name: str = "aider_usage_guide"
+    description: str = "Displays usage instructions and context for the Aider Code Copilot toolset."
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
-    # Removed **kwargs as no args expected
     def _run(self) -> str:
-        """
-        Initializes the Aider state, activates the 'File Editor' toolset,
-        and updates the system prompt. Handles configuration checks.
-        """
-        chat_id = get_current_chat()
-        if not chat_id:
-            return "Error: No active chat session found."
-
-        toolset_name = toolset_name  # The name used in active_toolsets
-
-        # --- Toolset Activation ---
-        current_toolsets = get_active_toolsets(chat_id)
-        activation_feedback = ""
-        if (toolset_name not in current_toolsets) and (toolset_id not in current_toolsets):
-            logger.debug(f"Activating '{toolset_name}' toolset for chat {chat_id}.")
-            new_toolsets = list(current_toolsets)
-            new_toolsets.append(toolset_name)
-            update_active_toolsets(chat_id, new_toolsets)  # Save updated toolsets list
-            activation_feedback = f"'{toolset_name}' toolset activated.\n\n"
-
-        # --- Get paths ---
-        chat_config_path = get_toolset_data_path(chat_id, toolset_id)
-        
-        # --- NEW: Ensure configuration check runs FIRST ---
-        # This function now handles checking chat, global, copying, or prompting.
-        # It ensures chat_config_path is populated correctly before we proceed.
-        from ...chat_state_manager import check_and_configure_toolset
-        check_and_configure_toolset(chat_id, toolset_name) # Call the unified checker
-        # --- End configuration check ---
-
-        # --- Read the potentially just-configured chat state ---
-        # We assume check_and_configure_toolset ensures chat_config_path is valid now
-        # or handles errors appropriately within itself.
-        aider_state = _read_json(chat_config_path, default_value=None)
-        if not isinstance(aider_state, dict):
-             # This shouldn't happen if check_and_configure works correctly
-             logger.error(f"Failed to read/configure state from {chat_config_path} after check.")
-             return f"{activation_feedback}Error: Failed to initialize File Editor state after configuration check."
-
-
-        # --- Resume or Initialize Active Coder State ---
-        # Check if already enabled runtime state exists (less likely now with check first)
-        runtime_state = get_active_coder_state(chat_id)
-        if (runtime_state and runtime_state.coder):
-            logger.info(f"Resuming existing File Editor session for chat {chat_id}.")
-            files_str = ', '.join(runtime_state.coder.get_rel_fnames()) or 'None'
-            status_message = f"Resumed existing File Editor session. Files: {files_str}."
-            # Always provide the prompt content on start/resume
-            return f"{activation_feedback}{status_message}\n\n{AIDER_TOOLSET_PROMPT}"
-
-        # If no runtime state, create it using the (now guaranteed) chat_config_path
-        logger.debug(f"Creating new active coder state using config from {chat_config_path}")
-        aider_state["enabled"] = True # Ensure enabled flag is set for recreation logic
-        if "abs_fnames" not in aider_state: aider_state["abs_fnames"] = []
-        if "aider_done_messages" not in aider_state: aider_state["aider_done_messages"] = []
-
-        # --- Recreate/Create Coder State ---
-        # ensure_active_coder_state handles recreation from the chat_config_path
-        state = ensure_active_coder_state(chat_config_path)
-        if not state:
-            # Mark as disabled in chat config if creation failed?
-            aider_state["enabled"] = False
-            _write_json(chat_config_path, aider_state)
-            return f"{activation_feedback}Error: Failed to initialize File Editor runtime state. Check logs."
-
-        # --- Final Message ---
-        status_message = "New File Editor session started. Use 'open_file' to add files."
-        logger.info(f"New File Editor session initialized for {chat_id}")
-        # Always provide the prompt content on start/resume
-        return f"{activation_feedback}{status_message}\n\n{AIDER_TOOLSET_PROMPT}"
+        """Returns the usage instructions for the Aider toolset."""
+        logger.debug(f"AiderUsageGuideTool invoked.")
+        # Simply return the static prompt content
+        return AIDER_TOOLSET_PROMPT
 
     async def _arun(self) -> str:
         return self._run()
@@ -829,13 +767,11 @@ class CloseCodeCopilot(BaseTool):
     args_schema: Type[BaseModel] = NoArgsSchema # Specify schema
 
     def _run(self) -> str:
-        """Clears the Aider state, deactivates the toolset, and updates the prompt."""
+        """Clears the Aider state and cleans up runtime state."""
         chat_id = get_current_chat()
         if not chat_id:
             return "Error: No active chat session found to close the editor for."
 
-        toolset_name = "File Editor"
-        
         # Get path to the aider.json file for this chat
         aider_json_path = get_toolset_data_path(chat_id, toolset_id)
 
@@ -849,19 +785,7 @@ class CloseCodeCopilot(BaseTool):
             logger.error(f"Error clearing Aider state: {e}", exc_info=True)
             state_cleared_msg = "File Editor session context possibly cleared (encountered error)."
 
-        # --- Deactivate Toolset ---
-        current_toolsets = get_active_toolsets(chat_id)
-        toolset_deactivated_msg = ""
-        if toolset_name in current_toolsets:
-            logger.info(f"Deactivating '{toolset_name}' toolset for chat {chat_id}.")
-            new_toolsets = [ts for ts in current_toolsets if ts != toolset_name]
-            update_active_toolsets(chat_id, new_toolsets)  # Save updated list
-            toolset_deactivated_msg = f"'{toolset_name}' toolset deactivated."
-            # No manual prompt update needed here
-            logger.info(f"System prompt will be implicitly updated by LLM using new toolset state.")
-        else:
-             toolset_deactivated_msg = f"'{toolset_name}' toolset was already inactive."
-        return f"{state_cleared_msg} {toolset_deactivated_msg}".strip()
+        return state_cleared_msg.strip()
              
     async def _arun(self) -> str:
         # Simple enough to run synchronously
@@ -1102,7 +1026,7 @@ submit_code_editor_input_tool = SubmitInput_HITL()
 # submit_code_editor_input_direct_tool = SubmitFileEditorInputTool()
 
 # --- Create tool instances ---
-start_code_editor_tool = StartCodeCopilot()
+aider_usage_guide_tool = AiderUsageGuideTool()
 add_code_file_tool = AddFileToConext()
 drop_code_file_tool = RemoveFileFromContext()
 list_code_files_tool = ListFilesInContext()
@@ -1113,6 +1037,7 @@ close_code_editor_tool = CloseCodeCopilot()
 
 # Define the tools that belong to this toolset
 toolset_tools = [
+    aider_usage_guide_tool,
     add_code_file_tool,
     drop_code_file_tool,
     list_code_files_tool,
@@ -1122,11 +1047,10 @@ toolset_tools = [
     undo_last_edit_tool,
     close_code_editor_tool
 ]
-toolset_start_tool = start_code_editor_tool
 
 # Register all tools with the central registry
 register_tools([
-    start_code_editor_tool,
+    aider_usage_guide_tool,
     add_code_file_tool,
     drop_code_file_tool,
     list_code_files_tool,
@@ -1137,4 +1061,4 @@ register_tools([
     close_code_editor_tool
 ])
 
-logger.debug(f"Registered File Editor toolset with {len(toolset_tools) + 1} tools")
+logger.debug(f"Registered File Editor toolset with {len(toolset_tools)} tools")

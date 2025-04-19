@@ -24,20 +24,15 @@ from .toolsets.toolsets import get_toolset_ids, get_toolset_names  # Added get_t
 # --- Constants ---
 SESSION_FILE = Path(DATA_DIR) / "session.json"
 CHAT_MAP_FILE = Path(CHATS_DIR) / "chat_map.json"
-# Removed: AIDER_STATE_KEY
 # Metadata keys within chat config.json
 MODEL_KEY = "agent_model" # Optional override for the agent model per chat
-ACTIVE_TOOLSETS_KEY = "active_toolsets"
 ENABLED_TOOLSETS_KEY = "enabled_toolsets"
 TITLE_KEY = "title"
 CREATED_AT_KEY = "created_at"
 
 # --- Default Toolsets ---
-# Active toolsets start empty, must be activated by LLM or user
-DEFAULT_ACTIVE_TOOLSETS_NAMES = []
-
-# --- REMOVED Default Toolsets initialization ---
-# REMOVED: DEFAULT_ENABLED_TOOLSETS_NAMES = get_toolset_names()
+# --- Define default enabled toolsets (File Manager and Terminal) ---
+DEFAULT_ENABLED_TOOLSETS_NAMES = ["File Manager", "Terminal"]
 
 # Ensure directories exist
 os.makedirs(CHATS_DIR, exist_ok=True)
@@ -112,7 +107,6 @@ def _read_chat_config(chat_id: str) -> Dict:
     defaults = {
         MODEL_KEY: None, # Default to global model
         ENABLED_TOOLSETS_KEY: [], # Default to EMPTY list now
-        ACTIVE_TOOLSETS_KEY: list(DEFAULT_ACTIVE_TOOLSETS_NAMES),
         TITLE_KEY: "Untitled Chat",
         CREATED_AT_KEY: datetime.now(timezone.utc).isoformat()
     }
@@ -132,14 +126,6 @@ def _read_chat_config(chat_id: str) -> Dict:
     if set(valid_enabled) != set(current_enabled):
          logger.warning(f"Correcting enabled toolsets for chat '{chat_id}': {valid_enabled}")
          config[ENABLED_TOOLSETS_KEY] = valid_enabled
-         needs_update = True
-
-    current_active = config.get(ACTIVE_TOOLSETS_KEY, [])
-    # Active must also be currently enabled
-    valid_active = [name for name in current_active if name in valid_enabled]
-    if set(valid_active) != set(current_active):
-         logger.warning(f"Correcting active toolsets for chat '{chat_id}': {valid_active}")
-         config[ACTIVE_TOOLSETS_KEY] = valid_active
          needs_update = True
 
     if needs_update:
@@ -200,12 +186,8 @@ def get_enabled_toolsets(chat_id: str) -> List[str]:
     # No need to refresh global DEFAULT anymore
     return get_chat_config_value(chat_id, ENABLED_TOOLSETS_KEY, default=[]) # Return empty list default
 
-def get_active_toolsets(chat_id: str) -> List[str]:
-    """Gets the list of *active* toolset names for a specific chat session."""
-    return get_chat_config_value(chat_id, ACTIVE_TOOLSETS_KEY, default=list(DEFAULT_ACTIVE_TOOLSETS_NAMES))
-
 def update_enabled_toolsets(chat_id: str, toolset_names: List[str]) -> None:
-    """Updates the list of *enabled* toolset names. Deactivates any no longer enabled."""
+    """Updates the list of *enabled* toolset names. Checks config for newly enabled."""
     if not chat_id: 
         logger.error("update_enabled_toolsets called with empty chat_id.")
         return
@@ -225,13 +207,6 @@ def update_enabled_toolsets(chat_id: str, toolset_names: List[str]) -> None:
     update_chat_config_value(chat_id, ENABLED_TOOLSETS_KEY, unique_toolsets)
     logger.info(f"Enabled toolsets updated for chat {chat_id}: {unique_toolsets}")
 
-    # Deactivate any currently active toolsets that are no longer enabled
-    current_active = get_active_toolsets(chat_id)
-    new_active = [name for name in current_active if name in unique_toolsets]
-    if set(new_active) != set(current_active):
-        logger.info(f"Deactivating toolsets no longer enabled: {list(set(current_active) - set(new_active))}")
-        update_active_toolsets(chat_id, new_active) # This calls update_chat_config_value again
-
     # --- Correctly calculate and check newly enabled toolsets ---
     enabled_after_update = set(unique_toolsets)
     newly_enabled_correct = enabled_after_update - enabled_before_update # Compare new enabled with old enabled
@@ -241,24 +216,6 @@ def update_enabled_toolsets(chat_id: str, toolset_names: List[str]) -> None:
         for toolset_name in newly_enabled_correct: # Iterate over the correctly identified set
             check_and_configure_toolset(chat_id, toolset_name)
     # --- End correction ---
-
-def get_active_toolsets(chat_id: str) -> List[str]:
-    """Gets the list of *active* toolset names for a specific chat session."""
-    return get_chat_config_value(chat_id, ACTIVE_TOOLSETS_KEY, default=list(DEFAULT_ACTIVE_TOOLSETS_NAMES))
-
-def update_active_toolsets(chat_id: str, toolset_names: List[str]) -> None:
-    """Updates the list of *active* toolsets. Ensures they are valid and enabled."""
-    if not chat_id: 
-        logger.error("update_active_toolsets called with empty chat_id.")
-        return
-    enabled = get_enabled_toolsets(chat_id) # Gets current enabled names
-    valid_active = [name for name in toolset_names if name in enabled]
-    invalid_attempt = [name for name in toolset_names if name not in enabled]
-    if invalid_attempt:
-        logger.warning(f"Attempted to activate non-enabled toolsets for chat {chat_id}: {invalid_attempt}. Ignoring.")
-    unique_toolsets = sorted(list(set(valid_active)))
-    update_chat_config_value(chat_id, ACTIVE_TOOLSETS_KEY, unique_toolsets)
-    logger.debug(f"Active toolsets updated for chat {chat_id}: {unique_toolsets}")
 
 # --- MODIFIED: check_and_configure_toolset ---
 def check_and_configure_toolset(chat_id: str, toolset_name: str):
@@ -449,11 +406,9 @@ def create_or_load_chat(title: str) -> Optional[str]:
         initial_enabled = get_default_enabled_toolsets()
         logger.info(f"Applying global default enabled toolsets to new chat: {initial_enabled}")
         
-        initial_active = list(DEFAULT_ACTIVE_TOOLSETS_NAMES) # Active always starts empty
         initial_config = {
             MODEL_KEY: None, # Use global default initially
             ENABLED_TOOLSETS_KEY: initial_enabled, # Use global defaults here
-            ACTIVE_TOOLSETS_KEY: initial_active,
             TITLE_KEY: title,
             CREATED_AT_KEY: datetime.now(timezone.utc).isoformat()
         }
@@ -463,7 +418,7 @@ def create_or_load_chat(title: str) -> Optional[str]:
         initial_messages = [{"role": "system", "content": SYSTEM_PROMPT, "timestamp": datetime.now(timezone.utc).isoformat()}]
         _write_chat_messages(chat_id, initial_messages)
 
-        logger.debug(f"Created new chat '{title}' with enabled={initial_enabled}, active={initial_active}.")
+        logger.debug(f"Created new chat '{title}' with enabled={initial_enabled}.")
 
         # For new chats, check configuration for any default-enabled toolsets
         if initial_enabled:  # This would be empty by default, but just in case
