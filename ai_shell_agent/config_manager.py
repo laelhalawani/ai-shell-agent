@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, List
 from . import logger
 from .paths import ROOT_DIR # Removed console_io import
-from .settings import APP_DEFAULT_MODEL, APP_DEFAULT_LANGUAGE, DEFAULT_ENABLED_TOOLSETS_NAMES
+from .settings import APP_DEFAULT_MODEL, APP_DEFAULT_LANGUAGE, DEFAULT_ENABLED_TOOLSETS_NAMES, APP_DEFAULT_TRANSLATION_MODEL
 from .console_manager import get_console_manager # Import ConsoleManager
 from .texts import get_text # Added import for get_text
 
@@ -178,6 +178,168 @@ def prompt_for_model_selection() -> Optional[str]:
         logger.error(f"Model selection error: {e}", exc_info=True)
         return None
 
+# --- Translation Model Functions ---
+
+TRANSLATION_MODEL_CONFIG_KEY = "translation_model"
+TRANSLATION_MODEL_ENV_VAR = "AI_SHELL_AGENT_TRANSLATION_MODEL"
+
+def get_translation_model() -> str:
+    """
+    Get the currently configured translation model.
+    Priority: Env Var -> Config File -> Default Setting.
+    """
+    # 1. Check environment variable
+    env_model = os.getenv(TRANSLATION_MODEL_ENV_VAR)
+    if env_model:
+        normalized_env_model = normalize_model_name(env_model)
+        if normalized_env_model in ALL_MODELS.values():
+            logger.debug(f"Using translation model from env var {TRANSLATION_MODEL_ENV_VAR}: {normalized_env_model}")
+            return normalized_env_model
+        else:
+            logger.warning(f"Invalid model name '{env_model}' in env var {TRANSLATION_MODEL_ENV_VAR}. Ignoring.")
+
+    # 2. Check config file
+    config = _read_config()
+    config_model = config.get(TRANSLATION_MODEL_CONFIG_KEY)
+    if config_model:
+        normalized_config_model = normalize_model_name(config_model)
+        if normalized_config_model in ALL_MODELS.values():
+            logger.debug(f"Using translation model from config file: {normalized_config_model}")
+            return normalized_config_model
+        else:
+             logger.warning(f"Invalid model name '{config_model}' in config key '{TRANSLATION_MODEL_CONFIG_KEY}'. Ignoring.")
+
+    # 3. Use default from settings
+    logger.debug(f"Using default translation model from settings: {APP_DEFAULT_TRANSLATION_MODEL}")
+    # Ensure the default itself is valid before returning
+    normalized_default = normalize_model_name(APP_DEFAULT_TRANSLATION_MODEL)
+    if normalized_default not in ALL_MODELS.values():
+         logger.error(f"Default translation model '{APP_DEFAULT_TRANSLATION_MODEL}' from settings is invalid! Falling back to main default '{APP_DEFAULT_MODEL}'.")
+         # Fallback to the main default model if the translation default is broken
+         return normalize_model_name(APP_DEFAULT_MODEL)
+    return normalized_default
+
+def set_translation_model(model_name: str) -> None:
+    """
+    Set the translation model in the config file.
+    """
+    normalized_name = normalize_model_name(model_name)
+    if normalized_name not in ALL_MODELS.values():
+        logger.error(f"Attempted to set invalid translation model: {model_name} (normalized: {normalized_name}). Aborting save.")
+        return
+
+    config = _read_config()
+    config[TRANSLATION_MODEL_CONFIG_KEY] = normalized_name
+    _write_config(config)
+    logger.info(f"Translation model set to: {normalized_name} in config file.")
+
+def prompt_for_translation_model_selection() -> Optional[str]:
+    """Prompts user for translation model selection using ConsoleManager."""
+    current_translation_model = get_translation_model()
+
+    # Create a map of model names to their aliases (same logic as main model prompt)
+    model_aliases = {}
+    for alias, full_name in ALL_MODELS.items():
+        if full_name in model_aliases:
+            model_aliases[full_name].append(alias)
+        else:
+            model_aliases[full_name] = [alias]
+    for full_name in model_aliases:
+        if full_name in model_aliases[full_name]:
+            model_aliases[full_name].remove(full_name)
+
+    from rich.text import Text
+
+    # Use specific texts for translation model selection
+    console.display_message(get_text("common.labels.system"), get_text("config.trans_model_select.title"),
+                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.display_message(get_text("common.labels.system"), get_text("config.model_select.openai_header"),
+                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    openai_lines = []
+    current_marker = get_text("config.model_select.current_marker")
+    for model in set(OPENAI_MODELS.values()):
+        aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
+        alias_markup = ', '.join([f'[underline]{a}[/underline]' for a in aliases])
+        alias_text = get_text("config.model_select.aliases_suffix", alias_str=alias_markup) if aliases else ""
+        marker = current_marker if model == current_translation_model else ""
+        line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
+        openai_lines.append(line_text)
+    for line in openai_lines:
+        console.console.print(line)
+
+    console.display_message(get_text("common.labels.system"), get_text("config.model_select.google_header"),
+                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    google_lines = []
+    for model in set(GOOGLE_MODELS.values()):
+        aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
+        alias_markup = ', '.join([f'[underline]{a}[/underline]' for a in aliases])
+        alias_text = get_text("config.model_select.aliases_suffix", alias_str=alias_markup) if aliases else ""
+        marker = current_marker if model == current_translation_model else ""
+        line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
+        google_lines.append(line_text)
+    for line in google_lines:
+        console.console.print(line)
+
+    try:
+        # Use specific prompt text
+        prompt_msg = get_text("config.trans_model_select.prompt", current_model=current_translation_model)
+        selected_model_input = console.prompt_for_input(prompt_msg).strip()
+
+        if not selected_model_input:
+             # User wants to keep the current setting
+             return current_translation_model
+
+        normalized_model = normalize_model_name(selected_model_input)
+        if normalized_model not in ALL_MODELS.values():
+            # Use specific warning text
+            console.display_message(get_text("common.labels.warning"),
+                                  get_text("config.trans_model_select.warn_unknown",
+                                           selected_model=selected_model_input,
+                                           current_model=current_translation_model),
+                                  console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            logger.warning(f"Unknown translation model selected: {selected_model_input}. Keeping current: {current_translation_model}")
+            return current_translation_model
+
+        # Return the valid, normalized model selected by the user
+        return normalized_model
+    except KeyboardInterrupt:
+        # Handled by ConsoleManager.prompt_for_input
+        return None # Indicate cancellation
+    except Exception as e:
+        # Use specific error text
+        console.display_message(get_text("common.labels.error"),
+                              get_text("config.trans_model_select.error_generic", error=e),
+                              console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+        logger.error(f"Translation model selection error: {e}", exc_info=True)
+        return None
+
+def ensure_api_key_for_translation_model() -> bool:
+    """
+    Ensure that the API key for the configured TRANSLATION model is set.
+    If not, prompt the user to enter it.
+    
+    Returns:
+        bool: True if the API key is set, False otherwise
+    """
+    trans_model = get_translation_model()
+    api_key, env_var_name = get_api_key_for_model(trans_model)
+    
+    if not api_key:
+        provider = get_model_provider(trans_model)
+        provider_name = "OpenAI" if provider == "openai" else "Google"
+        logger.warning(f"{provider_name} API key not found for translation model '{trans_model}'. Please enter the API key.")
+        # Call the setter specifically for the translation model
+        set_api_key_for_model(trans_model)
+        
+        # Check again if the API key is set
+        api_key, _ = get_api_key_for_model(trans_model)
+        if not api_key:
+            return False
+    
+    return True
+
+# --- End Translation Model Functions ---
+
 def check_if_first_run() -> bool:
     """
     Check if this is the first run of the application. More robust check.
@@ -205,7 +367,7 @@ def check_if_first_run() -> bool:
     config_lang = config.get("language")
     if not config_lang:
         logger.info("First run (or reset) detected - language not configured.")
-        return True # Trigger setup if language is missing
+        return True
 
     # If we have a model configured somewhere, it's not the first run.
     return False
@@ -306,10 +468,9 @@ def get_language() -> str:
 
 def set_language(lang_code: str) -> bool:
     """Sets the application language in the config file."""
-    # Basic validation: language code should be short, alphanumeric possibly with hyphen
-    import re  # Import re locally
-    if not lang_code or not isinstance(lang_code, str) or not re.match(r"^[a-zA-Z]{2,3}(-[a-zA-Z0-9]+)*$", lang_code):
-         logger.error(f"Attempted to set invalid language code: {lang_code}")
+    # Basic validation: only ensure it's a non-empty string
+    if not lang_code or not isinstance(lang_code, str):
+         logger.error(f"Attempted to set invalid or empty language code: {lang_code}")
          return False
 
     try:

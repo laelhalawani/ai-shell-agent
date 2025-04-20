@@ -21,6 +21,8 @@ from .paths import ROOT_DIR # Import ROOT_DIR from paths.py
 from .console_manager import get_console_manager
 # Import text getter
 from .texts import get_text # <--- ADDED IMPORT
+# Import localization utility
+from .utils.localize import localize_all_texts
 
 # Get console manager instance
 console = get_console_manager()
@@ -32,7 +34,11 @@ from .config_manager import (
     set_api_key_for_model, # Added this back for CLI --set-api-key support
     get_model_provider, check_if_first_run,
     set_default_enabled_toolsets, # Keep for first run / select tools
-    get_language, prompt_for_language_selection # Added language functions
+    get_language, prompt_for_language_selection, # Added language functions
+    # --- ADD TRANSLATION MODEL FUNCTIONS ---
+    get_translation_model, set_translation_model, prompt_for_translation_model_selection,
+    ensure_api_key_for_translation_model
+    # --- END TRANSLATION MODEL FUNCTIONS ---
 )
 
 # --- Import state manager functions with updated names ---
@@ -441,13 +447,20 @@ def main():
     chat_group = parser.add_argument_group(get_text("cli.groups.chat"))
     tool_group = parser.add_argument_group(get_text("cli.groups.toolset"))
     msg_group = parser.add_argument_group(get_text("cli.groups.message"))
+    util_group = parser.add_argument_group(get_text("cli.groups.util"))
 
     # --- Arguments (using get_text for help) ---
     model_group.add_argument("-llm", "--model", help=get_text("cli.args.model.help"))
     model_group.add_argument("--select-model", action="store_true", help=get_text("cli.args.select_model.help"))
     model_group.add_argument("-k", "--set-api-key", nargs="?", const=True, metavar="API_KEY",
                              help=get_text("cli.args.set_api_key.help"))
-    model_group.add_argument("--select-language", action="store_true", help="Interactively select application language") # Added Language Arg
+    model_group.add_argument("--select-language", action="store_true", help=get_text("cli.args.select_language.help"))
+    
+    # Add translation model selection argument
+    model_group.add_argument("--select-translation-model", action="store_true", 
+                             help=get_text("cli.args.select_translation_model.help"))
+    
+    util_group.add_argument("--localize", metavar="LANG_CODE", help=get_text("cli.args.localize.help"))
 
     chat_group.add_argument("-c", "--chat", metavar="TITLE", help=get_text("cli.args.chat.help"))
     chat_group.add_argument("-lc", "--load-chat", metavar="TITLE", help=get_text("cli.args.load_chat.help"))
@@ -474,6 +487,47 @@ def main():
     args = parser.parse_args()
 
     # --- Execution Order ---
+    
+    # --- Handle translation model selection ---
+    if args.select_translation_model:
+        selected_trans_model = prompt_for_translation_model_selection()
+        if selected_trans_model:
+            # Check if the selected model is different from the current one
+            current_trans_model = get_translation_model()
+            if selected_trans_model != current_trans_model:
+                set_translation_model(selected_trans_model)
+                console.display_message(get_text("common.labels.info"), 
+                                      get_text("cli.info.translation_model_set", model_name=selected_trans_model),
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            else:
+                console.display_message(get_text("common.labels.info"),
+                                      get_text("cli.info.translation_model_unchanged", model_name=current_trans_model),
+                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        # If selection was cancelled, the prompt function handles the message
+        return
+    
+    # --- Handle localization ---
+    if args.localize:
+        target_lang = args.localize
+        
+        # 1. First Time Setup (ensure config exists, etc.)
+        first_time_setup()
+        
+        # 2. Prompt for Translation Model if needed
+        # The localization process will get the translation model automatically
+
+        # 3. Ensure API Key for translation model
+        if not ensure_api_key_for_translation_model():
+            logger.critical("API Key missing for translation model. Cannot proceed with localization.")
+            console.display_message(get_text("common.labels.error"), get_text("cli.errors.api_key_missing"),
+                                  console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+            sys.exit(1)
+            
+        # 4. Run Localization
+        localize_all_texts(target_lang)
+        return # Exit after localization
+
+    # --- Original Execution Order ---
     # 1. Model Selection
     if args.model:
         set_model(args.model)
@@ -563,6 +617,17 @@ def main():
     if args.temp_flush:
         flush_temp_chats()
         return
+
+    # --- Language Selection (only after main setup) ---
+    if args.select_language:
+        selected_lang = prompt_for_language_selection()
+        if selected_lang:
+             console.display_message(get_text("common.labels.info"), get_text("cli.info.language_set", lang_code=selected_lang),
+                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+             console.display_message(get_text("common.labels.info"), get_text("cli.info.language_restart"),
+                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        # else: Cancellation message handled in prompt function
+        return # Exit after language selection attempt
 
     # --- Operations requiring active chat ---
     active_chat_id = get_current_chat() # Use chat_id consistently

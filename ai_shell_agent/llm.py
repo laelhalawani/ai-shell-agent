@@ -13,7 +13,7 @@ from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain_core.tools import BaseTool
 
 from . import logger
-from .config_manager import get_current_model, get_model_provider
+from .config_manager import get_current_model, get_model_provider, get_translation_model 
 # Import toolset registry and state manager functions
 from .toolsets.toolsets import get_registered_toolsets, ToolsetMetadata # Correct import
 from .chat_state_manager import get_current_chat, get_enabled_toolsets # get_active_toolsets should NOT be here
@@ -100,3 +100,57 @@ def get_llm() -> BaseChatModel:
     else:
         logger.warning("No tools were bound to the LLM for this chat/state.")
         return llm # Return LLM without tools
+
+def get_llm_plain() -> Optional[BaseChatModel]:
+    """
+    Get a basic LLM instance based on the current model configuration,
+    WITHOUT binding any tools. Used for general tasks.
+
+    Returns:
+        A LangChain BaseChatModel instance or None if instantiation fails.
+    """
+    model_name = get_current_model()
+    provider = get_model_provider(model_name)
+    logger.info(f"Preparing plain LLM instance (Provider: {provider}, Model: {model_name})")
+
+    llm: Optional[BaseChatModel] = None
+    try:
+        if provider == "openai":
+            llm = ChatOpenAI(model=model_name)
+        elif provider == "google":
+            llm = ChatGoogleGenerativeAI(model=model_name, convert_system_message_to_human=True)
+        else:
+            logger.warning(f"Unsupported provider '{provider}' for plain LLM. Defaulting to OpenAI.")
+            llm = ChatOpenAI(model=model_name)
+        return llm
+    except Exception as e:
+        logger.error(f"Failed to instantiate plain LLM (Provider: {provider}, Model: {model_name}): {e}", exc_info=True)
+        return None
+
+def get_translation_llm() -> Optional[BaseChatModel]:
+    """
+    Get a basic LLM instance specifically for translation tasks,
+    based on the configured translation model, WITHOUT binding any tools.
+
+    Returns:
+        A LangChain BaseChatModel instance or None if instantiation fails.
+    """
+    # Get the specifically configured translation model
+    model_name = get_translation_model()
+    provider = get_model_provider(model_name)
+    logger.info(f"Preparing translation LLM instance (Provider: {provider}, Model: {model_name})")
+
+    llm: Optional[BaseChatModel] = None
+    try:
+        # Instantiate based on provider for the translation model
+        if provider == "openai":
+            llm = ChatOpenAI(model=model_name)
+        elif provider == "google":
+            llm = ChatGoogleGenerativeAI(model=model_name, convert_system_message_to_human=True)
+        else:
+            logger.warning(f"Unsupported provider '{provider}' for translation LLM. Defaulting to OpenAI.")
+            llm = ChatOpenAI(model=model_name)
+        return llm
+    except Exception as e:
+        logger.error(f"Failed to instantiate translation LLM (Provider: {provider}, Model: {model_name}): {e}", exc_info=True)
+        return None

@@ -1,7 +1,8 @@
 {
     "app": {
       "default_model": "gpt-4o-mini",
-      "language": "en"
+      "language": "en",
+      "translation_model": "gpt-4o-mini"
     },
     "chat": {
       "max_react_iterations": 100,

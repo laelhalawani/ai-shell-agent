@@ -26,6 +26,7 @@ _settings_data = _load_data(_settings_file)
 try:
     APP_DEFAULT_MODEL = _settings_data['app']['default_model']
     APP_DEFAULT_LANGUAGE = _settings_data['app']['language']
+    APP_DEFAULT_TRANSLATION_MODEL = _settings_data['app']['translation_model']
     CHAT_MAX_ITERATIONS = _settings_data['chat']['max_react_iterations']
     # Ensure the default enabled toolsets is always a list after loading
     _raw_default_toolsets = _settings_data['chat']['default_enabled_toolsets']
@@ -43,6 +44,7 @@ if __name__ == '__main__':
     print(f"Loaded Settings Data: {_settings_data}")
     print(f"APP_DEFAULT_MODEL: {APP_DEFAULT_MODEL}")
     print(f"APP_DEFAULT_LANGUAGE: {APP_DEFAULT_LANGUAGE}")
+    print(f"APP_DEFAULT_TRANSLATION_MODEL: {APP_DEFAULT_TRANSLATION_MODEL}")
     print(f"CHAT_MAX_ITERATIONS: {CHAT_MAX_ITERATIONS}")
     print(f"DEFAULT_ENABLED_TOOLSETS_NAMES: {DEFAULT_ENABLED_TOOLSETS_NAMES}")
     print(f"CONSOLE_CONDENSED_OUTPUT_LENGTH: {CONSOLE_CONDENSED_OUTPUT_LENGTH}")

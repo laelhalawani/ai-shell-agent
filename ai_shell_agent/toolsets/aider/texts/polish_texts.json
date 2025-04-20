@@ -1,0 +1,169 @@
+{
+    "toolset": {
+        "name": "Edytor kodu Aider **EKSPERYMENTALNY**",
+        "description": "Zapewnia narz\u0119dzia do interakcji z edytorem kodu Aider."
+    },
+    "config": {
+        "header": "'\n--- Konfiguracja ustawie\u0144 Edytora Plik\u00f3w (Aider) ({context}) ---'",
+        "instructions": "Wybierz modele i format edycji, kt\u00f3rego powinien u\u017cywa\u0107 Edytor Plik\u00f3w.  \n{save_location_info}  \nPozostaw puste pole na ka\u017cdym etapie, aby zachowa\u0107 bie\u017c\u0105ce ustawienie.  \nWpisz 'none', aby zresetowa\u0107 ustawienie do warto\u015bci domy\u015blnej.",
+        "save_location_global": "Ta konfiguracja zostanie zapisana jako globalny domy\u015blny dla nowych czat\u00f3w.",
+        "save_location_chat": "Ta konfiguracja zostanie zapisana dla bie\u017c\u0105cego czatu ORAZ jako globalny domy\u015blny dla nowych czat\u00f3w.",
+        "model_header": "--- Wybierz model Edytora Plik\u00f3w '{role}' ---",
+        "model_available_title": "Dost\u0119pne modele:",
+        "model_current_marker": "<- Bie\u017c\u0105ce ustawienie",
+        "model_aliases_suffix": "(aliasy: {alias_str})",
+        "model_prompt": "Wprowad\u017a nazw\u0119 modelu dla '{role}' (pozostaw puste, aby zachowa\u0107 '{current_setting}', wpisz 'none', aby zresetowa\u0107 do domy\u015blnej warto\u015bci)",
+        "model_info_keep": "Zachowuje bie\u017c\u0105ce ustawienie: {setting}",
+        "model_info_reset": "Resetowanie modelu {role} do ustawie\u0144 domy\u015blnych ('{default_name}')",
+        "model_error_unknown": "Nieznany model '{selected}'. Wybierz z listy lub wpisz 'none'",
+        "model_warn_cancel": "Anulowano wyb\u00f3r. Zachowano bie\u017c\u0105ce ustawienie.",
+        "format_header": "\\n--- Wybierz Format Edycji Pliku Edytora ---",
+        "format_option_default": "0: {default_display} {marker}",
+        "format_option": "{idx}: {format}{marker} - {description}",
+        "format_default_name": "Domy\u015blny Aider (specyficzny dla modelu)",
+        "format_prompt": "Wprowad\u017a wyb\u00f3r (0-{max_idx}), pozostaw puste, aby zachowa\u0107 aktualne:",
+        "format_info_keep": "Zachowanie bie\u017c\u0105cego ustawienia: {setting}",
+        "format_info_selected": "Wybrany format: {setting}",
+        "format_error_invalid": "Nieprawid\u0142owy wyb\u00f3r. Prosz\u0119 spr\u00f3bowa\u0107 ponownie.",
+        "format_warn_cancel": "Anulowano wyb\u00f3r. Zachowano bie\u017c\u0105ce ustawienie: {setting}",
+        "api_key_check_header": "Sprawdzanie kluczy API dla wybranych modeli Edytora Plik\u00f3w...",
+        "api_key_error_check": "B\u0142\u0105d podczas sprawdzania klucza API dla modelu '{model_name}'. Sprawd\u017a logi.",
+        "save_success_global": "Zaktualizowano globaln\u0105 domy\u015bln\u0105 konfiguracj\u0119 edytora plik\u00f3w.",
+        "save_success_chat": "Koniec edytora plik\u00f3w zaktualizowany dla tej rozmowy oraz globalnie.",
+        "save_warn_missing_keys": "Uwaga: Niekt\u00f3re klucze API s\u0105 brakuj\u0105ce/omini\u0119te. Upewnij si\u0119, \u017ce s\u0105 ustawione w .env.",
+        "save_error_failed": "Aktualizacja konfiguracji Edytora Plik\u00f3w nie powiod\u0142a si\u0119. Sprawd\u017a dzienniki."
+    },
+    "schemas": {
+        "no_args": {},
+        "file_path": {
+            "path_desc": "Absolutna lub wzgl\u0119dna \u015bcie\u017cka do pliku."
+        },
+        "instruction": {
+            "instruction_desc": "Instrukcja w j\u0119zyku naturalnym dla \u017c\u0105dania edycji."
+        },
+        "user_response": {
+            "response_desc": "Twoja odpowied\u017a na pro\u015bb\u0119 redaktora."
+        }
+    },
+    "tools": {
+        "usage_guide": {
+            "name": "\"przewodnik_u\u017cytkownika_aidera\"",
+            "description": "Wy\u015bwietla instrukcje u\u017cytkowania i kontekst dla zestawu narz\u0119dzi Aider Code Copilot."
+        },
+        "add_file": {
+            "name": "dodaj_plik_do_kontekstu_copilota",
+            "description": "Dodaje plik do kontekstu Code Copilot, pliki w kontek\u015bcie mog\u0105 by\u0107 u\u017cywane do zrozumienia bazy kodu i wprowadzania edycji. Pliki do dodania mo\u017cna okre\u015bli\u0107 za pomoc\u0105 \u015bcie\u017cek bezwzgl\u0119dnych lub wzgl\u0119dnych. Plik musi istnie\u0107 w systemie plik\u00f3w.",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu.",
+                "init_failed": "B\u0142\u0105d: Edytor plik\u00f3w nie zosta\u0142 zainicjalizowany lub nie uda\u0142o si\u0119 przywr\u00f3ci\u0107 stanu. Najpierw u\u017cyj start_file_editor.",
+                "not_exists": "B\u0142\u0105d: Plik '{path}' (rozpoznany jako '{abs_path}') nie istnieje.",
+                "outside_root": "B\u0142\u0105d: Nie mo\u017cna doda\u0107 pliku '{path}' poza katalog g\u0142\u00f3wny projektu '{root}'.",
+                "different_drive": "B\u0142\u0105d: Nie mo\u017cna doda\u0107 pliku '{path}' na innym dysku ni\u017c g\u0142\u00f3wny folder projektu '{root}'.",
+                "generic": "B\u0142\u0105d dodawania pliku {path}: {error}. {output}"
+            },
+            "warn_confirm_failed": "Ostrze\u017cenie: Nie uda\u0142o si\u0119 potwierdzi\u0107, \u017ce {path} zosta\u0142 dodany pomy\u015blnie.",
+            "success": "Pomy\u015blnie dodano {path}. {output}"
+        },
+        "remove_file": {
+            "name": "usu\u0144_plik_z_kontekstu_copilota",
+            "description": "Usuwa plik z kontekstu Code Copilot. Pliki do usuni\u0119cia mog\u0105 by\u0107 okre\u015blone za pomoc\u0105 \u015bcie\u017cek bezwzgl\u0119dnych lub wzgl\u0119dnych. Plik musi wcze\u015bniej zosta\u0107 dodany do kontekstu.",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu.",
+                "init_failed": "B\u0142\u0105d: Edytor plik\u00f3w nie zosta\u0142 zainicjowany lub nie uda\u0142o si\u0119 przywr\u00f3ci\u0107 stanu. Najpierw u\u017cyj start_file_editor.",
+                "generic": "B\u0142\u0105d podczas usuwania pliku {path}: {error}. {output}"
+            },
+            "info_not_found": "Plik {path} nie zosta\u0142 znaleziony w kontek\u015bcie. {output}",
+            "success": "Pomy\u015blnie usuni\u0119to {path}. {output}"
+        },
+        "list_files": {
+            "name": "lista_plik\u00f3w_w_kontek\u015bcie_copilot",
+            "description": "Wy\u015bwietla wszystkie pliki w kontek\u015bcie Code Copilot. To jest przydatne, aby zobaczy\u0107, kt\u00f3re pliki s\u0105 obecnie edytowane lub dodawane dla kontekstu.",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu.",
+                "init_failed": "B\u0142\u0105d: Edytor nie zosta\u0142 zainicjowany. U\u017cyj najpierw start_file_editor.",
+                "generic": "B\u0142\u0105d podczas wy\u015bwietlania plik\u00f3w: {error}"
+            },
+            "info_empty": "Nie dodano obecnie \u017cadnych plik\u00f3w do sesji edycyjnej.",
+            "success": "Pliki w edytorze:\\n{file_list}"
+        },
+        "request_edit": {
+            "name": "popro\u015b_o_edytowanie_copilota",
+            "description": "Wyja\u015bnij kopilotowi, co nale\u017cy zrobi\u0107. Edytor uzupe\u0142ni pro\u015bb\u0119 na podstawie w\u0142asnej wiedzy i przes\u0142anych plik\u00f3w. U\u017cyj jasnych instrukcji w naturalnym j\u0119zyku, mo\u017cesz do\u0142\u0105czy\u0107 konkretne fragmenty kodu.",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu.",
+                "init_failed": "B\u0142\u0105d: Edytor plik\u00f3w nie zosta\u0142 zainicjowany lub nie uda\u0142o si\u0119 przywr\u00f3ci\u0107 stanu. Najpierw u\u017cyj start_file_editor.",
+                "no_files": "B\u0142\u0105d: \u017badne pliki nie zosta\u0142y dodane do sesji edytowania. Najpierw u\u017cyj include_file.",
+                "in_progress": "B\u0142\u0105d: Edycja ju\u017c trwa w tej sesji.",
+                "timeout": "B\u0142\u0105d: Przekroczono limit czasu oczekiwania na odpowied\u017a od Aidera.",
+                "queue_exception": "B\u0142\u0105d: Wyst\u0105pi\u0142 wyj\u0105tek podczas oczekiwania na Aidera: {error}",
+                "edit_failed": "B\u0142\u0105d podczas edytowania:\\n{content}",
+                "unknown_response": "B\u0142\u0105d: Nieznany typ odpowiedzi '{type}' z procesu Aider."
+            },
+            "prompt_needed": "'{signal} {guidance}'",
+            "prompt_guidance": "Aider wymaga odpowiedzi. Prosz\u0119 odpowiedzie\u0107 u\u017cywaj\u0105c 'submit_editor_input'. Podpowied\u017a: '{prompt}'",
+            "prompt_subject": "(Dotyczy: {subject})",
+            "prompt_default": "[Domy\u015blny: {default}]",
+            "prompt_confirm_options": "Opcje: {options}",
+            "success": "Edycja zako\u0144czona. {output}"
+        },
+        "view_diffs": {
+            "name": "\"podgl\u0105d_r\u00f3\u017cnic_edytacji_kod_copilot\"",
+            "description": "Wy\u015bwietla r\u00f3\u017cnice git dotycz\u0105ce zmian wprowadzonych przez Code Copilot na podstawie narz\u0119dzia 'request_edit' w bie\u017c\u0105cej sesji. Jest to przydatne do zobaczenia, jakie zmiany zosta\u0142y wprowadzone w plikach. Dzia\u0142a tylko, je\u015bli w katalogu g\u0142\u00f3wnym projektu zosta\u0142 zainicjowany repozytorium git.",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu.",
+                "init_failed": "B\u0142\u0105d: Edytor plik\u00f3w nie zosta\u0142 zainicjowany lub nie uda\u0142o si\u0119 przywr\u00f3ci\u0107 stanu. Najpierw u\u017cyj start_file_editor.",
+                "no_repo": "B\u0142\u0105d: Repozytorium Git nie jest dost\u0119pne. Nie mo\u017cna wy\u015bwietli\u0107 r\u00f3\u017cnic.",
+                "git_error": "B\u0142\u0105d wy\u015bwietlania r\u00f3\u017cnic: {error}. {output}",
+                "generic": "B\u0142\u0105d podczas wy\u015bwietlania r\u00f3\u017cnic: {error}. {output}"
+            },
+            "info_no_changes": "Nie wykryto zmian w \u015bledzonych plikach.",
+            "success": "Diff:\\n{diff}"
+        },
+        "undo_edit": {
+            "name": "cofnij_ostatni\u0105_edytacj\u0119_code_copilot",
+            "description": "Cofnie ostatni\u0105 zmian\u0119 zatwierdzon\u0105 przez Code Copilot. Jest to przydatne do przywracania zmian w plikach, mo\u017ce nie dzia\u0142a\u0107, je\u015bli zatwierdzenie mia\u0142o miejsce poza Edytorem Plik\u00f3w lub je\u015bli nie ma zainicjowanego repozytorium git.",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu.",
+                "init_failed": "B\u0142\u0105d: Edytor plik\u00f3w nie zosta\u0142 zainicjowany lub nie uda\u0142o si\u0119 przywr\u00f3ci\u0107 stanu. Najpierw u\u017cyj start_file_editor.",
+                "no_repo": "B\u0142\u0105d: Nie mo\u017cna cofn\u0105\u0107. Repozytorium Git nie zosta\u0142o znalezione lub nie jest skonfigurowane.",
+                "cmd_module_missing": "B\u0142\u0105d: Modu\u0142 polece\u0144 niedost\u0119pny w Aider.",
+                "git_error": "B\u0142\u0105d podczas cofania: {error}. {output}",
+                "generic": "B\u0142\u0105d podczas cofnienia: {error}. {output}"
+            },
+            "success": "Zako\u0144czono pr\u00f3b\u0119 cofni\u0119cia. {output}"
+        },
+        "close_editor": {
+            "name": "zamknij_kopiownika_kodu",
+            "description": "Zamyka sesj\u0119 edycji plik\u00f3w z AI Code Copilot. Zmiany s\u0105 zapisywane automatycznie. Zamknij j\u0105 po potwierdzeniu z u\u017cytkownikiem, \u017ce nie chce ju\u017c edytowa\u0107 plik\u00f3w.",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu do zamkni\u0119cia edytora."
+            },
+            "info_success": "Kontekst sesji Edytora plik\u00f3w zosta\u0142 wyczyszczony.",
+            "warn_error": "Kontekst sesji Edytora Plik\u00f3w m\u00f3g\u0142 zosta\u0107 wyczyszczony (napotkano b\u0142\u0105d)."
+        },
+        "submit_input": {
+            "name": "odpowiedz_na_zapytanie_wej\u015bciowe_code_copilot",
+            "description": "U\u017cyj do udzielenia odpowiedzi Code Copilot tylko wtedy, gdy zostanie to za\u017c\u0105dane (oznaczone jako '[CODE_COPILOT_INPUT_REQUEST]').",
+            "prompt_suffix": "(edytuj lub potwierd\u017a odpowied\u017a) >",
+            "error": {
+                "no_chat": "B\u0142\u0105d: Nie znaleziono aktywnej sesji czatu.",
+                "init_failed": "B\u0142\u0105d: Nie znaleziono aktywnej sesji edytora lub nie uda\u0142o si\u0119 przywr\u00f3ci\u0107 stanu.",
+                "empty_response": "B\u0142\u0105d: Otrzymano pust\u0105 odpowied\u017a na zg\u0142oszenie.",
+                "empty_confirmed": "B\u0142\u0105d: Potwierdzona odpowied\u017a jest pusta.",
+                "not_waiting": "B\u0142\u0105d: Proces edytowania nie czeka na dane wej\u015bciowe.",
+                "timeout": "B\u0142\u0105d: Przekroczono limit czasu oczekiwania na odpowied\u017a Aidera po przes\u0142aniu danych.",
+                "queue_exception": "B\u0142\u0105d: Wyj\u0105tek podczas oczekiwania na Aidera po przes\u0142aniu danych: {error}",
+                "edit_failed": "B\u0142\u0105d podczas edytowania:\\n{content}",
+                "unknown_response": "B\u0142\u0105d: Nieznany typ odpowiedzi '{type}'."
+            },
+            "prompt_needed": "'{sygna\u0142} {wskaz\u00f3wki}'",
+            "prompt_guidance": "'Aider wymaga dalszego wej\u015bcia. Odpowiedz u\u017cywaj\u0105c 'submit_editor_input'. Podpowied\u017a: '{prompt}'",
+            "prompt_subject": "(Dotyczy: {subject})",
+            "prompt_hitl_suffix": "({prompt}) >",
+            "success": "Edycja zako\u0144czona. {output}"
+        }
+    },
+    "integration": {
+        "run_error": "B\u0142\u0105d podczas edycji: {error}\\nWyj\u015bcie przed b\u0142\u0119dem:\\n{output}"
+    }
+}

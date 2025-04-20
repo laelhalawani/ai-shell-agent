@@ -335,6 +335,24 @@ class ConsoleManager:
                 self.console.print(error_msg, style=self.STYLE_ERROR_CONTENT)
                 raise KeyboardInterrupt(f"Error getting input: {e}")
 
+    def display_progress(self, current_item: int, total_items: int):
+        """Displays or updates a progress indicator line."""
+        with self._lock:
+            # Don't clear previous spinner here, as progress updates the current line
+            # if self._spinner_active: self._clear_previous_line() # Might cause flicker
+
+            prefix = Text(get_text("common.labels.system"), style=self.STYLE_SYSTEM_LABEL)
+            # Use get_text for the progress format string
+            progress_text_str = get_text("localize.progress_format", current=current_item, total=total_items)
+            progress_text = Text(progress_text_str, style=self.STYLE_SYSTEM_CONTENT)
+
+            # Print with \r to return cursor to the start of the line, and no newline
+            try:
+                self.console.print(Text.assemble(prefix, progress_text), end="\r")
+                # We don't set _spinner_active here, it's a different kind of status
+            except Exception as e:
+                 logger.error(f"ConsoleManager: Error printing progress: {e}", exc_info=True)
+
 # --- Singleton Instance (Remains the same) ---
 _console_manager_instance = None
 _console_manager_lock = Lock()

@@ -69,12 +69,16 @@
       "model": "Model Configuration",
       "chat": "Chat Management",
       "toolset": "Toolset Configuration",
-      "message": "Messaging & Interaction"
+      "message": "Messaging & Interaction",
+      "util": "Utilities"
     },
     "args": {
       "model": { "help": "Set LLM model" },
       "select_model": { "help": "Interactively select LLM model" },
       "set_api_key": { "help": "Set API key for the main agent model" },
+      "select_translation_model": { "help": "Interactively select the translation model for localization" },
+      "select_language": { "help": "Interactively select application language" },
+      "localize": { "help": "Generate localized text files for the target language using selected translation model" },
       "chat": { "help": "Create or load chat session" },
       "load_chat": { "help": "Load chat (same as -c)" },
       "list_chats": { "help": "List chats" },
@@ -96,6 +100,10 @@
       "model_set": "Model set to {model_name}.",
       "model_unchanged": "Model remains {model_name}.",
       "model_select_cancel": "Model selection cancelled.",
+      "translation_model_set": "Translation model set to {model_name}.",
+      "translation_model_unchanged": "Translation model remains {model_name}.",
+      "language_set": "Language set to {lang_code}.",
+      "language_restart": "Some UI language changes may require restarting the application to take full effect.",
       "chat_switched": "Switched to chat: '{chat_title}'.",
       "chat_loaded": "Switched to chat: '{chat_title}'.",
       "current_chat_is": "Current chat: {chat_title}",
@@ -264,12 +272,25 @@
       "aliases_suffix": " (aliases: {alias_str})",
       "current_marker": " <- Current Model",
       "prompt": "\nPlease input the model you want to use, or leave empty to keep using '{current_model}'",
+      "prompt_agent": "\nPlease input the MAIN AGENT model, or leave empty to keep '{current_model}'",
       "warn_unknown": "Unknown model: {selected_model}. Keeping current model: {current_model}",
       "error_generic": "An error occurred during model selection: {error}"
     },
+    "trans_model_select": {
+      "title": "\n--- Select Translation Model ---",
+      "prompt": "\nPlease input the TRANSLATION model, or leave empty to keep '{current_model}'",
+      "warn_unknown": "Unknown translation model: {selected_model}. Keeping current: {current_model}",
+      "warn_cancel": "\nTranslation model selection cancelled.",
+      "info_needed": "Translation model is not configured. Please select one.",
+      "info_set": "Translation model set to: {model_name}",
+      "error_not_set": "Translation model not selected. Aborting.",
+      "error_generic": "An error occurred during translation model selection: {error}"
+    },
     "api_key": {
       "prompt_instructions": "\nPlease enter your {provider_name} API key.\nYou can get it from: {api_key_link}\n",
+      "prompt_instructions_model": "\nPlease enter your {provider_name} API key for model '{model_name}'.\nYou can get it from: {api_key_link}\n",
       "prompt_input": "Enter {provider_name} API key",
+      "prompt_input_model": "Enter {provider_name} API key (for {model_name})",
       "error_generic": "An error occurred during API key input: {error}",
       "warn_none_provided": "No {provider_name} API key provided. Aborting.",
       "info_saved": "{provider_name} API key saved successfully to .env"
@@ -313,5 +334,23 @@
     "common": {
        "input_cancelled": "Input cancelled."
     }
+  },
+  "localize": {
+    "start": "Starting localization process for language: {target_language}",
+    "start_detailed": "Starting localization to '{target_language}' using model '{model_name}'...",
+    "select_model_prompt": "Select model for translation:",
+    "select_model_confirm": "Using current translation model: {model_name}",
+    "select_model_cancel": "Translation model selection cancelled. Aborting localization.",
+    "select_model_set": "Translation model set to: {model_name}",
+    "error_llm_init": "Failed to initialize the LLM for translation. Aborting.",
+    "error_llm_init_specific": "Failed to initialize the specified LLM '{model_name}' for translation. Aborting.",
+    "warn_no_files": "No 'en_texts.json' files found to translate.",
+    "warn_no_keys": "No localizable string keys found in discovered files.",
+    "translating_start": "Translating {count} text elements to {target_language} using {model_name}...",
+    "progress_format": "Progress: {current}/{total} keys translated...",
+    "saving": "Saving translations to: {target_file}",
+    "error_save": "Failed to save translated file: {target_file}",
+    "complete": "Localization complete for {target_language}. Processed {count} keys.",
+    "complete_errors": "Localization finished, but some errors occurred (translations may be incomplete or files failed to save). Check logs."
   }
 }
