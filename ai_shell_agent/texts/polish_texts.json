@@ -2,29 +2,29 @@
     "common": {
         "prompt_input_marker": "'> '",
         "labels": {
-            "info": "INFO:",
+            "info": "INFORMACJA:",
             "error": "B\u0141\u0104D:",
             "system": "SYSTEM:",
             "warning": "OSTRZE\u017bENIE:",
-            "ai": "AI:",
-            "tool": "NARZ\u0118DIE:"
+            "ai": "SI:",
+            "tool": "NARZ\u0118D Z:"
         },
         "truncation_marker": "..."
     },
     "setup": {
-        "welcome": "Witaj w AI Shell Agent! Rozpoczynam konfiguracj\u0119 wst\u0119pn\u0105.",
-        "complete": "Pierwsza konfiguracja zako\u0144czona.",
+        "welcome": "Witaj w AI Shell Agent! Rozpoczynam konfiguracj\u0119 po raz pierwszy.",
+        "complete": "Konfiguracja wst\u0119pna zako\u0144czona.",
         "errors": {
-            "no_model_selected": "Nie wybrano modelu podczas pierwszego uruchomienia. Zamykanie.",
+            "no_model_selected": "Nie wybrano modelu podczas pierwszego uruchomienia. Zako\u0144czono.",
             "api_key_missing": "Klucz API nie zosta\u0142 podany. Zamykanie."
         },
         "toolsets": {
-            "prompt_intro": "--- Wybierz domy\u015blnie w\u0142\u0105czone zestawy narz\u0119dzi ---\nTe zestawy narz\u0119dzi b\u0119d\u0105 w\u0142\u0105czone domy\u015blnie, gdy stworzysz nowe czaty.",
-            "warn_none_found": "Nie znaleziono zarejestrowanych narz\u0119dzi.",
-            "available_title": "Dost\u0119pne zestawy narz\u0119dzi:",
-            "prompt_instructions": "Wprowad\u017a numery oddzielone przecinkami, ABY W\u0141\u0104CZY\u0106 domy\u015blnie (np. 1,3).  \nAby nie w\u0142\u0105cza\u0107 \u017cadnych domy\u015blnie, wpisz 'none'.  \nPozostaw puste, aby u\u017cy\u0107 {default_toolsets_str} jako domy\u015blnych.",
+            "prompt_intro": "'\n--- Wybierz domy\u015blnie w\u0142\u0105czone zestawy narz\u0119dzi ---\nTe zestawy narz\u0119dzi b\u0119d\u0105 domy\u015blnie w\u0142\u0105czone, gdy utworzysz nowe czaty.\n'",
+            "warn_none_found": "Nie znaleziono zarejestrowanych zestaw\u00f3w narz\u0119dzi.",
+            "available_title": "Dost\u0119pne narz\u0119dzia:",
+            "prompt_instructions": "Wprowad\u017a liczby oddzielone przecinkami, ABY DOMY\u015aLNIE W\u0141\u0104CZY\u0106 (np. 1,3).  \nAby domy\u015blnie nie w\u0142\u0105cza\u0107 \u017cadnej, wpisz 'none'.  \nPozostaw puste, aby u\u017cy\u0107 {default_toolsets_str} jako domy\u015blnych.",
             "info_using_defaults": "Nie dokonano wyboru. U\u017cywam domy\u015blnych zestaw\u00f3w narz\u0119dzi: {toolset_list}",
-            "error_invalid_selection": "Nieprawid\u0142owy wyb\u00f3r '{index}'. Prosz\u0119 u\u017cywa\u0107 numer\u00f3w od 1 do {max_idx}.",
+            "error_invalid_selection": "Nieprawid\u0142owy wyb\u00f3r '{index}'. Prosz\u0119 u\u017cy\u0107 numer\u00f3w od 1 do {max_idx}.",
             "info_selection_saved": "Wybrane zestawy narz\u0119dzi ustawione na: {toolset_list}",
             "warn_cancel": "Wyb\u00f3r anulowany. Ustawiam {default_toolsets_str} jako domy\u015blne zestawy narz\u0119dzi.",
             "error_generic": "Wyst\u0105pi\u0142 b\u0142\u0105d: {error}"
@@ -33,37 +33,37 @@
     "select_tools": {
         "warn_none_found": "Nie znaleziono zarejestrowanych zestaw\u00f3w narz\u0119dzi.",
         "error_chat_title_missing": "Nie mo\u017cna okre\u015bli\u0107 tytu\u0142u dla aktywnego czatu {chat_id}.",
-        "prompt_header": "\"\n--- Wybierz w\u0142\u0105czone zestawy narz\u0119dzi ({context}) ---\n{explanation}\n\"",
-        "context_global": "Domy\u015blne globalne",
+        "prompt_header": "---\n--- Wybierz w\u0142\u0105czone zestawy narz\u0119dzi ({context}) ---\n{explanation}",
+        "context_global": "Domy\u015blne ustawienia globalne",
         "context_chat": "Czat: {chat_title}",
-        "explanation_global": "Te zestawy narz\u0119dzi b\u0119d\u0105 w\u0142\u0105czone domy\u015blnie podczas tworzenia nowych czat\u00f3w.",
-        "explanation_chat": "Zestawy narz\u0119dzi okre\u015blaj\u0105, jakie mo\u017cliwo\u015bci agent mo\u017ce potencjalnie wykorzysta\u0107 w tej rozmowie.",
+        "explanation_global": "Te zestawy narz\u0119dzi b\u0119d\u0105 domy\u015blnie w\u0142\u0105czone podczas tworzenia nowych czat\u00f3w.",
+        "explanation_chat": "Zestawy narz\u0119dzi okre\u015blaj\u0105, kt\u00f3re mo\u017cliwo\u015bci agent mo\u017ce potencjalnie wykorzysta\u0107 w tym czacie.",
         "available_title": "Dost\u0119pne zestawy narz\u0119dzi:",
-        "marker_enabled": "[W\u0141\u0104CZONE]",
+        "marker_enabled": "[W\u0141\u0104CZONY]",
         "marker_disabled": "[NIEDOST\u0118PNY]",
-        "prompt_instructions": "Wprowad\u017a liczby oddzielone przecinkami, ABY W\u0141\u0104CZY\u0106 (np. 1,3).  \nAby wy\u0142\u0105czy\u0107 wszystkie, wpisz 'none'.  \nPozostaw puste, aby zachowa\u0107 bie\u017c\u0105ce ustawienia.",
+        "prompt_instructions": "Wprowad\u017a liczby oddzielone przecinkami, ABY W\u0141\u0104CZY\u0106 (np. 1,3).  \nAby wy\u0142\u0105czy\u0107 wszystkie, wprowad\u017a 'none'.  \nPozostaw puste, aby zachowa\u0107 bie\u017c\u0105ce ustawienia.",
         "info_kept_settings": "'{keep_message} {toolset_list}'",
-        "keep_message_global": "Zachowano bie\u017c\u0105ce domy\u015blne w\u0142\u0105czone zestawy narz\u0119dzi:",
-        "keep_message_chat": "Zachowano bie\u017c\u0105ce aktywne zestawy narz\u0119dzi dla tej rozmowy:",
-        "error_invalid_selection": "\"Nieprawid\u0142owy wyb\u00f3r '{index}'. Prosz\u0119 u\u017cywa\u0107 numer\u00f3w od 1 do {max_idx}.\"",
+        "keep_message_global": "Zachowano obecne globalne domy\u015blne w\u0142\u0105czone zestawy narz\u0119dzi:",
+        "keep_message_chat": "Zachowano aktualnie w\u0142\u0105czone zestawy narz\u0119dzi dla czatu:",
+        "error_invalid_selection": "Nieprawid\u0142owy wyb\u00f3r '{index}'. Prosz\u0119 u\u017cywa\u0107 numer\u00f3w od 1 do {max_idx}.",
         "info_selection_saved": "Wybrane zestawy narz\u0119dzi ustawione na: {toolset_list}",
-        "info_global_updated": "Ustawienia globalne r\u00f3wnie\u017c zaktualizowane.",
-        "info_apply_next": "Zmiany zostan\u0105 zastosowane przy nast\u0119pnej interakcji.",
-        "warn_cancel": "Anulowanie wyboru. \u017badne zmiany nie zosta\u0142y wprowadzone."
+        "info_global_updated": "Domy\u015blne ustawienia globalne r\u00f3wnie\u017c zaktualizowane.",
+        "info_apply_next": "Zmiany zastosuj\u0105 si\u0119 przy nast\u0119pnej interakcji.",
+        "warn_cancel": "Operacja anulowana. \u017badne zmiany nie zosta\u0142y wprowadzone."
     },
     "configure_toolset": {
         "error_not_found": "Narz\u0119dzie '{toolset_name}' nie zosta\u0142o znalezione.",
         "info_available": "Dost\u0119pne zestawy narz\u0119dzi: {toolset_list}",
         "info_not_configurable": "Zestaw narz\u0119dzi '{toolset_name}' nie wymaga specyficznej konfiguracji.",
-        "error_chat_title_missing": "Nie mo\u017cna okre\u015bli\u0107 tytu\u0142u dla aktywnego czatu {chat_id}.",
-        "context_header_global": "--- Konfigurowanie globalnych ustawie\u0144 domy\u015blnych dla '{toolset_name}' ---\\n(Stosowanie ustawie\u0144 do globalnych ustawie\u0144 domy\u015blnych: {global_config_path})\\n(Sprawdzanie/Przechowywanie sekret\u00f3w w: {dotenv_path})\\n",
-        "context_header_chat": "`\n--- Konfigurowanie '{toolset_name}' dla Czatu '{chat_title}' ---\n(Zastosowanie ustawie\u0144 do konfiguracji czatu: {local_config_path})\n(Zastosowanie ustawie\u0144 do domy\u015blnych ustawie\u0144 globalnych: {global_config_path})\n(Sprawdzanie/Przechowywanie sekret\u00f3w w: {dotenv_path})\n`",
+        "error_chat_title_missing": "Nie mo\u017cna ustali\u0107 tytu\u0142u dla aktywnego czatu {chat_id}.",
+        "context_header_global": "'\n--- Konfigurowanie globalnych ustawie\u0144 domy\u015blnych dla '{toolset_name}' ---\n(Stosowanie ustawie\u0144 do globalnych ustawie\u0144 domy\u015blnych: {global_config_path})\n(Sprawdzanie/Przechowywanie sekret\u00f3w w: {dotenv_path})\n'",
+        "context_header_chat": "--- Konfigurowanie '{toolset_name}' dla Czat '{chat_title}' ---\n(Stosowanie ustawie\u0144 do konfiguracji czatu: {local_config_path})\n(Stosowanie ustawie\u0144 do globalnych domy\u015blnych: {global_config_path})\n(Sprawdzanie/Przechowywanie sekret\u00f3w w: {dotenv_path})",
         "warn_cancel": "Konfiguracja anulowana.",
         "error_generic": "Wyst\u0105pi\u0142 b\u0142\u0105d podczas konfiguracji: {error}"
     },
     "cli": {
         "parser": {
-            "description": "CLI Agenta AI Shell"
+            "description": "Interfejs wiersza polece\u0144 agenta AI Shell"
         },
         "groups": {
             "model": "Konfiguracja modelu",
@@ -74,28 +74,28 @@
         },
         "args": {
             "model": {
-                "help": "Ustaw model LLM"
+                "help": "Ustaw model LLM (dla agenta)"
             },
             "select_model": {
-                "help": "Interaktywnie wybierz model LLM"
+                "help": "Interaktywnie wybierz model LLM agenta"
             },
             "set_api_key": {
-                "help": "Ustaw klucz API dla g\u0142\u00f3wnego modelu agenta"
+                "help": "Ustaw klucz API dla bie\u017c\u0105cego g\u0142\u00f3wnego modelu agenta"
             },
             "select_translation_model": {
-                "help": "Interaktywnie wybierz model t\u0142umaczenia do lokalizacji"
+                "help": "Interaktywnie wybierz model LLM do t\u0142umaczenia"
             },
             "select_language": {
                 "help": "Interaktywnie wybierz j\u0119zyk aplikacji"
             },
             "localize": {
-                "help": "Generuj zlokalizowane pliki tekstowe dla docelowego j\u0119zyka za pomoc\u0105 wybranego modelu t\u0142umaczenia"
+                "help": "Generuj zlokalizowane pliki tekstowe dla docelowego j\u0119zyka przy u\u017cyciu wybranego modelu t\u0142umaczenia."
             },
             "chat": {
                 "help": "Utw\u00f3rz lub za\u0142aduj sesj\u0119 czatu"
             },
             "load_chat": {
-                "help": "Za\u0142aduj czat (to samo co -c)"
+                "help": "Wczytaj czat (tak jak -c)"
             },
             "list_chats": {
                 "help": "Lista czat\u00f3w"
@@ -110,16 +110,16 @@
                 "help": "Usu\u0144 tymczasowe czaty"
             },
             "current_chat_title": {
-                "help": "Drukuj tytu\u0142 bie\u017c\u0105cego czatu"
+                "help": "Drukuj tytu\u0142 bie\u017c\u0105cej rozmowy"
             },
             "select_tools": {
-                "help": "Interaktywnie wybierz w\u0142\u0105czone zestawy narz\u0119dzi (specyficzne dla czatu, je\u015bli aktywne, w przeciwnym razie domy\u015blne globalnie)"
+                "help": "Interaktywnie wybierz w\u0142\u0105czone zestawy narz\u0119dzi (specyficzne dla czatu, je\u015bli aktywne, w przeciwnym razie domy\u015blne globalne)"
             },
             "list_toolsets": {
-                "help": "Wy\u015bwietl dost\u0119pne zestawy narz\u0119dzi i ich status aktywacji (specyficzny dla czatu, je\u015bli aktywny, w przeciwnym razie domy\u015blne globalne)"
+                "help": "Wy\u015bwietl dost\u0119pne zestawy narz\u0119dzi i ich status aktywacji (specyficzne dla czatu, je\u015bli s\u0105 aktywne, w przeciwnym razie domy\u015blne globalne)"
             },
             "configure_toolset": {
-                "help": "R\u0119cznie uruchom kreator konfiguracji dla zestawu narz\u0119dzi (specyficzny dla czatu, je\u015bli aktywny, w przeciwnym razie globalne domy\u015blne ustawienia)"
+                "help": "R\u0119cznie uruchom kreator konfiguracji dla zestawu narz\u0119dzi (specyficzny dla czatu, je\u015bli aktywny, w przeciwnym razie domy\u015blne ustawienia globalne)"
             },
             "send_message": {
                 "help": "Wy\u015blij wiadomo\u015b\u0107"
@@ -137,27 +137,29 @@
                 "help": "Wykonaj polecenie pow\u0142oki bezpo\u015brednio"
             },
             "message": {
-                "help": "Wy\u015blij wiadomo\u015b\u0107 (domy\u015blna akcja)"
+                "help": "Wy\u015blij wiadomo\u015b\u0107 (akcja domy\u015blna)"
             }
         },
         "info": {
-            "model_set": "Model ustawiony na {model_name}.",
-            "model_unchanged": "Model pozostaje {model_name}.",
-            "model_select_cancel": "Wyb\u00f3r modelu zosta\u0142 anulowany.",
-            "translation_model_set": "Model t\u0142umaczenia ustawiony na {model_name}.",
+            "model_set": "Model agenta ustawiony na {model_name}.",
+            "model_unchanged": "Model agenta pozostaje {model_name}.",
+            "model_select_cancel": "Wyb\u00f3r modelu agenta anulowany.",
+            "translation_model_set": "Model t\u0142umaczenia ustawiony na: {model_name}",
             "translation_model_unchanged": "Model t\u0142umaczenia pozostaje {model_name}.",
-            "language_set": "J\u0119zyk ustawiony na {lang_code}.",
-            "language_restart": "Niekt\u00f3re zmiany j\u0119zyka interfejsu u\u017cytkownika mog\u0105 wymaga\u0107 ponownego uruchomienia aplikacji, aby mog\u0142y w pe\u0142ni obowi\u0105zywa\u0107.",
+            "language_set": "J\u0119zyk ustawiony na: {lang_code}",
+            "language_unchanged": "J\u0119zyk pozostaje {lang_code}.",
+            "language_restart_needed": "Prosz\u0119 zrestartowa\u0107 aplikacj\u0119 lub ponownie uruchomi\u0107 swoje polecenie, aby zmiana j\u0119zyka wesz\u0142a w \u017cycie.",
+            "language_restart_needed_setup": "Ustawienia j\u0119zyka zosta\u0142y zaktualizowane. Prosz\u0119 ponownie uruchomi\u0107 aplikacj\u0119, aby zmiany mog\u0142y wej\u015b\u0107 w \u017cycie.",
             "chat_switched": "Prze\u0142\u0105czono na czat: '{chat_title}'.",
             "chat_loaded": "Prze\u0142\u0105czono na czat: '{chat_title}'.",
             "current_chat_is": "Aktualny czat: {chat_title}",
             "no_active_chat": "Brak aktywnego czatu.",
-            "starting_temp_chat": "Brak aktywnego czatu. Rozpoczynanie tymczasowego czatu..."
+            "starting_temp_chat": "Brak aktywnego czatu. Rozpoczynam tymczasowy czat..."
         },
         "errors": {
             "api_key_missing": "Brak klucza API agenta. Ustaw za pomoc\u0105 --set-api-key.",
             "no_active_chat_for_list": "Brak aktywnego czatu. Najpierw u\u017cyj -c <tytu\u0142>.",
-            "no_active_chat_for_edit": "Brak aktywnego czatu. Najpierw u\u017cyj -c <tytu\u0142>.",
+            "no_active_chat_for_edit": "Brak aktywnego czatu. U\u017cyj -c <tytu\u0142> najpierw.",
             "edit_invalid_index": "Nieprawid\u0142owy indeks '{index}'. Musi by\u0107 liczb\u0105 ca\u0142kowit\u0105 lub 'ostatni'."
         }
     },
@@ -179,23 +181,23 @@
     "tool_handler": {
         "error": {
             "invalid_call_structure": "B\u0142\u0105d: Nieprawid\u0142owa struktura wywo\u0142ania narz\u0119dzia (brak nazwy lub identyfikatora): {tool_call}",
-            "tool_not_found": "B\u0142\u0105d: Narz\u0119dzie '{tool_name}' nie znaleziono.",
-            "execution_failed": "B\u0142\u0105d wykonania narz\u0119dzia '{tool_name}': {error_type}: {error_msg}"
+            "tool_not_found": "B\u0142\u0105d: Narz\u0119dzie '{tool_name}' nie zosta\u0142o znalezione.",
+            "execution_failed": "B\u0142\u0105d podczas wykonywania narz\u0119dzia '{tool_name}': {error_type}: {error_msg}"
         }
     },
     "send_message": {
         "warn": {
             "no_chat_start_temp": "Brak aktywnego czatu. Rozpoczynam czat tymczasowy.",
-            "empty_ai_response": "AI zwr\u00f3ci\u0142 pust\u0105 odpowied\u017a.",
+            "empty_ai_response": "AI zwr\u00f3ci\u0142o pust\u0105 odpowied\u017a.",
             "max_iterations": "Osi\u0105gni\u0119to maksymaln\u0105 liczb\u0119 {max_iterations} interakcji z AI. Zatrzymywanie."
         },
         "info": {
-            "tool_needs_input": "'{signal} Narz\u0119dzie '{tool_name}' wymaga wprowadzenia.'"
+            "tool_needs_input": "'{signal} Narz\u0119dzie '{tool_name}' wymaga danych wej\u015bciowych.'"
         },
         "error": {
             "hitl_context_missing": "B\u0142\u0105d wewn\u0119trzny: Nie uda\u0142o si\u0119 znale\u017a\u0107 kontekstu narz\u0119dzia.",
-            "hitl_exec_failed": "Wykonanie narz\u0119dzia nie powiod\u0142o si\u0119 po wprowadzeniu.",
-            "hitl_prompt_again": "'{signal} Narz\u0119dzie '{tool_name}' wymaga nieoczekiwanego dodatkowego wej\u015bcia.'",
+            "hitl_exec_failed": "Wykonanie narz\u0119dzia nie powiod\u0142o si\u0119 po podaniu danych.",
+            "hitl_prompt_again": "'{signal} Narz\u0119dzie '{tool_name}' wymaga dalszego wej\u015bcia w spos\u00f3b nieoczekiwany.'",
             "hitl_unexpected_result": "B\u0142\u0105d: Nieoczekiwany typ wyniku narz\u0119dzia.",
             "history_missing": "Historia czatu nie zosta\u0142a znaleziona lub jest pusta.",
             "llm_init_failed": "Inicjalizacja modelu AI nie powiod\u0142a si\u0119: {error}",
@@ -204,10 +206,11 @@
             "generic_interaction": "B\u0142\u0105d interakcji z AI: {error}"
         },
         "hitl": {
-            "user_cancelled_tool_msg": "U\u017cytkownik anulowa\u0142 wprowadzanie."
+            "user_cancelled_tool_msg": "U\u017cytkownik anulowa\u0142 wprowadzenie."
         }
     },
     "temp_chat": {
+        "format": "nowa rozmowa {chat_title}",
         "info": {
             "started": "Rozpocz\u0119to {chat_title}."
         },
@@ -217,30 +220,30 @@
     },
     "temp_flush": {
         "info": {
-            "skipping_current": "Omijanie bie\u017c\u0105cego czatu tymczasowego: {title}",
+            "skipping_current": "Pomijanie bie\u017c\u0105cego czatu tymczasowego: {title}",
             "none_found": "Nie znaleziono tymczasowych czat\u00f3w do usuni\u0119cia.",
-            "removed_count": "Usuni\u0119to {count} tymczasow\u0105(-e) rozmow\u0119(-y)."
+            "removed_count": "Usuni\u0119to {count} tymczasowy czat(\u00f3w)."
         }
     },
     "edit_message": {
         "error": {
-            "no_active_chat": "Brak aktywnego czatu do edycji.",
-            "empty_message": "Nie mo\u017cna ustawi\u0107 pustej wiadomo\u015bci.",
-            "no_messages": "Brak wiadomo\u015bci do edycji.",
-            "no_human_message": "Nie znaleziono ludzkich wiadomo\u015bci do edytowania.",
-            "invalid_index": "Nieprawid\u0142owy indeks {index}. Musi by\u0107 pomi\u0119dzy 0 a {max_index}.",
+            "no_active_chat": "Brak aktywnego czatu do edytowania.",
+            "empty_message": "Nie mo\u017cna ustawi\u0107 pustego komunikatu.",
+            "no_messages": "Brak wiadomo\u015bci do edytowania.",
+            "no_human_message": "Nie znaleziono wiadomo\u015bci od ludzi do edytowania.",
+            "invalid_index": "Nieprawid\u0142owy indeks {index}. Musi by\u0107 mi\u0119dzy 0 a {max_index}.",
             "not_human_message": "Wiadomo\u015b\u0107 pod indeksem {index} nie jest wiadomo\u015bci\u0105 od cz\u0142owieka."
         },
         "info": {
-            "reprocessing": "\"Edytowana wiadomo\u015b\u0107 na pozycji {index}. Przetwarzanie...\""
+            "reprocessing": "\"Edytowana wiadomo\u015b\u0107 na pozycji {index}. Przetwarzanie na nowo...\""
         }
     },
     "execute": {
         "info": {
-            "result": "Wynik bezpo\u015bredniego wykonania:\\n{output}"
+            "result": "Bezpo\u015bredni wynik wykonania:\\n{output}"
         },
         "error": {
-            "tool_unavailable": "B\u0142\u0105d: Funkcja narz\u0119dzia bezpo\u015bredniego terminala niedost\u0119pna.",
+            "tool_unavailable": "B\u0142\u0105d: Funkcja narz\u0119dzia terminala bezpo\u015bredniego niedost\u0119pna.",
             "failed": "B\u0142\u0105d podczas wykonywania polecenia: {error}"
         }
     },
@@ -262,17 +265,17 @@
         },
         "no_timestamp": "Brak znacznika czasu",
         "tool_calls": {
-            "header": "Rozpocz\u0119te wywo\u0142ania narz\u0119dzi:\\n",
+            "header": "Inicjowane wywo\u0142ania narz\u0119dzi:\\n",
             "prefix": "- Narz\u0119dzie:",
             "args_suffix": ", Argumenty: {args}",
-            "id_suffix": ", ID: {id}",
-            "error_invalid": "- Nieprawid\u0142owy wpis wywo\u0142ania narz\u0119dzia: {tc}"
+            "id_suffix": "', ID: {id}\\n'",
+            "error_invalid": "- Nieprawid\u0142owy wpis wywo\u0142ania narz\u0119dzia: {tc}\\n"
         },
         "tool_message": {
-            "id_prefix": "Dla ID wywo\u0142ania narz\u0119dzia: {tool_call_id}"
+            "id_prefix": "Dla identyfikatora wywo\u0142ania narz\u0119dzia: {tool_call_id}"
         },
         "metadata": {
-            "edited": "\"[Edytowano - Oryginalny znacznik czasowy: {original_ts}]\\n\\n\"",
+            "edited": "[Zedytowano - Oryginalny znacznik czasu: {original_ts}]",
             "edited_na": "N/D"
         },
         "footer": "--- Koniec historii ---"
@@ -283,13 +286,13 @@
         },
         "title": {
             "chat": "Zestawy narz\u0119dzi dla czatu '{title}':",
-            "global": "Dost\u0119pne narz\u0119dzia:"
+            "global": "Dost\u0119pne zestawy narz\u0119dzi:"
         },
         "marker": {
             "enabled": "W\u0141\u0104CZONE"
         },
         "explanation": {
-            "chat": "Status narz\u0119dzi:\n\u2022 W\u0141\u0104CZONE: Narz\u0119dzia zestawu narz\u0119dzi s\u0105 dost\u0119pne dla AI w tym czacie\n\nUwaga: U\u017cyj --select-tools, aby zmieni\u0107 w\u0142\u0105czone zestawy narz\u0119dzi dla tego czatu.",
+            "chat": "Stan narz\u0119dzi:\n\u2022 W\u0141\u0104CZONY: Narz\u0119dzia zestawu narz\u0119dzi s\u0105 dost\u0119pne dla AI w tej rozmowie\n\nUwaga: U\u017cyj --select-tools, aby zmieni\u0107 w\u0142\u0105czone zestawy narz\u0119dzi dla tej rozmowy.",
             "global": "Uwaga: U\u017cyj --select-tools, aby zmieni\u0107, kt\u00f3re zestawy narz\u0119dzi b\u0119d\u0105 domy\u015blnie w\u0142\u0105czone dla nowych czat\u00f3w."
         }
     },
@@ -300,12 +303,12 @@
         },
         "delete": {
             "error_not_found": "B\u0142\u0105d: Czatu '{title}' nie znaleziono.",
-            "error_failed": "Error: Nie uda\u0142o si\u0119 usun\u0105\u0107 katalogu czatu '{title}': {error}"
+            "error_failed": "B\u0142\u0105d: Nie uda\u0142o si\u0119 usun\u0105\u0107 katalogu czatu '{title}': {error}"
         },
         "tool_config": {
-            "notice_needs_config": "\\nUWAGA: Zestaw narz\u0119dzi '{toolset_name}' wymaga konfiguracji dla czatu (nie znaleziono wa\u017cnego lokalnego ani globalnego domy\u015blnego ustawienia).",
+            "notice_needs_config": "WIEDOMO\u015a\u0106: Zestaw narz\u0119dzi '{toolset_name}' wymaga konfiguracji dla czatu (nie znaleziono wa\u017cnego lokalnego ani globalnego domy\u015blnego ustawienia).",
             "warn_cancel": "Konfiguracja dla '{toolset_name}' zosta\u0142a anulowana. Mo\u017ce nie dzia\u0142a\u0107 poprawnie.",
-            "error_failed": "B\u0142\u0105d podczas konfigurowania '{toolset_name}': {error}. Mo\u017ce dzia\u0142a\u0107 nieprawid\u0142owo."
+            "error_failed": "B\u0142\u0105d konfiguracji '{toolset_name}': {error}. Mo\u017ce nie dzia\u0142a\u0107 poprawnie."
         }
     },
     "config": {
@@ -315,42 +318,43 @@
             "google_header": "Google:",
             "aliases_suffix": "(aliasy: {alias_str})",
             "current_marker": "<- Bie\u017c\u0105cy model",
-            "prompt": "Prosz\u0119 wprowadzi\u0107 model, kt\u00f3ry chcesz u\u017cywa\u0107, lub pozostawi\u0107 pustym, aby kontynuowa\u0107 korzystanie z '{current_model}'",
-            "prompt_agent": "Prosz\u0119 wprowadzi\u0107 model G\u0141\u00d3WNEGO AGENTA, lub pozostawi\u0107 puste, aby zachowa\u0107 '{current_model}'",
-            "warn_unknown": "Nieznany model: {selected_model}. Zachowano bie\u017c\u0105cy model: {current_model}",
+            "prompt": "Prosz\u0119 wprowadzi\u0107 model, kt\u00f3rego chcesz u\u017cy\u0107, lub pozostawi\u0107 puste, aby kontynuowa\u0107 u\u017cywanie '{current_model}'",
+            "prompt_agent": "Prosz\u0119 wprowadzi\u0107 model G\u0141\u00d3WNEGO AGENTA lub pozostawi\u0107 puste, aby zachowa\u0107 '{current_model}'",
+            "warn_unknown": "Nieznany model: {selected_model}. Zachowuj\u0119 bie\u017c\u0105cy model: {current_model}",
             "error_generic": "Wyst\u0105pi\u0142 b\u0142\u0105d podczas wyboru modelu: {error}"
         },
         "trans_model_select": {
             "title": "--- Wybierz model t\u0142umaczenia ---",
-            "prompt": "Prosz\u0119 wprowadzi\u0107 model T\u0141UMACZENIA lub pozostawi\u0107 pustym, aby zachowa\u0107 '{current_model}'",
-            "warn_unknown": "Nieznany model t\u0142umaczenia: {selected_model}. Zachowano obecny: {current_model}",
-            "warn_cancel": "Wyb\u00f3r modelu t\u0142umaczenia anulowany.",
+            "prompt": "Prosz\u0119 wprowadzi\u0107 model T\u0141UMACZENIA lub pozostawi\u0107 puste, aby zachowa\u0107 '{current_model}'",
+            "warn_unknown": "Nieznany model t\u0142umaczenia: {selected_model}. Zachowuj\u0119 obecny: {current_model}",
+            "warn_cancel": "Zamkni\u0119to wyb\u00f3r modelu t\u0142umaczenia.",
             "info_needed": "Model t\u0142umaczenia nie jest skonfigurowany. Prosz\u0119 wybra\u0107 jeden.",
             "info_set": "Model t\u0142umaczenia ustawiony na: {model_name}",
             "error_not_set": "Model t\u0142umaczenia nie zosta\u0142 wybrany. Przerywam.",
             "error_generic": "Wyst\u0105pi\u0142 b\u0142\u0105d podczas wyboru modelu t\u0142umaczenia: {error}"
         },
         "api_key": {
-            "prompt_instructions": "Prosz\u0119 wprowadzi\u0107 sw\u00f3j klucz API {provider_name}.  \nMo\u017cesz go uzyska\u0107 z: {api_key_link}",
-            "prompt_instructions_model": "Prosz\u0119 wprowadzi\u0107 sw\u00f3j klucz API {provider_name} dla modelu '{model_name}'.\nMo\u017cesz go uzyska\u0107 z: {api_key_link}",
+            "prompt_instructions": "Prosz\u0119 wprowadzi\u0107 sw\u00f3j klucz API {provider_name}.  \nMo\u017cna go uzyska\u0107 tutaj: {api_key_link}",
+            "prompt_instructions_model": "Prosz\u0119 wprowadzi\u0107 sw\u00f3j klucz API {provider_name} dla modelu '{model_name}'.  \nMo\u017cesz go uzyska\u0107 z: {api_key_link}",
             "prompt_input": "Wprowad\u017a klucz API {provider_name}",
             "prompt_input_model": "Wprowad\u017a klucz API {provider_name} (dla {model_name})",
             "error_generic": "Wyst\u0105pi\u0142 b\u0142\u0105d podczas wprowadzania klucza API: {error}",
-            "warn_none_provided": "Nie podano klucza API {provider_name}. Przerywam.",
+            "warn_none_provided": "Nie podano klucza API {provider_name}. Anulowanie.",
             "info_saved": "Klucz API {provider_name} zosta\u0142 pomy\u015blnie zapisany w .env"
         },
         "lang_select": {
-            "error_discovery_failed": "Nie mo\u017cna znale\u017a\u0107 \u017cadnych plik\u00f3w j\u0119zykowych. U\u017cywam domy\u015blnego 'en'.",
+            "error_discovery_failed": "Nie znaleziono \u017cadnych plik\u00f3w j\u0119zykowych. U\u017cywam domy\u015blnego 'en'.",
             "prompt_title": "Prosz\u0119 wybra\u0107 j\u0119zyk aplikacji:",
             "current_marker": "<- Bie\u017c\u0105cy",
             "option_format": "{idx}: {code}{marker}",
-            "prompt_input": "Wprowad\u017a numer (1-{max_lang}) lub pozostaw puste, aby zachowa\u0107 '{current_lang}':",
-            "info_kept_current": "Zachowanie bie\u017c\u0105cego j\u0119zyka: {lang_code}",
+            "prompt_input": "Wprowad\u017a numer (1-{max_lang}) lub pozostaw pusty, aby zachowa\u0107 '{current_lang}':",
+            "info_kept_current": "Zachowuj\u0105c bie\u017c\u0105cy j\u0119zyk: {lang_code}",
             "info_set_success": "J\u0119zyk ustawiony na: {lang_code}",
             "error_save_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 ustawienia j\u0119zyka.",
             "error_invalid_input": "Nieprawid\u0142owy wyb\u00f3r. Prosz\u0119 wprowadzi\u0107 liczb\u0119 mi\u0119dzy 1 a {max_lang}.",
-            "warn_cancel": "Wyb\u00f3r j\u0119zyka anulowany.",
-            "error_generic": "Wyst\u0105pi\u0142 niespodziewany b\u0142\u0105d: {error}"
+            "warn_cancel": "Selekcja j\u0119zyka anulowana. Brak wprowadzonych zmian.",
+            "warn_cancel_default": "Anulowano wyb\u00f3r j\u0119zyka. Ustawiono domy\u015blnie na 'en'.",
+            "error_generic": "Wyst\u0105pi\u0142 nieoczekiwany b\u0142\u0105d: {error}"
         }
     },
     "console": {
@@ -362,39 +366,39 @@
             "used_tool": "U\u017cyto narz\u0119dzia '{tool_name}'",
             "with_args": "z",
             "arg_separator": ":",
-            "arg_list_separator": "', '"
+            "arg_list_separator": ","
         },
         "hitl_prompt": {
             "prefix_action": "AI chce wykona\u0107 akcj\u0119 ''",
-            "suffix_edit_confirm": "'', edytuj lub potwierd\u017a: '",
-            "error_edit_key_missing": "B\u0142\u0105d wewn\u0119trzny: klucz_edit '{edit_key}' nie zosta\u0142 znaleziony w proponowanych argumentach dla narz\u0119dzia '{tool_name}'.",
-            "error_generic": "B\u0142\u0105d podczas wy\u015bwietlania komunikatu: {error}"
+            "suffix_edit_confirm": "'', edytuj lub potwierd\u017a: ''",
+            "error_edit_key_missing": "B\u0142\u0105d wewn\u0119trzny: klucz_edit '{edit_key}' nie znaleziono w proponowanych argumentach dla narz\u0119dzia '{tool_name}'.",
+            "error_generic": "B\u0142\u0105d podczas wprowadzania danych: {error}"
         },
         "prompt": {
             "suffix": ":",
-            "default_hint_format": "[ {domy\u015blny} ]",
-            "error_generic": "B\u0142\u0105d podczas pobierania danych: {error}"
+            "default_hint_format": "[{{domy\u015blny}}]",
+            "error_generic": "B\u0142\u0105d podczas uzyskiwania wej\u015bcia: {error}"
         },
         "common": {
-            "input_cancelled": "Wej\u015bcie anulowane."
+            "input_cancelled": "Wprowadzenie anulowane."
         }
     },
     "localize": {
-        "start": "Rozpoczynam proces lokalizacji dla j\u0119zyka: {target_language}",
-        "start_detailed": "Rozpoczynam lokalizacj\u0119 do '{target_language}' przy u\u017cyciu modelu '{model_name}'...",
+        "start": "Rozpoczynanie procesu lokalizacji dla j\u0119zyka: {target_language}",
+        "start_detailed": "Rozpoczynanie lokalizacji do '{target_language}' przy u\u017cyciu modelu '{model_name}'...",
         "select_model_prompt": "Wybierz model do t\u0142umaczenia:",
         "select_model_confirm": "U\u017cywanie bie\u017c\u0105cego modelu t\u0142umaczenia: {model_name}",
-        "select_model_cancel": "Wyb\u00f3r modelu t\u0142umaczenia anulowany. Anulowanie lokalizacji.",
+        "select_model_cancel": "Wyb\u00f3r modelu t\u0142umaczenia anulowany. Przerywam lokalizacj\u0119.",
         "select_model_set": "Model t\u0142umaczenia ustawiony na: {model_name}",
-        "error_llm_init": "Nie uda\u0142o si\u0119 zainicjowa\u0107 LLM do t\u0142umaczenia. Przerywam.",
-        "error_llm_init_specific": "Nie uda\u0142o si\u0119 zainicjowa\u0107 okre\u015blonego LLM '{model_name}' do t\u0142umaczenia. Anulowanie.",
+        "error_llm_init": "Nie uda\u0142o si\u0119 zainicjowa\u0107 modelu LLM do t\u0142umaczenia. Przerywam.",
+        "error_llm_init_specific": "Nie uda\u0142o si\u0119 zainicjowa\u0107 okre\u015blonego LLM '{model_name}' do t\u0142umaczenia. Przerywam.",
         "warn_no_files": "Nie znaleziono plik\u00f3w 'en_texts.json' do przet\u0142umaczenia.",
-        "warn_no_keys": "Nie znaleziono kluczy do t\u0142umaczenia w odkrytych plikach.",
-        "translating_start": "T\u0142umaczenie {count} element\u00f3w tekstowych na {target_language} przy u\u017cyciu {model_name}...",
+        "warn_no_keys": "Nie znaleziono lokalizowanych kluczy tekstowych w odkrytych plikach.",
+        "translating_start": "T\u0142umaczenie {count} element\u00f3w tekstowych na {target_language} za pomoc\u0105 {model_name}...",
         "progress_format": "Post\u0119p: {current}/{total} kluczy przet\u0142umaczonych...",
-        "saving": "Zapisuj\u0119 t\u0142umaczenia do: {target_file}",
+        "saving": "Zapisywanie t\u0142umacze\u0144 do: {target_file}",
         "error_save": "Nie uda\u0142o si\u0119 zapisa\u0107 przet\u0142umaczonego pliku: {target_file}",
-        "complete": "Lokalizacja zako\u0144czona dla {target_language}. Przetworzono {count} kluczy.",
-        "complete_errors": "Lokalizacja zako\u0144czona, ale wyst\u0105pi\u0142y pewne b\u0142\u0119dy (t\u0142umaczenia mog\u0105 by\u0107 niekompletne lub pliki mog\u0142y nie zosta\u0107 zapisane). Sprawd\u017a dzienniki."
+        "complete": "\"Lokalizacja zako\u0144czona dla {target_language}. Przetworzono {count} kluczy.\"",
+        "complete_errors": "Lokalizacja zako\u0144czona, ale wyst\u0105pi\u0142y pewne b\u0142\u0119dy (t\u0142umaczenia mog\u0105 by\u0107 niepe\u0142ne lub pliki nie zosta\u0142y zapisane). Sprawd\u017a logi."
     }
 }

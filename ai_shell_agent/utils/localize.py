@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 import copy
+import fnmatch  # Added for pattern matching
 
 from .. import logger, ROOT_DIR
 from ..llm import get_translation_llm # Use the specific translation LLM getter
@@ -18,6 +19,16 @@ from ..texts import get_text # Import to get UI text for the localization proces
 
 # Get console manager instance
 console = get_console_manager()
+
+# --- Define Key Patterns to Exclude from Translation ---
+# Uses fnmatch pattern matching (e.g., *, ?, [seq], [!seq])
+# Add patterns for keys whose string values should NOT be translated.
+EXCLUDED_KEY_PATTERNS: List[str] = [
+    "tools.*" # Exclude all keys under 'tools' (e.g., tools.tool_name.*)
+    # Add more patterns here as needed
+]
+logger.debug(f"Localization exclusion patterns: {EXCLUDED_KEY_PATTERNS}")
+# --- END ---
 
 def discover_english_text_files() -> List[Path]:
     """Finds all en_texts.json files within the ai_shell_agent directory."""
@@ -90,7 +101,10 @@ def _translate_recursive(
     key_path_prefix: str = "",
     original_data: Optional[Dict] = None # Pass original full data for context
 ) -> Any:
-    """Recursively traverses the data, translates strings, and calls progress callback."""
+    """
+    Recursively traverses the data, translates strings (skipping excluded keys),
+    and calls progress callback for every string key encountered.
+    """
     if original_data is None:
         original_data = data # Use top-level data as original context initially
 
@@ -108,18 +122,30 @@ def _translate_recursive(
         return translated_dict
     elif isinstance(data, list):
         # Lists usually don't contain localizable strings directly in this app's structure
-        # If they did, you'd iterate and call _translate_recursive on elements.
-        # For now, return the list as is. Check if toolsets use lists of strings.
-        # If needed: return [_translate_recursive(item, llm, target_language, progress_callback, key_path_prefix, original_data) for item in data]
         return data
     elif isinstance(data, str):
-        # This is a string leaf node, translate it
-        translation = _translate_string(
-            llm, data, target_language, key_path_prefix,
-            key_path_prefix.split('.')[0], # top_level_key
-            original_data.get(key_path_prefix.split('.')[0], {}) # top_level_dict
-        )
-        progress_callback() # Increment progress after attempting translation
+        # --- START EXCLUSION CHECK ---
+        is_excluded = False
+        for pattern in EXCLUDED_KEY_PATTERNS:
+            if fnmatch.fnmatch(key_path_prefix, pattern):
+                logger.debug(f"Skipping translation for key '{key_path_prefix}' due to pattern '{pattern}'")
+                is_excluded = True
+                break # No need to check other patterns
+        # --- END EXCLUSION CHECK ---
+
+        translation = data # Default to original value
+
+        if not is_excluded:
+            # This is a string leaf node NOT excluded, translate it
+            translation = _translate_string(
+                llm, data, target_language, key_path_prefix,
+                key_path_prefix.split('.')[0], # top_level_key
+                original_data.get(key_path_prefix.split('.')[0], {}) # top_level_dict
+            )
+            # Note: _translate_string returns original on error
+
+        # Call progress callback for EVERY string key, even skipped ones
+        progress_callback()
         return translation
     else:
         # Return non-string, non-dict, non-list types as is

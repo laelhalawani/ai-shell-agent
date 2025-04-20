@@ -1,16 +1,16 @@
 {
     "toolset": {
         "name": "Mened\u017cer plik\u00f3w",
-        "description": "Zapewnia narz\u0119dzia do bezpo\u015bredniej manipulacji plikami i katalogami (tworzenie, odczyt, edytowanie, usuwanie, kopiowanie, przenoszenie, wyszukiwanie, historia)."
+        "description": "Zapewnia narz\u0119dzia do bezpo\u015bredniej manipulacji plikami i katalogami (tworzenie, odczyt, edycja, usuwanie, kopiowanie, przenoszenie, wyszukiwanie, historia)."
     },
     "config": {
-        "header": "--- Konfiguracja ustawie\u0144 mened\u017cera plik\u00f3w ---",
+        "header": "--- Konfiguracja Ustawie\u0144 Mened\u017cera Plik\u00f3w ---",
         "prompt_limit": "Wprowad\u017a maksymaln\u0105 liczb\u0119 element\u00f3w historii do wy\u015bwietlenia",
-        "warn_invalid": "Wprowadzono nieprawid\u0142ow\u0105 liczb\u0119. U\u017cywam poprzedniego/domyslnego limitu.",
-        "warn_cancel": "Koniec konfiguracji. U\u017cywam poprzednich/warto\u015bci domy\u015blnych.",
+        "warn_invalid": "Wprowadzono nieprawid\u0142ow\u0105 liczb\u0119. U\u017cycie poprzedniego/domyslnego limitu.",
+        "warn_cancel": "Anulowano konfiguracj\u0119. U\u017cywanie poprzednich/warto\u015bci domy\u015blnych.",
         "error_generic": "B\u0142\u0105d konfiguracji: {error}",
-        "info_saved": "Konfiguracja Mened\u017cera Plik\u00f3w zosta\u0142a zapisana.",
-        "error_save_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 konfiguracji Mened\u017cera plik\u00f3w."
+        "info_saved": "\\nKonfiguracja Mened\u017cera Plik\u00f3w zosta\u0142a zapisana.",
+        "error_save_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 konfiguracji Mened\u017cera Plik\u00f3w."
     },
     "schemas": {
         "path": {
@@ -18,14 +18,14 @@
         },
         "create": {
             "path_desc": "Absolutna lub wzgl\u0119dna \u015bcie\u017cka do nowego pliku lub katalogu.",
-            "content_desc": "Opcjonalna zawarto\u015b\u0107 tekstowa do zapisania podczas tworzenia pliku.",
+            "content_desc": "Opcjonalna tre\u015b\u0107 tekstowa do zapisania, je\u015bli tworzony jest plik.",
             "is_directory_desc": "Ustaw na true, je\u015bli tworzysz katalog, false (domy\u015blnie) dla pliku."
         },
         "edit_simple": {
-            "path_desc": "\u015acie\u017cka do pliku do edycji.",
+            "path_desc": "\u015acie\u017cka do pliku do edytowania.",
             "find_text_desc": "Dok\u0142adna tre\u015b\u0107 tekstu do znalezienia w pliku.",
-            "replace_text_desc": "Tre\u015b\u0107, kt\u00f3ra ma zast\u0105pi\u0107 'find_text'.",
-            "summary_desc": "Kr\u00f3tki podsumowanie edycji, kt\u00f3ra jest wykonywana."
+            "replace_text_desc": "Tre\u015b\u0107 tekstu, kt\u00f3r\u0105 nale\u017cy zast\u0105pi\u0107 'find_text'.",
+            "summary_desc": "Kr\u00f3tki opis edytowanej operacji."
         },
         "from_to": {
             "from_path_desc": "\u015acie\u017cka \u017ar\u00f3d\u0142owa pliku lub katalogu.",
@@ -33,155 +33,155 @@
         },
         "rename": {
             "path_desc": "Aktualna \u015bcie\u017cka pliku lub katalogu do zmiany nazwy.",
-            "new_name_desc": "\u017b\u0105dana nowa nazwa pliku lub katalogu (tylko ostatni komponent, nie pe\u0142na \u015bcie\u017cka)."
+            "new_name_desc": "\u017b\u0105dana nowa nazwa pliku lub katalogu (tylko ostatni element, bez pe\u0142nej \u015bcie\u017cki)."
         },
         "find": {
-            "query_desc": "Wzorzec nazwy pliku lub katalogu do wyszukania.",
-            "directory_desc": "Opcjonalny katalog, od kt\u00f3rego rozpoczyna si\u0119 wyszukiwanie (domy\u015blnie bie\u017c\u0105cy katalog roboczy). Wyszukiwanie obejmuje podkatalogi."
+            "query_desc": "Wzorzec nazwy pliku lub nazwy katalogu do wyszukania.",
+            "directory_desc": "Opcjonalny katalog, z kt\u00f3rego rozpoczyna si\u0119 wyszukiwanie (domy\u015blnie bie\u017c\u0105cy katalog roboczy). Wyszukiwanie obejmuje podkatalogi."
         }
     },
     "tools": {
         "usage_guide": {
-            "name": "przewodnik_u\u017cytkowania_mened\u017cera_plik\u00f3w",
-            "description": "Wy\u015bwietla instrukcje u\u017cytkowania i kontekst dla zestawu narz\u0119dzi Mened\u017cer plik\u00f3w."
+            "name": "file_manager_usage_guide",
+            "description": "Displays usage instructions and context for the File Manager toolset."
         },
         "create": {
-            "name": "utw\u00f3rz_plik_lub_katalog",
-            "description": "Tworzy nowy plik lub katalog w okre\u015blonej \u015bcie\u017cce. Opcjonalnie zapisuje zawarto\u015b\u0107, je\u015bli tworzony jest plik.",
+            "name": "create_file_or_dir",
+            "description": "Creates a new file or directory at the specified path. Optionally writes content if creating a file.",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "exists": "B\u0142\u0105d: \u015acie\u017cka ju\u017c istnieje: {path}",
-                "content_for_dir": "B\u0142\u0105d: Nie mo\u017cna poda\u0107 tre\u015bci przy tworzeniu katalogu: {path}",
-                "generic": "B\u0142\u0105d podczas tworzenia \u015bcie\u017cki {path}: {error}"
+                "no_chat": "Error: No active chat session.",
+                "exists": "Error: Path already exists: {path}",
+                "content_for_dir": "Error: Cannot provide content when creating a directory: {path}",
+                "generic": "Error creating path {path}: {error}"
             },
-            "success": "Pomy\u015blnie utworzono {type}: {path}"
+            "success": "Successfully created {type}: {path}"
         },
         "read": {
-            "name": "odczytaj_zawarto\u015b\u0107_pliku",
-            "description": "Odczytuje zawarto\u015b\u0107 okre\u015blonego pliku jako tekst.",
+            "name": "read_file_content",
+            "description": "Reads the content of a specified file as text.",
             "error": {
-                "not_file": "B\u0142\u0105d: \u015acie\u017cka nie jest plikiem lub nie istnieje: {path}",
-                "not_found": "B\u0142\u0105d: Plik nie zosta\u0142 znaleziony: {path}",
-                "generic": "B\u0142\u0105d podczas odczytu pliku {path}: {error}"
+                "not_file": "Error: Path is not a file or does not exist: {path}",
+                "not_found": "Error: File not found: {path}",
+                "generic": "Error reading file {path}: {error}"
             },
-            "success": "Zawarto\u015b\u0107 pliku {path}:\\n---\\n{content}\\n---",
-            "truncated_suffix": "\u2026 (skr\u00f3cone)"
+            "success": "Content of {path}:\n---\n{content}\n---",
+            "truncated_suffix": "\n... (truncated)"
         },
         "delete": {
-            "name": "usu\u0144_plik_lub_katalog",
-            "description": "Usuwa okre\u015blony plik lub katalog. Wymagana jest potwierdzenie u\u017cytkownika.",
+            "name": "delete_file_or_dir",
+            "description": "Deletes a specified file or directory. Requires user confirmation.",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "not_exists": "B\u0142\u0105d: \u015acie\u017cka nie istnieje: {path}",
-                "generic": "B\u0142\u0105d podczas usuwania \u015bcie\u017cki {path}: {error}"
+                "no_chat": "Error: No active chat session.",
+                "not_exists": "Error: Path does not exist: {path}",
+                "generic": "Error deleting path {path}: {error}"
             },
-            "success": "Pomy\u015blnie usuni\u0119to {type}: {path}"
+            "success": "Successfully deleted {type}: {path}"
         },
         "edit": {
-            "name": "edytuj_plik",
-            "description": "Edytuje plik, zast\u0119puj\u0105c wyst\u0105pienia 'find_text' z 'replace_text'. Najpierw tworzy kopi\u0119 zapasow\u0105. Wymagana jest potwierdzenie przez u\u017cytkownika podsumowania edycji i docelowego pliku.",
+            "name": "edit_file",
+            "description": "Edits a file by replacing occurrences of 'find_text' with 'replace_text'. Creates a backup first. Requires user confirmation of the edit summary and target file.",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "not_file": "B\u0142\u0105d: \u015acie\u017cka nie jest plikiem lub nie istnieje: {path}",
-                "generic": "B\u0142\u0105d edytowania pliku {path}: {error}"
+                "no_chat": "Error: No active chat session.",
+                "not_file": "Error: Path is not a file or does not exist: {path}",
+                "generic": "Error editing file {path}: {error}"
             },
-            "info_no_change": "Edytowanie zako\u0144czone dla {path}. \u017badne zmiany nie zosta\u0142y wprowadzone (czy tekst do znalezienia nie zosta\u0142 znaleziony?). Oryginalny plik nietkni\u0119ty. \u017baden kopia zapasowa nie zosta\u0142a utworzona.",
-            "success": "Pomy\u015blnie edytowano {path}.\nPodsumowanie: {summary}\nUtworzono kopi\u0119 zapasow\u0105 w: {backup_path}"
+            "info_no_change": "Edit completed on {path}. No changes made (find_text not found?). Original file untouched. No backup created.",
+            "success": "Successfully edited {path}.\nSummary: {summary}\nBackup created at: {backup_path}"
         },
         "copy": {
-            "name": "kopiuj_plik_lub_katalog",
-            "description": "Kopiuje plik lub katalog z 'from_path' do 'to_path'. Wymagana jest potwierdzenie \u015bcie\u017cki \u017ar\u00f3d\u0142owej przez u\u017cytkownika.",
+            "name": "copy_file_or_dir",
+            "description": "Copies a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path.",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "source_not_exists": "B\u0142\u0105d: \u015acie\u017cka \u017ar\u00f3d\u0142owa nie istnieje: {path}",
-                "dest_exists": "B\u0142\u0105d: \u015acie\u017cka docelowa ju\u017c istnieje: {path}. Nadpisywanie nie jest obs\u0142ugiwane.",
-                "generic": "B\u0142\u0105d kopiowania {from_path} do {to_path}: {error}"
+                "no_chat": "Error: No active chat session.",
+                "source_not_exists": "Error: Source path does not exist: {path}",
+                "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
+                "generic": "Error copying {from_path} to {to_path}: {error}"
             },
-            "success": "Pomy\u015blnie skopiowano {type} z {from_path} do {to_path}"
+            "success": "Successfully copied {type} from {from_path} to {to_path}"
         },
         "move": {
-            "name": "przenie\u015b_plik_lub_katalog",
-            "description": "Przenosi (zmienia nazw\u0119) plik lub katalog z 'from_path' do 'to_path'. Wymaga potwierdzenia u\u017cytkownika dla \u015bcie\u017cki \u017ar\u00f3d\u0142owej.",
+            "name": "move_file_or_dir",
+            "description": "Moves (renames) a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path.",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "source_not_exists": "B\u0142\u0105d: \u015acie\u017cka \u017ar\u00f3d\u0142owa nie istnieje: {path}",
-                "dest_exists": "B\u0142\u0105d: \u015acie\u017cka docelowa ju\u017c istnieje: {path}. Nadpisywanie nie jest obs\u0142ugiwane.",
-                "generic": "B\u0142\u0105d przenoszenia {from_path} do {to_path}: {error}"
+                "no_chat": "Error: No active chat session.",
+                "source_not_exists": "Error: Source path does not exist: {path}",
+                "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
+                "generic": "Error moving {from_path} to {to_path}: {error}"
             },
-            "success": "Pomy\u015blnie przeniesiono {from_path} do {to_path}"
+            "success": "Successfully moved {from_path} to {to_path}"
         },
         "rename": {
-            "name": "zmie\u0144_nazw\u0119_pliku_lub_katalogu",
-            "description": "Zmienia nazw\u0119 pliku lub katalogu w obr\u0119bie tego samego katalogu nadrz\u0119dnego. Wymaga potwierdzenia nowej nazwy przez u\u017cytkownika.",
+            "name": "rename_file_or_dir",
+            "description": "Renames a file or directory within the same parent directory. Requires user confirmation of the new name.",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "invalid_new_name": "B\u0142\u0105d: 'new_name' ({new_name}) nie mo\u017ce zawiera\u0107 separator\u00f3w \u015bcie\u017cek. U\u017cyj 'move_file_or_dir', aby przenie\u015b\u0107 mi\u0119dzy katalogami.",
-                "empty_new_name": "B\u0142\u0105d: Potwierdzona nowa nazwa nie mo\u017ce by\u0107 pusta.",
-                "path_not_exists": "B\u0142\u0105d: Oryginalna \u015bcie\u017cka nie istnieje: {path}",
-                "target_exists": "B\u0142\u0105d: \u015acie\u017cka docelowa ju\u017c istnieje: {path}",
-                "generic": "B\u0142\u0105d podczas zmiany nazwy {path} na {new_path}: {error}"
+                "no_chat": "Error: No active chat session.",
+                "invalid_new_name": "Error: 'new_name' ({new_name}) cannot contain path separators. Use 'move_file_or_dir' to move between directories.",
+                "empty_new_name": "Error: Confirmed new name cannot be empty.",
+                "path_not_exists": "Error: Original path does not exist: {path}",
+                "target_exists": "Error: Target path already exists: {path}",
+                "generic": "Error renaming {path} to {new_path}: {error}"
             },
-            "success": "Pomy\u015blnie zmieniono nazw\u0119 {path} na {new_path}"
+            "success": "Successfully renamed {path} to {new_path}"
         },
         "find": {
-            "name": "znajd\u017a_plik\u00f3w",
-            "description": "\"Przeszukuje pliki lub katalogi odpowiadaj\u0105ce zapytaniu w okre\u015blonym katalogu (lub bie\u017c\u0105cym katalogu) oraz jego podkatalogach.\"",
+            "name": "find_files",
+            "description": "Searches for files or directories matching the query within a specified directory (or current directory) and its subdirectories.",
             "error": {
-                "dir_not_found": "B\u0142\u0105d: Katalog wyszukiwania nie istnieje lub nie jest katalogiem: {directory}",
-                "generic": "B\u0142\u0105d podczas wyszukiwania plik\u00f3w: {error}"
+                "dir_not_found": "Error: Search directory does not exist or is not a directory: {directory}",
+                "generic": "Error finding files: {error}"
             },
-            "info_no_matches": "Nie znaleziono plik\u00f3w ani katalog\u00f3w odpowiadaj\u0105cych '{query}' w {directory}.",
-            "success": "Znaleziono {count} pasuj\u0105cych wynik\u00f3w dla '{query}' w {directory}:\\n{matches}",
-            "info_limit_reached": "... (osi\u0105gni\u0119to limit wynik\u00f3w)",
-            "warn_permission": "Znaleziono {count} dopasowanie(a) przed napotkaniem b\u0142\u0119du uprawnie\u0144 w {directory}:\\n{matches}\\n(Wynik niekompletny z powodu brakuj\u0105cych uprawnie\u0144)",
-            "error_permission": "B\u0142\u0105d: Odrzucono uprawnienia podczas przeszukiwania w {directory}."
+            "info_no_matches": "No files or directories found matching '{query}' in {directory}.",
+            "success": "Found {count} match(es) for '{query}' in {directory}:\n{matches}",
+            "info_limit_reached": "\n... (result limit reached)",
+            "warn_permission": "Found {count} match(es) before encountering permission error in {directory}:\n{matches}\n(Search incomplete due to permissions)",
+            "error_permission": "Error: Permission denied while searching in {directory}."
         },
         "check_exist": {
-            "name": "sprawd\u017a_istnienie_\u015bcie\u017cki",
-            "description": "Sprawdza, czy dany \u015bcie\u017cka do pliku lub katalogu istnieje w systemie plik\u00f3w.",
+            "name": "check_path_exists",
+            "description": "Checks if a given file or directory path exists in the file system.",
             "error": {
-                "generic": "B\u0142\u0105d podczas sprawdzania istnienia \u015bcie\u017cki '{path}': {error}"
+                "generic": "Error checking existence of path '{path}': {error}"
             },
-            "success_exists": "\u015acie\u017cka istnieje: '{path}' (Typ: {type})",
-            "success_not_exists": "\u015acie\u017cka nie istnieje: '{path}'"
+            "success_exists": "Path exists: '{path}' (Type: {type})",
+            "success_not_exists": "Path does not exist: '{path}'"
         },
         "history": {
-            "name": "poka\u017c_histori\u0119_zmian_pliku",
-            "description": "Pokazuje ostatni\u0105 histori\u0119 operacji plik\u00f3w wykonanych przez ten zestaw narz\u0119dzi w bie\u017c\u0105cej rozmowie.",
+            "name": "show_file_change_history",
+            "description": "Displays the recent history of file operations performed by this toolset in the current chat.",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "generic": "B\u0142\u0105d podczas pobierania historii plik\u00f3w: {error}"
+                "no_chat": "Error: No active chat session.",
+                "generic": "Error retrieving file history: {error}"
             },
-            "info_empty": "Nie zarejestrowano operacji plik\u00f3w w historii dla tej rozmowy.",
-            "header": "Ostatnie operacje na plikach (Ostatnie {count} z {total} \u0142\u0105cznych):",
+            "info_empty": "No file operations recorded in history for this chat.",
+            "header": "Recent File Operations (Last {count} of {total} total):\n",
             "line_format": "- [{ts}] {op}"
         },
         "restore": {
-            "name": "przywr\u00f3\u0107_plik_z_kopii_zap",
-            "description": "Przywraca plik do stanu zapisanego w jego najnowszej kopii zapasowej utworzonej przez narz\u0119dzie 'edit_file'. Wymagana jest potwierdzenie u\u017cytkownika.",
-            "prompt_suffix": "'(Potwierd\u017a przywracanie z kopii zapasowej: {backup_name}) > '",
+            "name": "restore_file_from_backup",
+            "description": "Restores a file to the state saved in its most recent backup created by the 'edit_file' tool. Requires user confirmation.",
+            "prompt_suffix": "(Confirm restore from backup: {backup_name}) > ",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "no_backup_history": "B\u0142\u0105d: Brak kopii zapasowej w historii dla pliku: {path}",
-                "backup_missing": "B\u0142\u0105d: Plik kopii zapasowej zapisany w historii nie istnieje: {backup_path}",
-                "target_not_file": "B\u0142\u0105d: \u015acie\u017cka docelowa istnieje, ale nie jest plikiem: {path}",
-                "generic": "B\u0142\u0105d przy przywracaniu pliku {path}: {error}"
+                "no_chat": "Error: No active chat session.",
+                "no_backup_history": "Error: No backup found in history for file: {path}",
+                "backup_missing": "Error: Backup file recorded in history does not exist: {backup_path}",
+                "target_not_file": "Error: Target path exists but is not a file: {path}",
+                "generic": "Error restoring file {path}: {error}"
             },
-            "success": "Pomy\u015blnie przywr\u00f3cono {path} z kopii zapasowej {backup_name}"
+            "success": "Successfully restored {path} from backup {backup_name}"
         },
         "finalize": {
-            "name": "ukoncz_zmiany_pliku",
-            "description": "Usuwa wszystkie pliki kopii zapasowych utworzone przez ten zestaw narz\u0119dzi w bie\u017c\u0105cej sesji czatu.",
-            "prompt_confirm": "Usu\u0144 {count} plik\u00f3w kopii zapasowej?",
-            "prompt_suffix": "'(Napisz 'tak', aby potwierdzi\u0107) > '",
+            "name": "finalize_file_changes",
+            "description": "Deletes all backup files created by this toolset in the current chat session.",
+            "prompt_confirm": "Delete {count} backup files?",
+            "prompt_suffix": "(Type 'yes' to confirm) > ",
             "error": {
-                "no_chat": "B\u0142\u0105d: Brak aktywnej sesji czatu.",
-                "generic": "B\u0142\u0105d podczas finalizacji zmian w pliku: {error}"
+                "no_chat": "Error: No active chat session.",
+                "generic": "Error finalizing file changes: {error}"
             },
-            "info_no_backups": "Nie znaleziono plik\u00f3w kopii zapasowej do usuni\u0119cia.",
-            "info_cancel": "Finalizacja anulowana przez u\u017cytkownika.",
-            "success": "Zako\u0144czono zmiany w plikach. Usuni\u0119to {deleted_count} z {total_count} plik\u00f3w zapasowych.",
-            "warn_errors": "Wyst\u0105pi\u0142y b\u0142\u0119dy podczas usuwania: {errors}"
+            "info_no_backups": "No backup files found to delete.",
+            "info_cancel": "Finalization cancelled by user.",
+            "success": "Finalized file changes. Deleted {deleted_count} of {total_count} backup files.",
+            "warn_errors": "\nErrors occurred deleting: {errors}"
         }
     }
 }

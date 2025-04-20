@@ -73,10 +73,10 @@
       "util": "Utilities"
     },
     "args": {
-      "model": { "help": "Set LLM model" },
-      "select_model": { "help": "Interactively select LLM model" },
-      "set_api_key": { "help": "Set API key for the main agent model" },
-      "select_translation_model": { "help": "Interactively select the translation model for localization" },
+      "model": { "help": "Set LLM model (for agent)" },
+      "select_model": { "help": "Interactively select agent LLM model" },
+      "set_api_key": { "help": "Set API key for the current main agent model" },
+      "select_translation_model": { "help": "Interactively select translation LLM model" },
       "select_language": { "help": "Interactively select application language" },
       "localize": { "help": "Generate localized text files for the target language using selected translation model" },
       "chat": { "help": "Create or load chat session" },
@@ -97,13 +97,15 @@
       "message": { "help": "Send message (default action)" }
     },
     "info": {
-      "model_set": "Model set to {model_name}.",
-      "model_unchanged": "Model remains {model_name}.",
-      "model_select_cancel": "Model selection cancelled.",
-      "translation_model_set": "Translation model set to {model_name}.",
+      "model_set": "Agent model set to {model_name}.",
+      "model_unchanged": "Agent model remains {model_name}.",
+      "model_select_cancel": "Agent model selection cancelled.",
+      "translation_model_set": "Translation model set to: {model_name}",
       "translation_model_unchanged": "Translation model remains {model_name}.",
-      "language_set": "Language set to {lang_code}.",
-      "language_restart": "Some UI language changes may require restarting the application to take full effect.",
+      "language_set": "Language set to: {lang_code}",
+      "language_unchanged": "Language remains {lang_code}.",
+      "language_restart_needed": "Please restart the application or re-run your command for the language change to take full effect.",
+      "language_restart_needed_setup": "Language settings updated. Please re-run the application for the changes to take effect.",
       "chat_switched": "Switched to chat: '{chat_title}'.",
       "chat_loaded": "Switched to chat: '{chat_title}'.",
       "current_chat_is": "Current chat: {chat_title}",
@@ -164,6 +166,7 @@
     }
   },
   "temp_chat": {
+    "format": "new chat {chat_title}",
     "info": {
       "started": "Started {chat_title}."
     },
@@ -305,7 +308,8 @@
       "info_set_success": "Language set to: {lang_code}",
       "error_save_failed": "Failed to save language setting.",
       "error_invalid_input": "Invalid selection. Please enter a number between 1 and {max_lang}.",
-      "warn_cancel": "\nLanguage selection cancelled.",
+      "warn_cancel": "\nLanguage selection cancelled. No changes made.",
+      "warn_cancel_default": "\nLanguage selection cancelled. Defaulting to 'en'.",
       "error_generic": "An unexpected error occurred: {error}"
     }
   },

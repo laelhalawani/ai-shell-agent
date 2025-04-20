@@ -1,18 +1,18 @@
 {
     "toolset": {
         "name": "Terminal",
-        "description": "Zapewnia narz\u0119dzia do wykonywania polece\u0144 pow\u0142oki i kodu Python."
+        "description": "Dostarcza narz\u0119dzi do wykonywania polece\u0144 pow\u0142oki i kodu Pythona."
     },
     "config": {
         "info_no_settings": "Narz\u0119dzie Terminal nie wymaga obecnie \u017cadnej szczeg\u00f3lnej konfiguracji.",
-        "warn_write_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 jednego lub wi\u0119cej plik\u00f3w konfiguracyjnych dla narz\u0119dzi Terminala. Sprawd\u017a dzienniki."
+        "warn_write_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 jednego lub wi\u0119cej plik\u00f3w konfiguracyjnych zestawu narz\u0119dzi Terminal. Sprawd\u017a dzienniki."
     },
     "schemas": {
         "terminal": {
             "cmd_desc": "Polecenie do wykonania w terminalu."
         },
         "python": {
-            "query_desc": "Fragment kodu Pythona do wykonania."
+            "query_desc": "\"Fragment kodu Pythona do wykonania.\""
         },
         "direct_terminal": {
             "cmd_desc": "Polecenie do wykonania bezpo\u015brednio."
@@ -20,47 +20,47 @@
     },
     "tools": {
         "usage_guide": {
-            "name": "przewodnik_u\u017cytkowania_terminala",
-            "description": "Wy\u015bwietla instrukcje u\u017cytkowania i kontekst dla zestawu narz\u0119dzi Terminal."
+            "name": "terminal_usage_guide",
+            "description": "Displays usage instructions and context for the Terminal toolset."
         },
         "terminal_hitl": {
-            "name": "uruchom_komend\u0119_terminala",
-            "description": "U\u017cyj, aby wykona\u0107 dowolne polecenie w terminalu i zwr\u00f3ci\u0107 wynik.",
-            "error_empty_cmd": "B\u0142\u0105d: Zaproponowano pust\u0105 komend\u0119.",
-            "error_empty_confirmed": "B\u0142\u0105d: Potwierdzona komenda jest pusta.",
-            "result_format": "Wykonano: `{command}`\\n{details}",
+            "name": "run_terminal_command",
+            "description": "Use to run any command in the terminal and return the output.",
+            "error_empty_cmd": "Error: Empty command proposed.",
+            "error_empty_confirmed": "Error: Confirmed command is empty.",
+            "result_format": "Executed: `{command}`\n{details}",
             "details": {
-                "exit_code": "Kod wyj\u015bcia: {code}",
-                "stdout": "Wyj\u015bcie:\n---\n{output}\n---",
-                "stderr": "B\u0142\u0119dy/ostrze\u017cenia:\\n---\\n{output}\\n---",
-                "no_output_success": "Status: Polecenie zosta\u0142o pomy\u015blnie uko\u0144czone bez wyj\u015bcia.",
-                "no_output_fail": "Status: Komenda zako\u0144czy\u0142a si\u0119 niepowodzeniem bez wyj\u015bcia."
+                "exit_code": "Exit Code: {code}",
+                "stdout": "Output:\n---\n{output}\n---",
+                "stderr": "Errors/Warnings:\n---\n{output}\n---",
+                "no_output_success": "Status: Command completed successfully with no output.",
+                "no_output_fail": "Status: Command failed with no output."
             },
-            "error_timeout": "B\u0142\u0105d: Komenda czas oczekiwania przekroczony po 300 sekundach.  \n(Pr\u00f3ba: `{command}`)",
-            "error_not_found": "B\u0142\u0105d: Polecenie nie zosta\u0142o znalezione: '{command_name}'. Upewnij si\u0119, \u017ce jest zainstalowane w PATH.  \n(Pr\u00f3bowano: `{command}`)",
-            "error_generic": "B\u0142\u0105d podczas wykonywania polecenia: {error}  \n(Pr\u00f3bowano: `{command}`)"
+            "error_timeout": "Error: Command timed out after 300 seconds.\n(Attempted: `{command}`)",
+            "error_not_found": "Error: Command not found: '{command_name}'. Ensure it's installed/in PATH.\n(Attempted: `{command}`)",
+            "error_generic": "Error executing command: {error}\n(Attempted: `{command}`)"
         },
         "python_repl_hitl": {
             "name": "python_repl",
-            "description": "Ocenia fragmenty kodu Python w \u015brodowisku REPL, u\u017cywaj tylko wtedy, gdy poproszono o uruchomienie skryptu lub automatyzacji.",
-            "prompt_suffix": "(zedytuj lub potwierd\u017a kod Pythona) >",
-            "error_no_code": "B\u0142\u0105d: Nie podano kodu Pythona do wykonania.",
-            "error_empty_confirmed": "B\u0142\u0105d: Potwierdzony kod Pythona jest pusty.",
-            "result_format": "Wykonano: `python_repl(query='''{query}''')`  \nWynik:  \n---  \n{result}  \n---",
-            "error_generic": "B\u0142\u0105d podczas wykonywania kodu Pythona:\n---\n{error}\n---\n(Pr\u00f3bowany kod:\n'''\n{query}\n'''\n)"
+            "description": "Evaluates Python code snippets in a REPL environment, use only when requested to run a script or automation.",
+            "prompt_suffix": "(edit or confirm python code) > ",
+            "error_no_code": "Error: No Python code provided to execute.",
+            "error_empty_confirmed": "Error: Confirmed Python code is empty.",
+            "result_format": "Executed: `python_repl(query='''{query}''')`\nResult:\n---\n{result}\n---",
+            "error_generic": "Error executing Python code:\n---\n{error}\n---\n(Attempted Code:\n'''\n{query}\n'''\n)"
         },
         "direct_terminal": {
-            "name": "_wewn\u0119trzny_bezpo\u015bredni_terminal_",
-            "description": "Zewn\u0119trzne narz\u0119dzie do bezpo\u015bredniego wykonywania polece\u0144 bez HITL.",
+            "name": "_internal_direct_terminal",
+            "description": "Internal tool for direct command execution without HITL.",
             "result_details": {
-                "stdout": "Wyj\u015bcie:\\n{output}\\n",
-                "stderr": "B\u0142\u0119dy/Ostrze\u017cenia:\\n{output}\\n",
-                "exit_code": "Kod wyj\u015bcia: {code}",
-                "no_output_success": "Polecenie wykonano pomy\u015blnie bez wyj\u015bcia.",
-                "no_output_fail": "Polecenie zako\u0144czy\u0142o si\u0119 niepowodzeniem bez wyj\u015bcia. Kod wyj\u015bcia: {code}"
+                "stdout": "Output:\n{output}\n",
+                "stderr": "Errors/Warnings:\n{output}\n",
+                "exit_code": "Exit Code: {code}\n",
+                "no_output_success": "Command executed successfully with no output.",
+                "no_output_fail": "Command failed with no output. Exit Code: {code}"
             },
-            "error_timeout": "B\u0142\u0105d: Polecenie przekroczy\u0142o czas oczekiwania po 300 sekundach.\\n(Podj\u0119to pr\u00f3b\u0119: `{command}`)",
-            "error_generic": "B\u0142\u0105d podczas wykonywania polecenia: {error}"
+            "error_timeout": "Error: Command timed out after 300 seconds.\n(Attempted: `{command}`)",
+            "error_generic": "Error executing command: {error}"
         }
     }
 }

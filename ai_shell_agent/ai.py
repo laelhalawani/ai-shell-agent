@@ -70,7 +70,16 @@ from .toolsets.toolsets import get_registered_toolsets, get_toolset_names
 from .prompts.prompts import SYSTEM_PROMPT
 
 # --- API Key/Setup Functions ---
-def first_time_setup():
+def first_time_setup() -> bool:
+    """
+    Performs first-time setup and returns True if language was changed.
+    
+    Returns:
+        bool: True if language was changed, False otherwise
+    """
+    # Add language change flag
+    language_changed = False
+    
     # Add log right inside the function start
     logger.debug("Entering first_time_setup function.")
     is_first = check_if_first_run()
@@ -81,7 +90,7 @@ def first_time_setup():
         # Add log right before the console call
         logger.debug("Attempting to display 'Welcome...' message via console manager.")
         try:
-            console.display_message(get_text("common.labels.info"), get_text("setup.welcome"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.info"), get_text("setup.welcome"),
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             logger.debug("Successfully displayed 'Welcome...' message.") # Log success after call
         except Exception as e:
@@ -91,16 +100,20 @@ def first_time_setup():
 
         # --- Language Selection ---
         logger.debug("Attempting language selection prompt.")
+        original_lang = get_language() # Get language before prompting
         selected_lang = prompt_for_language_selection()
-        if not selected_lang:
+        if selected_lang and selected_lang != original_lang:
+             # Language was successfully changed
+             language_changed = True
+             logger.info(f"Language changed during first-time setup: {original_lang} -> {selected_lang}")
+        elif not selected_lang:
              # Handle case where user cancels language selection during first run
-             # TODO: Externalize this message in Phase 9.2
-             console.display_message(get_text("common.labels.warning"), "Language selection cancelled or failed. Defaulting to 'en'.",
+             console.display_message(get_text("common.labels.warning"), get_text("config.lang_select.warn_cancel_default"),
                                     console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
              # Ensure 'en' is set if selection failed
              from .config_manager import set_language
              set_language("en")
-        logger.debug(f"prompt_for_language_selection finished (selected: {selected_lang or 'None'}).")
+        logger.debug(f"prompt_for_language_selection finished (selected: {selected_lang or 'None'}). Language changed flag: {language_changed}")
         # --- End Language Selection ---
 
         logger.debug("Attempting to call prompt_for_model_selection.")
@@ -112,14 +125,14 @@ def first_time_setup():
         else:
             # Use console manager for critical error
             logger.critical("No model selected during first run. Exiting.")
-            console.display_message(get_text("common.labels.error"), get_text("setup.errors.no_model_selected"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.error"), get_text("setup.errors.no_model_selected"),
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             sys.exit(1)
 
         logger.debug("Attempting to call ensure_api_key.")
         if not ensure_api_key(): # ensure_api_key uses console_manager internally
             logger.critical("API Key not provided. Exiting.")
-            console.display_message(get_text("common.labels.error"), get_text("setup.errors.api_key_missing"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.error"), get_text("setup.errors.api_key_missing"),
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             sys.exit(1)
         logger.debug("ensure_api_key successful.")
@@ -129,11 +142,13 @@ def first_time_setup():
         prompt_for_initial_toolsets() # This uses console_manager internally
         logger.debug("prompt_for_initial_toolsets finished.")
 
-        console.display_message(get_text("common.labels.info"), get_text("setup.complete"), # MODIFIED LABEL
+        console.display_message(get_text("common.labels.info"), get_text("setup.complete"),
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         logger.debug("Displayed 'First-time setup complete.'")
     else:
         logger.debug("Not the first run, skipping setup.")
+
+    return language_changed
 
 def ensure_api_key() -> bool:
     # Only ensures key for the main agent model
@@ -440,6 +455,10 @@ def configure_toolset_cli(toolset_name: str):
 
 # --- Main CLI Execution Logic ---
 def main():
+    # Capture language at the start, *after* initial imports ensure texts are loaded once
+    original_language = get_language()
+    logger.debug(f"Initial language detected: {original_language}")
+
     env_path = os.path.join(get_install_dir(), '.env'); load_dotenv(env_path)
     parser = argparse.ArgumentParser(description=get_text("cli.parser.description"), formatter_class=argparse.RawTextHelpFormatter)
     # --- Argument Groups ---
@@ -526,6 +545,32 @@ def main():
         # 4. Run Localization
         localize_all_texts(target_lang)
         return # Exit after localization
+    
+    # --- Handle language selection (now before first-time setup) ---
+    if args.select_language:
+        # Store current language setting
+        original_lang = get_language()
+        # Prompt for language selection
+        selected_lang = prompt_for_language_selection()
+        
+        # Check if language was changed
+        if selected_lang and selected_lang != original_lang:
+            # Language was changed successfully
+            console.display_message(get_text("common.labels.info"), 
+                                  get_text("cli.info.language_set", lang_code=selected_lang),
+                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            console.display_message(get_text("common.labels.info"), 
+                                  get_text("cli.info.language_restart_needed"),
+                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+            logger.info(f"Language changed: {original_lang} -> {selected_lang}. Exiting for restart.")
+            sys.exit(0) # Exit cleanly after language change
+        elif selected_lang:
+            # Language selected but it's the same as the original
+            console.display_message(get_text("common.labels.info"),
+                                  get_text("cli.info.language_unchanged", lang_code=selected_lang),
+                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        # else: Cancellation message handled within prompt function
+        return # Exit after language selection attempt
 
     # --- Original Execution Order ---
     # 1. Model Selection
@@ -533,7 +578,7 @@ def main():
         set_model(args.model)
         ensure_api_key()
         current_model = get_current_model()
-        console.display_message(get_text("common.labels.info"), get_text("cli.info.model_set", model_name=current_model), # MODIFIED LABEL
+        console.display_message(get_text("common.labels.info"), get_text("cli.info.model_set", model_name=current_model),
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.select_model:
@@ -542,19 +587,25 @@ def main():
         if m and m != current_model:
             set_model(m)
             ensure_api_key()
-            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_set", model_name=get_current_model()), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_set", model_name=get_current_model()),
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         elif m:
-            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_unchanged", model_name=current_model), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_unchanged", model_name=current_model),
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         else:
-            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_select_cancel"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_select_cancel"),
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
 
-    # 2. First Time Setup
-    first_time_setup()
-
+    # 2. First Time Setup (modified to check for language changes)
+    language_changed_during_setup = first_time_setup()
+    if language_changed_during_setup:
+        console.display_message(get_text("common.labels.info"), 
+                              get_text("cli.info.language_restart_needed_setup"),
+                              console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        logger.info("Language changed during first-time setup. Exiting for restart.")
+        sys.exit(0) # Exit cleanly after language change during setup
+                              
     # 3. API Key Management
     if args.set_api_key:
         set_api_key_for_model(get_current_model(), args.set_api_key if isinstance(args.set_api_key, str) else None)
@@ -563,7 +614,7 @@ def main():
     # 4. Ensure API Key (Exit if missing)
     if not ensure_api_key(): # Only checks agent key now
         logger.critical("Main agent API Key missing.")
-        console.display_message(get_text("common.labels.error"), get_text("cli.errors.api_key_missing"), # MODIFIED LABEL
+        console.display_message(get_text("common.labels.error"), get_text("cli.errors.api_key_missing"),
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
         sys.exit(1)
 
@@ -588,21 +639,21 @@ def main():
     # 8. Chat Management
     if args.chat:
         chat_id = create_or_load_chat(args.chat) # Use new function name
-        if chat_id: console.display_message(get_text("common.labels.info"), get_text("cli.info.chat_switched", chat_title=args.chat), # MODIFIED LABEL
+        if chat_id: console.display_message(get_text("common.labels.info"), get_text("cli.info.chat_switched", chat_title=args.chat),
                                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.load_chat:
         chat_id = create_or_load_chat(args.load_chat) # Use new function name
-        if chat_id: console.display_message(get_text("common.labels.info"), get_text("cli.info.chat_loaded", chat_title=args.load_chat), # MODIFIED LABEL
+        if chat_id: console.display_message(get_text("common.labels.info"), get_text("cli.info.chat_loaded", chat_title=args.load_chat),
                                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.current_chat_title:
         title = get_current_chat_title() # Use new function name
         if title:
-            console.display_message(get_text("common.labels.info"), get_text("cli.info.current_chat_is", chat_title=title), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.current_chat_is", chat_title=title),
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         else:
-            console.display_message(get_text("common.labels.info"), get_text("cli.info.no_active_chat"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.no_active_chat"),
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.list_chats:
@@ -618,31 +669,20 @@ def main():
         flush_temp_chats()
         return
 
-    # --- Language Selection (only after main setup) ---
-    if args.select_language:
-        selected_lang = prompt_for_language_selection()
-        if selected_lang:
-             console.display_message(get_text("common.labels.info"), get_text("cli.info.language_set", lang_code=selected_lang),
-                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-             console.display_message(get_text("common.labels.info"), get_text("cli.info.language_restart"),
-                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-        # else: Cancellation message handled in prompt function
-        return # Exit after language selection attempt
-
     # --- Operations requiring active chat ---
     active_chat_id = get_current_chat() # Use chat_id consistently
 
     # 9. Messaging / History
     if args.list_messages:
         if not active_chat_id:
-            console.display_message(get_text("common.labels.error"), get_text("cli.errors.no_active_chat_for_list"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.error"), get_text("cli.errors.no_active_chat_for_list"),
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             return
         list_messages() # chat_manager will get chat_id using get_current_chat()
         return
     if args.edit:
         if not active_chat_id:
-            console.display_message(get_text("common.labels.error"), get_text("cli.errors.no_active_chat_for_edit"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.error"), get_text("cli.errors.no_active_chat_for_edit"),
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             return
         idx_str, msg_parts = args.edit[0], args.edit[1:]
@@ -652,7 +692,7 @@ def main():
             try:
                 idx = int(idx_str)
             except ValueError:
-                console.display_message(get_text("common.labels.error"), get_text("cli.errors.edit_invalid_index", index=idx_str), # MODIFIED LABEL
+                console.display_message(get_text("common.labels.error"), get_text("cli.errors.edit_invalid_index", index=idx_str),
                                       console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
                 return
         edit_message(idx, new_msg) # chat_manager will get chat_id using get_current_chat()
@@ -663,7 +703,7 @@ def main():
     if msg_to_send:
         if not active_chat_id and not args.temp_chat:
             # If no active chat and not explicitly temp
-            console.display_message(get_text("common.labels.info"), get_text("cli.info.starting_temp_chat"), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.starting_temp_chat"),
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             start_temp_chat(msg_to_send)
         elif active_chat_id:
