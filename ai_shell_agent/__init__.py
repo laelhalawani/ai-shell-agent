@@ -24,8 +24,10 @@ from .console_manager import get_console_manager
 # --- END Import Rich Handler and Console Manager ---
 
 
-# --- Setup Paths and Directories ---
-ROOT_DIR = Path(__file__).parent.parent
+# --- Import Paths AFTER logger exists but BEFORE modules needing paths ---
+from .paths import ROOT_DIR # <--- IMPORT ROOT_DIR
+
+# --- Setup Paths and Directories (using imported ROOT_DIR) ---
 DATA_DIR = ROOT_DIR / 'data'
 CHATS_DIR = DATA_DIR / 'chats'
 TOOLSETS_GLOBAL_CONFIG_DIR = DATA_DIR / 'toolsets'

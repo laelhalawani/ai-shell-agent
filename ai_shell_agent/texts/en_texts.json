@@ -1,0 +1,317 @@
+{
+  "common": {
+    "prompt_input_marker": "> ",
+    "labels": {
+      "info": "INFO: ",
+      "error": "ERROR: ",
+      "system": "SYSTEM: ",
+      "warning": "WARNING: ",
+      "ai": "AI: ",
+      "tool": "TOOL: "
+    },
+    "truncation_marker": "..."
+  },
+  "setup": {
+    "welcome": "Welcome to AI Shell Agent! Performing first-time setup.",
+    "complete": "First-time setup complete.",
+    "errors": {
+      "no_model_selected": "No model selected during first run. Exiting.",
+      "api_key_missing": "API Key not provided. Exiting."
+    },
+    "toolsets": {
+      "prompt_intro": "\n--- Select Default Enabled Toolsets ---\nThese toolsets will be enabled by default when you create new chats.\n",
+      "warn_none_found": "No toolsets found/registered.",
+      "available_title": "\nAvailable Toolsets:",
+      "prompt_instructions": "\nEnter comma-separated numbers TO ENABLE by default (e.g., 1,3).\nTo enable none by default, enter 'none'.\nLeave empty to use {default_toolsets_str} as defaults.\n",
+      "info_using_defaults": "No selection made. Using default toolsets: {toolset_list}",
+      "error_invalid_selection": "Invalid selection '{index}'. Please use numbers from 1 to {max_idx}.",
+      "info_selection_saved": "Selected toolsets set to: {toolset_list}",
+      "warn_cancel": "Selection cancelled. Setting {default_toolsets_str} as default toolsets.",
+      "error_generic": "An error occurred: {error}"
+    }
+  },
+  "select_tools": {
+    "warn_none_found": "No toolsets found/registered.",
+    "error_chat_title_missing": "Could not determine title for active chat {chat_id}.",
+    "prompt_header": "\n--- Select Enabled Toolsets ({context}) ---\n{explanation}\n",
+    "context_global": "Global Defaults",
+    "context_chat": "Chat: {chat_title}",
+    "explanation_global": "These toolsets will be enabled by default when you create new chats.",
+    "explanation_chat": "Toolsets determine which capabilities the agent can potentially use in this chat.",
+    "available_title": "\nAvailable Toolsets:",
+    "marker_enabled": "[ENABLED]",
+    "marker_disabled": "[DISABLED]",
+    "prompt_instructions": "\nEnter comma-separated numbers TO ENABLE (e.g., 1,3).\nTo disable all, enter 'none'.\nLeave empty to keep current settings.\n",
+    "info_kept_settings": "{keep_message} {toolset_list}",
+    "keep_message_global": "Kept current global default enabled toolsets:",
+    "keep_message_chat": "Kept current enabled toolsets for this chat:",
+    "error_invalid_selection": "Invalid selection '{index}'. Please use numbers from 1 to {max_idx}.",
+    "info_selection_saved": "Selected toolsets set to: {toolset_list}",
+    "info_global_updated": "Global defaults also updated.",
+    "info_apply_next": "Changes apply on next interaction.",
+    "warn_cancel": "\nSelection cancelled. No changes made."
+  },
+  "configure_toolset": {
+    "error_not_found": "Toolset '{toolset_name}' not found.",
+    "info_available": "Available toolsets: {toolset_list}",
+    "info_not_configurable": "Toolset '{toolset_name}' does not require specific configuration.",
+    "error_chat_title_missing": "Could not determine title for active chat {chat_id}.",
+    "context_header_global": "\n--- Configuring Global Defaults for '{toolset_name}' ---\n(Applying settings to global default: {global_config_path})\n(Checking/Storing secrets in: {dotenv_path})\n",
+    "context_header_chat": "\n--- Configuring '{toolset_name}' for Chat '{chat_title}' ---\n(Applying settings to chat config: {local_config_path})\n(Applying settings to global default: {global_config_path})\n(Checking/Storing secrets in: {dotenv_path})\n",
+    "warn_cancel": "\nConfiguration cancelled.",
+    "error_generic": "\nAn error occurred during configuration: {error}"
+  },
+  "cli": {
+    "parser": {
+      "description": "AI Shell Agent CLI"
+    },
+    "groups": {
+      "model": "Model Configuration",
+      "chat": "Chat Management",
+      "toolset": "Toolset Configuration",
+      "message": "Messaging & Interaction"
+    },
+    "args": {
+      "model": { "help": "Set LLM model" },
+      "select_model": { "help": "Interactively select LLM model" },
+      "set_api_key": { "help": "Set API key for the main agent model" },
+      "chat": { "help": "Create or load chat session" },
+      "load_chat": { "help": "Load chat (same as -c)" },
+      "list_chats": { "help": "List chats" },
+      "rename_chat": { "help": "Rename chat" },
+      "delete_chat": { "help": "Delete chat" },
+      "temp_flush": { "help": "Remove temp chats" },
+      "current_chat_title": { "help": "Print current chat title" },
+      "select_tools": { "help": "Interactively select enabled toolsets (chat-specific if active, otherwise global defaults)" },
+      "list_toolsets": { "help": "List available toolsets and their enabled status (chat-specific if active, otherwise global defaults)" },
+      "configure_toolset": { "help": "Manually run configuration wizard for a toolset (chat-specific if active, otherwise global defaults)" },
+      "send_message": { "help": "Send message" },
+      "temp_chat": { "help": "Start temporary chat" },
+      "edit": { "help": "Edit message & resend" },
+      "list_messages": { "help": "Print chat history" },
+      "execute": { "help": "Execute shell command directly" },
+      "message": { "help": "Send message (default action)" }
+    },
+    "info": {
+      "model_set": "Model set to {model_name}.",
+      "model_unchanged": "Model remains {model_name}.",
+      "model_select_cancel": "Model selection cancelled.",
+      "chat_switched": "Switched to chat: '{chat_title}'.",
+      "chat_loaded": "Switched to chat: '{chat_title}'.",
+      "current_chat_is": "Current chat: {chat_title}",
+      "no_active_chat": "No active chat.",
+      "starting_temp_chat": "No active chat. Starting temporary chat..."
+    },
+    "errors": {
+      "api_key_missing": "Agent API Key missing. Set with --set-api-key.",
+      "no_active_chat_for_list": "No active chat. Use -c <title> first.",
+      "no_active_chat_for_edit": "No active chat. Use -c <title> first.",
+      "edit_invalid_index": "Invalid index '{index}'. Must be integer or 'last'."
+    }
+  },
+  "chat_list": {
+    "info": {
+      "none_found": "No chats found."
+    },
+    "title": "Available Chats:",
+    "marker_current": " <- Current"
+  },
+  "rename_chat": {
+    "success": "Renamed chat: {old_title} -> {new_title}",
+    "error_failed": "Failed to rename chat: {old_title}"
+  },
+  "delete_chat": {
+    "success": "Deleted chat: {title}",
+    "error_failed": "Failed to delete chat: {title}"
+  },
+  "tool_handler": {
+    "error": {
+      "invalid_call_structure": "Error: Invalid tool call structure (missing name or id): {tool_call}",
+      "tool_not_found": "Error: Tool '{tool_name}' not found.",
+      "execution_failed": "Error executing tool '{tool_name}': {error_type}: {error_msg}"
+    }
+  },
+  "send_message": {
+    "warn": {
+      "no_chat_start_temp": "No active chat. Starting temp chat.",
+      "empty_ai_response": "AI returned an empty response.",
+      "max_iterations": "Reached maximum of {max_iterations} AI interactions. Stopping."
+    },
+    "info": {
+      "tool_needs_input": "{signal} Tool '{tool_name}' requires input."
+    },
+    "error": {
+      "hitl_context_missing": "Internal error: Failed to find tool context.",
+      "hitl_exec_failed": "Tool execution failed after input.",
+      "hitl_prompt_again": "{signal} Tool '{tool_name}' requires further input unexpectedly.",
+      "hitl_unexpected_result": "Error: Unexpected tool result type.",
+      "history_missing": "Chat history not found or empty.",
+      "llm_init_failed": "AI model initialization failed: {error}",
+      "llm_response_conversion": "AI response conversion failed.",
+      "tool_unexpected_result": "Error: Unexpected tool result type.",
+      "generic_interaction": "AI interaction error: {error}"
+    },
+    "hitl": {
+      "user_cancelled_tool_msg": "User cancelled input."
+    }
+  },
+  "temp_chat": {
+    "info": {
+      "started": "Started {chat_title}."
+    },
+    "error": {
+      "start_failed": "Could not start temp chat '{chat_title}'."
+    }
+  },
+  "temp_flush": {
+    "info": {
+      "skipping_current": "Skipping current temp chat: {title}",
+      "none_found": "No temporary chats found to remove.",
+      "removed_count": "Removed {count} temporary chat(s)."
+    }
+  },
+  "edit_message": {
+    "error": {
+      "no_active_chat": "No active chat to edit.",
+      "empty_message": "Cannot set empty message.",
+      "no_messages": "No messages to edit.",
+      "no_human_message": "No human messages found to edit.",
+      "invalid_index": "Invalid index {index}. Must be between 0 and {max_index}.",
+      "not_human_message": "Message at index {index} is not a human message."
+    },
+    "info": {
+      "reprocessing": "Edited message at position {index}. Reprocessing..."
+    }
+  },
+  "execute": {
+    "info": {
+      "result": "Direct Execution Result:\n{output}"
+    },
+    "error": {
+      "tool_unavailable": "Error: Direct terminal tool function not available.",
+      "failed": "Error executing command: {error}"
+    }
+  },
+  "list_messages": {
+    "warn": {
+      "no_active_chat": "No active chat."
+    },
+    "info": {
+      "empty_chat": "No messages in chat."
+    },
+    "fallback_title": "Current Chat",
+    "header": "\n--- Chat History for: {title} ---",
+    "roles": {
+      "system": "System",
+      "human": "Human",
+      "ai": "AI",
+      "tool": "Tool",
+      "unknown": "unknown"
+    },
+    "no_timestamp": "No timestamp",
+    "tool_calls": {
+      "header": "Tool Calls Initiated:\n",
+      "prefix": "- Tool: ",
+      "args_suffix": ", Args: {args}",
+      "id_suffix": ", ID: {id}\n",
+      "error_invalid": "- Invalid tool call entry: {tc}\n"
+    },
+    "tool_message": {
+        "id_prefix": "For Tool Call ID: {tool_call_id}\n\n"
+    },
+    "metadata": {
+        "edited": "[Edited - Original TS: {original_ts}]\n\n",
+        "edited_na": "N/A"
+    },
+    "footer": "--- End of History ---"
+  },
+  "list_toolsets": {
+    "warn": {
+      "none_found": "No toolsets found/registered."
+    },
+    "title": {
+      "chat": "Toolsets for Chat '{title}':",
+      "global": "Available Toolsets:"
+    },
+    "marker": {
+      "enabled": "ENABLED"
+    },
+    "explanation": {
+        "chat": "\nToolset Status:\n• ENABLED: Toolset's tools are available to the AI in this chat\n\nNote: Use --select-tools to change enabled toolsets for this chat.\n",
+        "global": "\nNote: Use --select-tools to change which toolsets will be enabled by default for new chats.\n"
+    }
+  },
+  "state": {
+    "rename": {
+      "error_old_not_found": "Error: Chat '{old_title}' not found.",
+      "error_new_exists": "Error: Chat '{new_title}' already exists."
+    },
+    "delete": {
+      "error_not_found": "Error: Chat '{title}' not found.",
+      "error_failed": "Error: Failed to delete chat '{title}' directory: {error}"
+    },
+    "tool_config": {
+      "notice_needs_config": "\nNOTICE: Toolset '{toolset_name}' needs configuration for this chat (no valid local or global default was found).",
+      "warn_cancel": "\nConfiguration for '{toolset_name}' cancelled. It may not function correctly.",
+      "error_failed": "\nError configuring '{toolset_name}': {error}. It may not function correctly."
+    }
+  },
+  "config": {
+    "model_select": {
+      "available_title": "Available models:",
+      "openai_header": "OpenAI:",
+      "google_header": "Google:",
+      "aliases_suffix": " (aliases: {alias_str})",
+      "current_marker": " <- Current Model",
+      "prompt": "\nPlease input the model you want to use, or leave empty to keep using '{current_model}'",
+      "warn_unknown": "Unknown model: {selected_model}. Keeping current model: {current_model}",
+      "error_generic": "An error occurred during model selection: {error}"
+    },
+    "api_key": {
+      "prompt_instructions": "\nPlease enter your {provider_name} API key.\nYou can get it from: {api_key_link}\n",
+      "prompt_input": "Enter {provider_name} API key",
+      "error_generic": "An error occurred during API key input: {error}",
+      "warn_none_provided": "No {provider_name} API key provided. Aborting.",
+      "info_saved": "{provider_name} API key saved successfully to .env"
+    },
+    "lang_select": {
+      "error_discovery_failed": "Could not find any language files. Using default 'en'.",
+      "prompt_title": "\nPlease select the application language:",
+      "current_marker": " <- Current",
+      "option_format": "  {idx}: {code}{marker}",
+      "prompt_input": "Enter number (1-{max_lang}) or leave empty to keep '{current_lang}': ",
+      "info_kept_current": "Keeping current language: {lang_code}",
+      "info_set_success": "Language set to: {lang_code}",
+      "error_save_failed": "Failed to save language setting.",
+      "error_invalid_input": "Invalid selection. Please enter a number between 1 and {max_lang}.",
+      "warn_cancel": "\nLanguage selection cancelled.",
+      "error_generic": "An unexpected error occurred: {error}"
+    }
+  },
+  "console": {
+    "thinking_text": "⏳ Thinking...",
+    "tool_output": {
+      "format": "({tool_name}) {output}"
+    },
+    "tool_confirm": {
+      "used_tool": "Used tool '{tool_name}'",
+      "with_args": " with ",
+      "arg_separator": ": ",
+      "arg_list_separator": ", "
+    },
+    "hitl_prompt": {
+      "prefix_action": " AI wants to perform an action '",
+      "suffix_edit_confirm": "', edit or confirm: ",
+      "error_edit_key_missing": "Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.",
+      "error_generic": "Error during input prompt: {error}"
+    },
+    "prompt": {
+      "suffix": ": ",
+      "default_hint_format": " [{default}]",
+      "error_generic": "\nError getting input: {error}"
+    },
+    "common": {
+       "input_cancelled": "Input cancelled."
+    }
+  }
+}

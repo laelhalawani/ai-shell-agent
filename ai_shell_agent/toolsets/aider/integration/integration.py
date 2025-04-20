@@ -22,8 +22,17 @@ from typing import Dict, List, Optional, Any, Set, Tuple
 from .... import logger
 
 # Import JSON helpers from utils instead of chat_state_manager
-from ....utils import read_json, write_json
+from ....utils.file_io import read_json, write_json
 from ....config_manager import get_current_model as get_agent_model
+
+# Import toolset settings for defaults during recreation
+from ..settings import (
+    AIDER_DEFAULT_EDITOR_MODEL, AIDER_DEFAULT_WEAK_MODEL,
+    AIDER_DEFAULT_AUTO_COMMITS, AIDER_DEFAULT_DIRTY_COMMITS
+    # Note: main_model and edit_format default handling is slightly different below
+)
+
+from ..texts import get_text  # Import get_text for text externalization
 
 # Constants for Aider integration
 SIGNAL_PROMPT_NEEDED = "[CODE_COPILOT_INPUT_REQUEST]"
@@ -308,23 +317,26 @@ def ensure_active_coder_state(aider_json_path: Path) -> Optional[ActiveCoderStat
 def recreate_coder(aider_json_path: Path, aider_state: Dict, io_stub: AiderIOStubWithQueues) -> Optional[Any]:
     """
     Recreates the Aider Coder instance from the loaded persistent state dict.
+    Uses defaults from aider/settings.py if needed.
     """
     try:
         # --- Model and Config Setup from aider_state ---
         main_model_name_state = aider_state.get('main_model')
         agent_default_model = get_agent_model() # Global agent model
 
+        # Main model priority: State -> Agent Default -> Error
         main_model_name = main_model_name_state if main_model_name_state is not None else agent_default_model
-        if not main_model_name: # Should not happen if agent has a model
-            logger.error("Cannot determine main model name for Aider Coder recreation.")
+        if not main_model_name:
+            logger.error("Cannot determine main model name for Aider Coder recreation (neither state nor agent default found).")
             return None
 
         logger.debug(f"Using main model: {main_model_name} (Source: {'Aider Config' if main_model_name_state is not None else 'Agent Default'})")
 
-        editor_model_name = aider_state.get('editor_model') # Defaults handled by Model class or config
-        weak_model_name = aider_state.get('weak_model')
-        edit_format_state = aider_state.get('edit_format')
-        editor_edit_format = aider_state.get('editor_edit_format')
+        # Use loaded defaults from settings for other models if not in state
+        editor_model_name = aider_state.get('editor_model', AIDER_DEFAULT_EDITOR_MODEL)
+        weak_model_name = aider_state.get('weak_model', AIDER_DEFAULT_WEAK_MODEL)
+        edit_format_state = aider_state.get('edit_format') # No direct default constant, handled by Model class
+        editor_edit_format = aider_state.get('editor_edit_format') # No direct default constant
 
         try:
             main_model_instance = Model(
@@ -334,8 +346,9 @@ def recreate_coder(aider_json_path: Path, aider_state: Dict, io_stub: AiderIOStu
                 editor_edit_format=editor_edit_format
             )
             # Determine final edit format (State override > Model default)
-            edit_format = edit_format_state if edit_format_state is not None else main_model_instance.edit_format
-            logger.debug(f"Using edit format: {edit_format} (Source: {'Aider Config' if edit_format_state is not None else 'Model Default'})")
+            # We don't use AIDER_DEFAULT_EDIT_FORMAT here, as None lets Aider choose
+            edit_format = edit_format_state # Pass None if not in state
+            logger.debug(f"Using edit format: {edit_format if edit_format else 'Aider Default'} (Source: {'Aider Config' if edit_format_state is not None else 'Model Default'})")
 
         except Exception as e:
             logger.error(f"Failed to instantiate main_model '{main_model_name}': {e}", exc_info=True)
@@ -359,15 +372,16 @@ def recreate_coder(aider_json_path: Path, aider_state: Dict, io_stub: AiderIOStu
         # --- Prepare Coder kwargs ---
         coder_kwargs = dict(
             main_model=main_model_instance,
-            edit_format=edit_format,
+            edit_format=edit_format, # Pass the determined edit_format (could be None)
             io=io_stub,
             repo=repo,
             fnames=abs_fnames,
             read_only_fnames=abs_read_only_fnames,
             done_messages=aider_done_messages,
             cur_messages=[],
-            auto_commits=aider_state.get("auto_commits", True), # Get from state or default
-            dirty_commits=aider_state.get("dirty_commits", True),
+            # Get auto/dirty commits from state, falling back to loaded settings defaults
+            auto_commits=aider_state.get("auto_commits", AIDER_DEFAULT_AUTO_COMMITS),
+            dirty_commits=aider_state.get("dirty_commits", AIDER_DEFAULT_DIRTY_COMMITS),
             use_git=bool(repo),
             map_tokens=aider_state.get("map_tokens", 0),
             verbose=False, stream=False, suggest_shell_commands=False,
@@ -433,7 +447,7 @@ def update_aider_state_from_coder(aider_json_path: Path, coder) -> None:
         logger.error(f"Failed to update persistent Aider state in {aider_json_path}: {e}", exc_info=True)
 
 
-# --- ADD the missing function ---
+# --- Helper function ---
 def is_file_editor_prompt_signal(content: Optional[str]) -> bool:
     """Checks if the provided content string starts with the Aider prompt signal."""
     return isinstance(content, str) and content.strip().startswith(SIGNAL_PROMPT_NEEDED)
@@ -465,8 +479,8 @@ def _run_aider_in_thread(coder, instruction: str, output_q: queue.Queue):
         logger.error(f"Thread {thread_name}: Exception during coder.run: {e}", exc_info=True)
         # Capture any output accumulated before the error
         error_output = coder.io.get_captured_output()
-        error_message = f"Error during edit: {e}\nOutput before error:\n{error_output}"
-        # Put structured error on queue
+        # Use get_text for the error message format
+        error_message = get_text("integration.run_error", error=str(e), output=error_output)
         output_q.put({'type': 'error', 'message': error_message, 'traceback': traceback.format_exc()})
     finally:
         logger.info(f"Aider worker thread '{thread_name}' finished.")

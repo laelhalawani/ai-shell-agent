@@ -1,0 +1,16 @@
+{
+    "app": {
+      "default_model": "gpt-4o-mini",
+      "language": "en"
+    },
+    "chat": {
+      "max_react_iterations": 100,
+      "default_enabled_toolsets": [
+        "File Manager",
+        "Terminal"
+      ]
+    },
+    "console": {
+      "condensed_output_length": 150
+    }
+  }

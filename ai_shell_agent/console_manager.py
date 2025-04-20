@@ -2,128 +2,63 @@
 """
 Manages all console input and output using Rich and prompt_toolkit,
 ensuring clean state transitions without using rich.Live.
+Loads styles dynamically from styles.py.
 """
 import sys
-import io  # Added for StringIO capture
+import io
 import threading
 from threading import Lock
 from typing import Dict, Optional, Any, List, Tuple
 
 # Rich imports
 from rich.console import Console
-# REMOVED: from rich.live import Live
-# REMOVED: from rich.spinner import Spinner
-from rich.style import Style as RichStyle
 from rich.text import Text
 from rich.markup import escape
 from rich.columns import Columns # Keep for potential future use
 from rich.panel import Panel # Keep for potential future use
-
+from rich.style import Style as RichStyle # Keep for potential future use
 # Prompt Toolkit imports
 from prompt_toolkit import prompt as prompt_toolkit_prompt
 from prompt_toolkit.formatted_text import FormattedText
-from prompt_toolkit.styles import Style as PTKStyle
+# REMOVED: from prompt_toolkit.styles import Style as PTKStyle (will import the object)
 
 # Local imports
 from . import logger
 from .errors import PromptNeededError
+# Import style constants and objects from styles.py
+from .styles import (
+    STYLE_AI_LABEL, STYLE_AI_CONTENT, STYLE_USER_LABEL, STYLE_INFO_LABEL,
+    STYLE_INFO_CONTENT, STYLE_WARNING_LABEL, STYLE_WARNING_CONTENT,
+    STYLE_ERROR_LABEL, STYLE_ERROR_CONTENT, STYLE_SYSTEM_LABEL,
+    STYLE_SYSTEM_CONTENT, STYLE_TOOL_NAME, STYLE_ARG_NAME, STYLE_ARG_VALUE,
+    STYLE_THINKING, STYLE_INPUT_OPTION, STYLE_COMMAND_LABEL, STYLE_COMMAND_CONTENT,
+    STYLE_TOOL_OUTPUT_DIM, STYLE_CODE, # Added STYLE_CODE
+    PTK_STYLE # Import the fully processed PTKStyle object
+)
+# Import global settings loader (only for condensed output length)
+from .settings import CONSOLE_CONDENSED_OUTPUT_LENGTH
+from .texts import get_text # Import the text loading function
 
-# --- Define color constants with semantic names ---
-AI_COLOR = "#B19CD9"           # Pastel purple for AI responses
-USER_COLOR = "#FFAA99"         # Pastel tuna pink/orange for user interaction
-INFO_COLOR = "#8FD9A8"         # Bleached pale warm green for informational messages
-WARNING_COLOR = "#CCAA00"      # Yellow/amber for warnings (unchanged)
-ERROR_COLOR = "#FF0000"        # Red for errors (unchanged)
-SYSTEM_COLOR = "#7FDBCA"       # Pastel turquoise for system messages
-TOOL_COLOR = "#FFC0CB"         # Pastel pink for tool-related items
-COMMAND_COLOR = "#FFAA99"      # Same as USER_COLOR (pastel tuna pink/orange)
-DIM_TEXT_COLOR = "#888888"     # Mid-gray for less important text (unchanged)
-NEUTRAL_COLOR = "#FFFFFF"      # White/neutral for default text (unchanged)
 
-# --- Rich Styles using semantic color constants ---
-STYLE_AI_LABEL = RichStyle(color=AI_COLOR, bold=True)
-STYLE_AI_CONTENT = RichStyle(color=AI_COLOR)
-STYLE_USER_LABEL = RichStyle(color=USER_COLOR, bold=True)
-STYLE_INFO_LABEL = RichStyle(color=INFO_COLOR, bold=True)
-STYLE_INFO_CONTENT = RichStyle(color=INFO_COLOR)
-STYLE_WARNING_LABEL = RichStyle(color=WARNING_COLOR, bold=True)
-STYLE_WARNING_CONTENT = RichStyle(color=WARNING_COLOR)
-STYLE_ERROR_LABEL = RichStyle(color=ERROR_COLOR, bold=True)
-STYLE_ERROR_CONTENT = RichStyle(color=ERROR_COLOR)
-STYLE_SYSTEM_LABEL = RichStyle(color=SYSTEM_COLOR, bold=True)
-STYLE_SYSTEM_CONTENT = RichStyle(color=SYSTEM_COLOR)
-STYLE_TOOL_NAME = RichStyle(color=TOOL_COLOR, bold=False)  # Now using defined tool color
-STYLE_ARG_NAME = RichStyle(color=DIM_TEXT_COLOR)  # Use explicit color instead of dim
-STYLE_ARG_VALUE = RichStyle(color=DIM_TEXT_COLOR)  # Use explicit color instead of dim
-STYLE_THINKING = RichStyle(color=AI_COLOR)  # Same as AI color
-STYLE_INPUT_OPTION = RichStyle(underline=True)
-STYLE_COMMAND_LABEL = RichStyle(color=COMMAND_COLOR, bold=True)
-STYLE_COMMAND_CONTENT = RichStyle(color=COMMAND_COLOR)
-STYLE_TOOL_OUTPUT_DIM = RichStyle(color=DIM_TEXT_COLOR)  # Use explicit color instead of dim
-
-# --- Define prompt_toolkit Styles using the same semantic color constants ---
-PTK_STYLE = PTKStyle.from_dict({
-    # Labels (match Rich style names for clarity)
-    'style_ai_label':          f'bold fg:{AI_COLOR}',
-    'style_user_label':        f'bold fg:{USER_COLOR}',
-    'style_info_label':        f'bold fg:{INFO_COLOR}',
-    'style_warning_label':     f'bold fg:{WARNING_COLOR}',
-    'style_error_label':       f'bold fg:{ERROR_COLOR}',
-    'style_system_label':      f'bold fg:{SYSTEM_COLOR}',
-    'style_command_label':     f'bold fg:{COMMAND_COLOR}',
-    'style_tool_name':         f'fg:{TOOL_COLOR}',  # Now using defined tool color
-
-    # Content (match Rich style names)
-    'style_ai_content':        f'fg:{AI_COLOR}',
-    'style_info_content':      f'fg:{INFO_COLOR}',
-    'style_warning_content':   f'fg:{WARNING_COLOR}',
-    'style_error_content':     f'fg:{ERROR_COLOR}',
-    'style_system_content':    f'fg:{SYSTEM_COLOR}',
-    'style_command_content':   f'fg:{COMMAND_COLOR}',
-
-    # Args/Specifics (use explicit colors instead of 'dim')
-    'style_arg_name':          f'fg:{DIM_TEXT_COLOR}',
-    'style_arg_value':         f'fg:{DIM_TEXT_COLOR}',
-    'style_tool_output_dim':   f'fg:{DIM_TEXT_COLOR}',
-
-    # Other UI
-    'style_thinking':          f'fg:{AI_COLOR}',
-    'style_input_option':      'underline',
-
-    # Prompt-specific names (used by FormattedText construction)
-    'prompt.prefix':           'bold',
-    'prompt.suffix':           '',
-    'prompt.argname':          f'fg:{DIM_TEXT_COLOR}',
-    'prompt.argvalue':         f'fg:{DIM_TEXT_COLOR}',
-    'prompt.toolname':         f'bold fg:{TOOL_COLOR}',  # Now using defined tool color
-
-    # Default for input text
-    '':                        '',  # Default text style
-    'default':                 f'fg:{DIM_TEXT_COLOR}',  # Default value hint
-})
-# --- End prompt_toolkit Styles ---
-
-# --- ConsoleManager Class (Refactored) ---
+# --- ConsoleManager Class (Refactored for External Styles) ---
 
 class ConsoleManager:
     """
     Centralized manager for console I/O operations without using rich.Live.
     Handles thinking indicator, messages, and prompts via direct printing
-    and ANSI escape codes.
+    and ANSI escape codes, using styles loaded externally.
     """
-    # --- Added constant for truncating output ---
-    CONDENSED_OUTPUT_LENGTH = 150
-    # --------------------------------------------
 
     def __init__(self, stderr_output: bool = True):
         """Initialize the ConsoleManager."""
-        self.console = Console(stderr=stderr_output, force_terminal=True if not sys.stderr.isatty() else None)
-        # REMOVED: self._live_context
+        # Check if stderr is a TTY, force terminal if not (e.g., redirecting stderr)
+        force_term = True if not sys.stderr.isatty() and stderr_output else None
+        self.console = Console(stderr=stderr_output, force_terminal=force_term)
         self._lock = Lock()
-        # NEW: Flag to track if the spinner is currently displayed on a line
-        self._spinner_active = False
+        self._spinner_active = False # Track if spinner is on current line
 
-        # Copy style constants
+        # Style objects are now imported directly, no need to copy them as attributes.
+        # Keep references if it simplifies method calls, but prefer direct use.
         self.STYLE_AI_LABEL = STYLE_AI_LABEL
         self.STYLE_AI_CONTENT = STYLE_AI_CONTENT
         self.STYLE_USER_LABEL = STYLE_USER_LABEL
@@ -142,59 +77,52 @@ class ConsoleManager:
         self.STYLE_INPUT_OPTION = STYLE_INPUT_OPTION
         self.STYLE_COMMAND_LABEL = STYLE_COMMAND_LABEL
         self.STYLE_COMMAND_CONTENT = STYLE_COMMAND_CONTENT
+        self.STYLE_CODE = STYLE_CODE
         self.STYLE_TOOL_OUTPUT_DIM = STYLE_TOOL_OUTPUT_DIM
 
 
-    # REMOVED: _stop_live_display method
-
     def _clear_previous_line(self):
         """Clears the previous line if the spinner was active."""
-        # No lock needed here as it will be called by methods that already hold the lock
         if self._spinner_active and self.console.is_terminal:
             try:
-                # \r moves cursor to beginning of line
-                # \x1b[K clears from cursor to end of line
                 self.console.file.write('\r\x1b[K')
                 self.console.file.flush()
                 logger.debug("_clear_previous_line: Cleared line using ANSI codes.")
             except Exception as e:
                 logger.error(f"Error clearing line: {e}", exc_info=True)
-                print("\nWarning: Could not clear previous line.", file=sys.stderr)
-        self._spinner_active = False # Always reset flag after attempt
-        
-    # --- ADDED METHOD ---
+                # Avoid printing directly to console here to prevent lock issues
+                # The effect is just that the spinner might remain visible
+        self._spinner_active = False # Always reset flag
+
     def clear_current_line(self):
         """Clears the current line using ANSI escape codes."""
-        # No lock needed here as it will be called by methods that already hold the lock
         if self.console.is_terminal:
             try:
-                # \r moves cursor to beginning of line
-                # \x1b[K clears from cursor to end of line
                 self.console.file.write('\r\x1b[K')
                 self.console.file.flush()
                 logger.debug("clear_current_line: Cleared current line using ANSI codes.")
             except Exception as e:
                 logger.error(f"Error clearing current line: {e}", exc_info=True)
-                print("\nWarning: Could not clear current line.", file=sys.stderr)
-    # --- END ADDED METHOD ---
 
     def start_thinking(self):
         """Displays the 'AI: thinking...' status indicator on the current line."""
         with self._lock:
-            # Clear previous line first if needed (e.g., tool output was just printed)
-            self._clear_previous_line()
+            self._clear_previous_line() # Clear previous spinner if active
 
             if self._spinner_active: # Avoid printing multiple spinners
                 return
 
-            prefix = Text("AI: ", style=STYLE_AI_LABEL)
-            # Simple text spinner - could add rotating characters later if desired
-            thinking_text = Text("⏳ Thinking...", style=STYLE_THINKING)
+            prefix = Text(get_text("common.labels.ai"), style=self.STYLE_AI_LABEL)
+            thinking_text = Text(get_text("console.thinking_text"), style=self.STYLE_THINKING)
 
             # Print without a newline to keep it on the current line
-            self.console.print(Text.assemble(prefix, thinking_text), end="")
-            self._spinner_active = True
-            logger.debug("ConsoleManager: Started thinking indicator.")
+            try:
+                self.console.print(Text.assemble(prefix, thinking_text), end="")
+                self._spinner_active = True
+                logger.debug("ConsoleManager: Started thinking indicator.")
+            except Exception as e:
+                 logger.error(f"ConsoleManager: Error printing thinking indicator: {e}", exc_info=True)
+
 
     def display_message(self, prefix: str, content: str, style_label: RichStyle, style_content: RichStyle):
         """Displays a standard formatted message (INFO, WARNING, ERROR, SYSTEM)."""
@@ -206,7 +134,10 @@ class ConsoleManager:
                 self.console.print(text) # Prints with a newline by default
                 logger.debug(f"ConsoleManager: Displayed message: {prefix}{content[:50]}...")
             except Exception as e:
-                print(f"{prefix}{content}", file=sys.stderr)
+                # Fallback to basic print if Rich fails
+                try:
+                    print(f"{prefix}{content}", file=sys.stderr)
+                except Exception: pass # Ignore secondary print errors
                 logger.error(f"ConsoleManager: Error during console.print: {e}", exc_info=True)
 
     def display_tool_output(self, tool_name: str, output: str):
@@ -219,53 +150,74 @@ class ConsoleManager:
 
             # Format the output - replace newlines and truncate if needed
             formatted_output = str(output).replace('\n', ' ').replace('\r', '')
-            if len(formatted_output) > self.CONDENSED_OUTPUT_LENGTH:
-                formatted_output = formatted_output[:self.CONDENSED_OUTPUT_LENGTH] + "..."
+            # Use loaded setting for length
+            if len(formatted_output) > CONSOLE_CONDENSED_OUTPUT_LENGTH:
+                formatted_output = formatted_output[:CONSOLE_CONDENSED_OUTPUT_LENGTH] + get_text("common.truncation_marker")
 
-            # Create the condensed text with proper tool styles
+            prefix = get_text("common.labels.tool")
+            content = get_text("console.tool_output.format", tool_name=escape(tool_name), output=escape(formatted_output))
+            
             text = Text.assemble(
-                ("TOOL: ", self.STYLE_TOOL_NAME), # Now using tool name style
-                (f"({escape(tool_name)}) ", self.STYLE_TOOL_OUTPUT_DIM), # Dim tool name
-                (escape(formatted_output), self.STYLE_TOOL_OUTPUT_DIM) # Dim content
+                (prefix, self.STYLE_TOOL_NAME),
+                (content, self.STYLE_TOOL_OUTPUT_DIM)
             )
-            self.console.print(text) # Print on a new line
-            logger.debug(f"ConsoleManager: Displayed condensed tool output for '{tool_name}': {formatted_output[:50]}...")
+            try:
+                self.console.print(text) # Print on a new line
+                logger.debug(f"ConsoleManager: Displayed condensed tool output for '{tool_name}': {formatted_output[:50]}...")
+            except Exception as e:
+                 logger.error(f"ConsoleManager: Error printing tool output: {e}", exc_info=True)
+
 
     def display_ai_response(self, content: str):
         """Displays the final AI text response."""
         with self._lock:
             self._clear_previous_line() # Clear spinner if it was active
-            text = Text.assemble(("AI: ", STYLE_AI_LABEL), (escape(content), STYLE_AI_CONTENT))
-            self.console.print(text)
-            logger.debug(f"ConsoleManager: Displayed AI response: {content[:50]}...")
+            prefix = get_text("common.labels.ai")
+            text = Text.assemble((prefix, self.STYLE_AI_LABEL), (escape(content), self.STYLE_AI_CONTENT))
+            try:
+                self.console.print(text)
+                logger.debug(f"ConsoleManager: Displayed AI response: {content[:50]}...")
+            except Exception as e:
+                 logger.error(f"ConsoleManager: Error printing AI response: {e}", exc_info=True)
+
 
     def display_tool_confirmation(self, tool_name: str, final_args: Dict[str, Any]):
         """Prints the 'AI: Used tool...' confirmation line, replacing the spinner."""
         with self._lock:
             self._clear_previous_line() # Clear spinner if it was active
 
+            ai_prefix = get_text("common.labels.ai")
+            used_tool_fmt = get_text("console.tool_confirm.used_tool", tool_name=escape(tool_name))
+            
             text = Text.assemble(
-                ("AI: ", STYLE_AI_LABEL),
-                ("Used tool '", STYLE_AI_CONTENT),
-                (escape(tool_name), STYLE_TOOL_NAME),
-                ("'", STYLE_AI_CONTENT)
+                (ai_prefix, self.STYLE_AI_LABEL),
+                (used_tool_fmt, self.STYLE_AI_CONTENT)
             )
             if final_args:
-                text.append(" with ", style=STYLE_AI_CONTENT)
+                with_args_str = get_text("console.tool_confirm.with_args")
+                arg_separator = get_text("console.tool_confirm.arg_separator")
+                arg_list_separator = get_text("console.tool_confirm.arg_list_separator")
+                trunc_marker = get_text("common.truncation_marker")
+                
+                text.append(with_args_str, style=self.STYLE_AI_CONTENT)
                 args_parts = []
                 for i, (arg_name, arg_val) in enumerate(final_args.items()):
                     arg_text = Text()
-                    arg_text.append(escape(str(arg_name)), style=STYLE_ARG_NAME)
-                    arg_text.append(": ", style=STYLE_ARG_NAME)
+                    arg_text.append(escape(str(arg_name)), style=self.STYLE_ARG_NAME)
+                    arg_text.append(arg_separator, style=self.STYLE_ARG_NAME)
                     val_str = escape(str(arg_val))
-                    max_len = 150 # Keep truncation
-                    display_val = (val_str[:max_len] + '...') if len(val_str) > max_len else val_str
-                    arg_text.append(display_val, style=STYLE_ARG_VALUE)
+                    max_len = CONSOLE_CONDENSED_OUTPUT_LENGTH
+                    display_val = (val_str[:max_len] + trunc_marker) if len(val_str) > max_len else val_str
+                    arg_text.append(display_val, style=self.STYLE_ARG_VALUE)
                     args_parts.append(arg_text)
-                text.append(Text(", ", style=STYLE_AI_CONTENT).join(args_parts))
+                text.append(Text(arg_list_separator, style=self.STYLE_AI_CONTENT).join(args_parts))
 
-            self.console.print(text) # Print the confirmation line (with newline)
-            logger.debug(f"ConsoleManager: Displayed tool confirmation for '{tool_name}'.")
+            try:
+                self.console.print(text) # Print the confirmation line (with newline)
+                logger.debug(f"ConsoleManager: Displayed tool confirmation for '{tool_name}'.")
+            except Exception as e:
+                 logger.error(f"ConsoleManager: Error printing tool confirmation: {e}", exc_info=True)
+
 
     def display_tool_prompt(self, error: PromptNeededError) -> Optional[str]:
         """
@@ -278,14 +230,13 @@ class ConsoleManager:
             tool_name = error.tool_name
             proposed_args = error.proposed_args
             edit_key = error.edit_key
-            # prompt_suffix = error.prompt_suffix # No longer used directly for the main prompt text
 
             if (edit_key not in proposed_args):
-                # Use Rich-based display_message for this internal error
-                # Ensure STYLE_ERROR_LABEL and STYLE_ERROR_CONTENT are accessible (defined globally or as self attributes)
+                error_msg = get_text("console.hitl_prompt.error_edit_key_missing", 
+                                   edit_key=edit_key, tool_name=tool_name)
                 self.display_message(
-                    "ERROR: ",
-                    f"Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.",
+                    get_text("common.labels.error"),
+                    error_msg,
                     self.STYLE_ERROR_LABEL,
                     self.STYLE_ERROR_CONTENT
                 )
@@ -294,12 +245,15 @@ class ConsoleManager:
             value_to_edit = proposed_args[edit_key]
 
             # --- Build prompt_toolkit FormattedText prefix ---
-            # NEW FORMAT: SYSTEM: AI wants to perform an action 'tool_name', edit or confirm:
+            system_label = get_text("common.labels.system")
+            prefix_action = get_text("console.hitl_prompt.prefix_action")
+            suffix_edit_confirm = get_text("console.hitl_prompt.suffix_edit_confirm")
+
             prompt_prefix_parts: List[Tuple[str, str]] = [
-                ('class:style_system_label', "SYSTEM:"), # Changed label and style
-                ('class:style_system_content', " AI wants to perform an action '"), # Changed wording and style
-                ('class:style_tool_name', escape(tool_name)), # Keep tool name style
-                ('class:style_system_content', "', edit or confirm: ") # Changed wording, separator, and style
+                ('class:style_system_label', system_label.strip()),
+                ('class:style_system_content', prefix_action),
+                ('class:style_tool_name', escape(tool_name)),
+                ('class:style_system_content', suffix_edit_confirm)
             ]
             # --- End building FormattedText ---
 
@@ -307,68 +261,60 @@ class ConsoleManager:
             user_input: Optional[str] = None
             try:
                 logger.debug(f"ConsoleManager: Prompting user for tool '{tool_name}', key '{edit_key}'.")
+                # Use the imported PTK_STYLE object
                 user_input = prompt_toolkit_prompt(
-                    FormattedText(prompt_prefix_parts), # Pass the new simplified prefix
+                    FormattedText(prompt_prefix_parts),
                     default=str(value_to_edit),
-                    style=PTK_STYLE, # Use PTK style object
+                    style=PTK_STYLE,
                     multiline=(len(str(value_to_edit)) > 60 or '\n' in str(value_to_edit))
                 )
                 if user_input is None: raise EOFError("Prompt returned None.") # Use specific error
 
             except (EOFError, KeyboardInterrupt):
-                 # Use Rich console to print cancel message on a new line
-                self.console.print()
-                # Ensure STYLE_WARNING_CONTENT is accessible (defined globally or as self attribute)
-                self.console.print("Input cancelled.", style=self.STYLE_WARNING_CONTENT)
+                # Use Rich console to print cancel message on a new line
+                self.console.print() # Ensure on new line
+                cancel_msg = get_text("console.common.input_cancelled")
+                self.console.print(cancel_msg, style=self.STYLE_WARNING_CONTENT)
                 logger.warning(f"ConsoleManager: User cancelled input for tool '{tool_name}'.")
                 return None
             except Exception as e:
                 logger.error(f"ConsoleManager: Error during prompt_toolkit prompt: {e}", exc_info=True)
-                # Use Rich console to print error message on a new line
-                self.console.print()
-                # Ensure STYLE_ERROR_CONTENT is accessible (defined globally or as self attribute)
-                self.console.print(f"Error during input prompt: {e}", style=self.STYLE_ERROR_CONTENT)
+                self.console.print() # Ensure on new line
+                error_msg = get_text("console.hitl_prompt.error_generic", error=e)
+                self.console.print(error_msg, style=self.STYLE_ERROR_CONTENT)
                 return None
 
             logger.debug(f"ConsoleManager: Received input: '{user_input[:50]}...'")
-            # Return input. The calling function (ChatManager) is responsible
-            # for clearing this line if needed before printing confirmation.
             return user_input
 
     def prompt_for_input(self, prompt_text: str, default: Optional[str] = None, is_password: bool = False) -> str:
         """
         Prompts the user for input using prompt_toolkit, handling the prefix correctly.
-
-        Args:
-            prompt_text: The prompt text to display (without trailing colon/space).
-            default: Optional default value.
-            is_password: Whether to hide input as password.
-
-        Returns:
-            The user's input as a string, or raises KeyboardInterrupt on cancel.
         """
         with self._lock:
             self._clear_previous_line() # Clear spinner if needed
 
             # --- Build FormattedText for prompt_toolkit ---
             prompt_parts: List[Tuple[str, str]] = [
-                ('', prompt_text) # Use default style for main prompt text
+                # Use PTK style defined for 'prompt.prefix'
+                ('class:prompt.prefix', prompt_text)
             ]
             if default:
-                # Add default value hint with specific style
-                prompt_parts.append(('class:default', f" [{escape(default)}]"))
+                default_hint = get_text("console.prompt.default_hint_format", default=escape(default))
+                prompt_parts.append(('class:default', default_hint))
 
-            # Add the trailing colon and space
-            prompt_parts.append(('', ": "))
+            # Add the trailing colon and space - use default style
+            prompt_suffix = get_text("console.prompt.suffix")
+            prompt_parts.append(('', prompt_suffix))
             # --- END FormattedText construction ---
 
             try:
-                # Pass FormattedText to prompt_toolkit
+                # Pass FormattedText and the main PTK_STYLE object
                 user_input = prompt_toolkit_prompt(
-                    FormattedText(prompt_parts), # Pass the constructed prompt parts
+                    FormattedText(prompt_parts),
                     default=default or "",
                     is_password=is_password,
-                    style=PTK_STYLE # Use the main style object
+                    style=PTK_STYLE
                 )
 
                 if user_input is None: # Handle case where prompt might return None unexpectedly
@@ -377,14 +323,16 @@ class ConsoleManager:
                 return user_input # Return directly
             except (EOFError, KeyboardInterrupt):
                 # Print cancellation message using Rich console on a new line
-                self.console.print("\nInput cancelled.", style=STYLE_WARNING_CONTENT)
+                self.console.print() # Ensure on new line
+                cancel_msg = get_text("console.common.input_cancelled")
+                self.console.print(cancel_msg, style=self.STYLE_WARNING_CONTENT)
                 logger.warning(f"User cancelled input for prompt: '{prompt_text}'")
                 raise KeyboardInterrupt("User cancelled input.")
             except Exception as e:
                 logger.error(f"ConsoleManager: Error during prompt_for_input: {e}", exc_info=True)
-                # Print error using Rich console on a new line
-                self.console.print(f"\nError getting input: {e}", style=STYLE_ERROR_CONTENT)
-                # Reraise as KeyboardInterrupt to signal failure upwards similarly to cancellation
+                self.console.print() # Ensure on new line
+                error_msg = get_text("console.prompt.error_generic", error=e)
+                self.console.print(error_msg, style=self.STYLE_ERROR_CONTENT)
                 raise KeyboardInterrupt(f"Error getting input: {e}")
 
 # --- Singleton Instance (Remains the same) ---

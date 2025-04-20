@@ -1,10 +1,13 @@
 import os
 import json
+import re
+from pathlib import Path
 from typing import Dict, Optional, Tuple, List
-from . import logger, ROOT_DIR # Removed console_io import
-
-# Import ConsoleManager
-from .console_manager import get_console_manager
+from . import logger
+from .paths import ROOT_DIR # Removed console_io import
+from .settings import APP_DEFAULT_MODEL, APP_DEFAULT_LANGUAGE, DEFAULT_ENABLED_TOOLSETS_NAMES
+from .console_manager import get_console_manager # Import ConsoleManager
+from .texts import get_text # Added import for get_text
 
 # Get console manager instance
 console = get_console_manager()
@@ -26,20 +29,7 @@ GOOGLE_MODELS = {
 
 ALL_MODELS = {**OPENAI_MODELS, **GOOGLE_MODELS}
 
-DEFAULT_MODEL = "gpt-4o-mini"
-
-# Define Aider edit formats with descriptions (added back for toolset configuration)
-AIDER_EDIT_FORMATS = {
-    "whole": "LLM sends back the entire file content.",
-    "diff": "LLM sends back search/replace blocks.",
-    "diff-fenced": "LLM sends back search/replace blocks within a fenced code block (good for Gemini).",
-    "udiff": "LLM sends back simplified unified diff format (good for GPT-4 Turbo).",
-    "architect": "High-level planning by main model, detailed edits by editor model.",
-    # editor-* formats are typically set automatically with architect mode or --editor-model
-    # but allow explicit selection if needed.
-    "editor-diff": "Streamlined diff format for editor models.",
-    "editor-whole": "Streamlined whole format for editor models.",
-}
+# DEFAULT_MODEL removed, now using APP_DEFAULT_MODEL from settings.py
 
 def get_data_dir():
     """Return the directory where configuration data should be stored."""
@@ -57,6 +47,7 @@ def _read_config() -> Dict:
             try:
                 return json.load(f)
             except json.JSONDecodeError:
+                logger.warning(f"Config file {CONFIG_FILE} is corrupted. Returning empty config.")
                 return {}
     return {}
 
@@ -93,10 +84,10 @@ def get_current_model() -> str:
     config = _read_config()
     model = config.get("model")
     
-    # If neither exists, use default and initialize it
+    # If neither exists, use default from settings and initialize it
     if not model:
-        model = DEFAULT_MODEL
-        set_model(model)
+        model = APP_DEFAULT_MODEL # Use imported constant
+        set_model(model) # This will save it to config
     
     return model
 
@@ -136,34 +127,35 @@ def prompt_for_model_selection() -> Optional[str]:
     
     from rich.text import Text # Import Text
 
-    console.display_message("SYSTEM:", "Available models:", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-    console.display_message("SYSTEM:", "OpenAI:", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.display_message(get_text("common.labels.system"), get_text("config.model_select.available_title"), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.display_message(get_text("common.labels.system"), get_text("config.model_select.openai_header"), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     openai_lines = []
+    current_marker = get_text("config.model_select.current_marker")
     for model in set(OPENAI_MODELS.values()):
         aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
-        alias_text = f" (aliases: {', '.join([f'[underline]{a}[/underline]' for a in aliases])})" if aliases else "" # Use markup for aliases
-        marker = " <- Current Model" if model == current_model else ""
-        # Use Text.from_markup for highlighting
+        # Prepare alias string with markup before passing to get_text
+        alias_markup = ', '.join([f'[underline]{a}[/underline]' for a in aliases])
+        alias_text = get_text("config.model_select.aliases_suffix", alias_str=alias_markup) if aliases else ""
+        marker = current_marker if model == current_model else ""
         line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
         openai_lines.append(line_text)
     for line in openai_lines:
-        console.console.print(line) # Print directly
+        console.console.print(line)
     
-    console.display_message("SYSTEM:", "Google:", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.display_message(get_text("common.labels.system"), get_text("config.model_select.google_header"), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     google_lines = []
     for model in set(GOOGLE_MODELS.values()):
         aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
-        alias_text = f" (aliases: {', '.join([f'[underline]{a}[/underline]' for a in aliases])})" if aliases else "" # Use markup for aliases
-        marker = " <- Current Model" if model == current_model else ""
-        # Use Text.from_markup for highlighting
+        alias_markup = ', '.join([f'[underline]{a}[/underline]' for a in aliases])
+        alias_text = get_text("config.model_select.aliases_suffix", alias_str=alias_markup) if aliases else ""
+        marker = current_marker if model == current_model else ""
         line_text = Text.from_markup(f"- [underline]{model}[/underline]{alias_text}{marker}")
         google_lines.append(line_text)
     for line in google_lines:
-        console.console.print(line) # Print directly
+        console.console.print(line)
     
     try:
-        # Use ConsoleManager prompt
-        prompt_msg = f"\nPlease input the model you want to use, or leave empty to keep using '{current_model}'"
+        prompt_msg = get_text("config.model_select.prompt", current_model=current_model)
         selected_model = console.prompt_for_input(prompt_msg).strip()
         
         if not selected_model:
@@ -171,8 +163,7 @@ def prompt_for_model_selection() -> Optional[str]:
         
         normalized_model = normalize_model_name(selected_model)
         if normalized_model not in set(OPENAI_MODELS.values()) and normalized_model not in set(GOOGLE_MODELS.values()):
-            # Use ConsoleManager warning
-            console.display_message("WARNING:", f"Unknown model: {selected_model}. Keeping current model: {current_model}", 
+            console.display_message(get_text("common.labels.warning"), get_text("config.model_select.warn_unknown", selected_model=selected_model, current_model=current_model),
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             logger.warning(f"Unknown model selected: {selected_model}. Using current: {current_model}")
             return current_model
@@ -182,7 +173,7 @@ def prompt_for_model_selection() -> Optional[str]:
         # Handled by ConsoleManager.prompt_for_input
         return None # Indicate cancellation
     except Exception as e:
-        console.display_message("ERROR:", f"An error occurred during model selection: {e}", 
+        console.display_message(get_text("common.labels.error"), get_text("config.model_select.error_generic", error=e),
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
         logger.error(f"Model selection error: {e}", exc_info=True)
         return None
@@ -209,6 +200,12 @@ def check_if_first_run() -> bool:
     if not config_model and not env_model:
         logger.info("First run detected - no model configured in existing config or environment.")
         return True
+        
+    # Also consider language setting for first run
+    config_lang = config.get("language")
+    if not config_lang:
+        logger.info("First run (or reset) detected - language not configured.")
+        return True # Trigger setup if language is missing
 
     # If we have a model configured somewhere, it's not the first run.
     return False
@@ -239,43 +236,35 @@ def set_api_key_for_model(model_name: str, api_key: Optional[str] = None) -> Non
     api_key_link = "https://platform.openai.com/api-keys" if provider == "openai" else "https://aistudio.google.com/app/apikey"
     
     if not api_key:
-        # Combine system messages
-        prompt_info = f"""
-Please enter your {provider_name} API key.
-You can get it from: {api_key_link}
-"""
-        console.display_message("SYSTEM:", prompt_info.strip(), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+        prompt_info = get_text("config.api_key.prompt_instructions", provider_name=provider_name, api_key_link=api_key_link)
+        console.display_message(get_text("common.labels.system"), prompt_info.strip(), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
         try:
-            # Use ConsoleManager prompt, marking as password
-            api_key = console.prompt_for_input(f"Enter {provider_name} API key", is_password=True).strip()
+            prompt_input_msg = get_text("config.api_key.prompt_input", provider_name=provider_name)
+            api_key = console.prompt_for_input(prompt_input_msg, is_password=True).strip()
         except KeyboardInterrupt:
-            # Already handled by ConsoleManager.prompt_for_input
             logger.warning(f"API key input cancelled for {provider_name}.")
             return # Abort
         except Exception as e:
-            console.display_message("ERROR:", f"An error occurred during API key input: {e}", 
+            console.display_message(get_text("common.labels.error"), get_text("config.api_key.error_generic", error=e),
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             logger.error(f"API key input error: {e}", exc_info=True)
             return # Abort
     
     if not api_key:
-        # Use ConsoleManager warning
-        console.display_message("WARNING:", f"No {provider_name} API key provided. Aborting.", 
+        console.display_message(get_text("common.labels.warning"), get_text("config.api_key.warn_none_provided", provider_name=provider_name),
                               console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
         logger.warning(f"No {provider_name} API key provided.")
         return
     
     os.environ[env_var_name] = api_key
     
-    # Use utils for .env file operations
-    env_path = ROOT_DIR / '.env' # Use ROOT_DIR from __init__
-    from .utils import read_dotenv, write_dotenv # Import locally
+    env_path = ROOT_DIR / '.env'
+    from .utils.env import read_dotenv, write_dotenv # Import locally
     env_vars = read_dotenv(env_path)
     env_vars[env_var_name] = api_key
     write_dotenv(env_path, env_vars)
     
-    # Use ConsoleManager info
-    console.display_message("INFO:", f"{provider_name} API key saved successfully to .env", 
+    console.display_message(get_text("common.labels.info"), get_text("config.api_key.info_saved", provider_name=provider_name),
                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
     logger.info(f"{provider_name} API key saved successfully to .env")
 
@@ -303,6 +292,148 @@ def ensure_api_key_for_current_model() -> bool:
     
     return True
 
+# --- Language Configuration ---
+
+def get_language() -> str:
+    """Gets the configured language, defaulting to APP_DEFAULT_LANGUAGE."""
+    config = _read_config()
+    lang = config.get("language")
+    if not lang or not isinstance(lang, str):
+        lang = APP_DEFAULT_LANGUAGE
+        # Optionally save the default if it wasn't set
+        # set_language(lang) # Let's avoid writing just for a default read for now
+    return lang
+
+def set_language(lang_code: str) -> bool:
+    """Sets the application language in the config file."""
+    # Basic validation: language code should be short, alphanumeric possibly with hyphen
+    import re  # Import re locally
+    if not lang_code or not isinstance(lang_code, str) or not re.match(r"^[a-zA-Z]{2,3}(-[a-zA-Z0-9]+)*$", lang_code):
+         logger.error(f"Attempted to set invalid language code: {lang_code}")
+         return False
+
+    try:
+        config = _read_config()
+        config["language"] = lang_code.lower() # Store lowercase
+        _write_config(config)
+        logger.info(f"Language set to: {lang_code.lower()}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to write language setting to config: {e}", exc_info=True)
+        return False
+
+def list_available_languages(texts_dir: Path) -> Dict[str, str]:
+    """
+    Scans the specified directory for language files (*_texts.json)
+    and returns a dictionary mapping index number (str) to language code (str).
+    Ensures 'en' is present if en_texts.json exists.
+    """
+    languages = {}
+    found_en = False
+    idx = 1
+    try:
+        if not texts_dir.is_dir():
+             logger.error(f"Texts directory not found for language discovery: {texts_dir}")
+             return {}
+
+        for item in sorted(texts_dir.glob('*_texts.json')):
+            if item.is_file():
+                lang_code = item.name.split('_texts.json')[0].lower()
+                if lang_code: # Ensure we got a code
+                    languages[str(idx)] = lang_code
+                    if lang_code == 'en': found_en = True
+                    idx += 1
+
+        # Ensure 'en' is first if found, otherwise add it if en_texts.json exists
+        if found_en and languages.get("1") != "en":
+             # Find 'en', remove it, add it back at key "1" shifting others
+             current_en_idx = None
+             for k, v in languages.items():
+                  if v == 'en': current_en_idx = k; break
+             if current_en_idx:
+                  en_code = languages.pop(current_en_idx)
+                  # Rebuild dict with 'en' first
+                  shifted_languages = {"1": en_code}
+                  shifted_languages.update({str(int(k)+1) : v for k,v in languages.items() if k != '1'}) # Shift others
+                  languages = shifted_languages
+
+        elif not found_en and (texts_dir / "en_texts.json").exists():
+             # If 'en' wasn't found by glob but the file exists, prepend it
+             logger.warning(f"en_texts.json exists but wasn't globbed? Adding 'en' to available languages.")
+             shifted_languages = {"1": "en"}
+             shifted_languages.update({str(int(k)+1) : v for k,v in languages.items()})
+             languages = shifted_languages
+
+    except Exception as e:
+        logger.error(f"Error discovering languages in {texts_dir}: {e}", exc_info=True)
+        return {} # Return empty on error
+
+    # Final check if english exists at all
+    if not languages or "en" not in languages.values():
+        logger.error(f"Mandatory 'en_texts.json' seems missing or unreadable in {texts_dir}. Cannot determine languages.")
+        return {}
+
+    return languages
+
+def prompt_for_language_selection() -> Optional[str]:
+    """Prompts the user to select the application language."""
+    # Define path to core agent's text directory
+    core_texts_dir = ROOT_DIR / 'ai_shell_agent' / 'texts'
+    available_langs = list_available_languages(core_texts_dir)
+
+    if not available_langs:
+         console.display_message(get_text("common.labels.error"), get_text("config.lang_select.error_discovery_failed"),
+                                console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+         set_language("en") # Ensure default is set
+         return "en"
+
+    current_lang = get_language()
+
+    console.display_message(get_text("common.labels.system"), get_text("config.lang_select.prompt_title"),
+                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+
+    lang_options = []
+    for idx, code in available_langs.items():
+        marker = get_text("config.lang_select.current_marker") if code == current_lang else ""
+        lang_options.append(get_text("config.lang_select.option_format", idx=idx, code=code, marker=marker))
+
+    console.display_message(get_text("common.labels.system"), "\n".join(lang_options),
+                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+
+    while True:
+        try:
+            prompt_msg = get_text("config.lang_select.prompt_input", max_lang=len(available_langs), current_lang=current_lang)
+            choice = console.prompt_for_input(prompt_msg).strip()
+
+            if not choice:
+                 console.display_message(get_text("common.labels.info"), get_text("config.lang_select.info_kept_current", lang_code=current_lang),
+                                        console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+                 return current_lang
+            elif choice in available_langs:
+                selected_code = available_langs[choice]
+                if set_language(selected_code):
+                    console.display_message(get_text("common.labels.info"), get_text("config.lang_select.info_set_success", lang_code=selected_code),
+                                            console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+                    return selected_code
+                else:
+                    # Error handled in set_language, but inform user here too
+                    console.display_message(get_text("common.labels.error"), get_text("config.lang_select.error_save_failed"),
+                                            console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+                    return None # Indicate failure
+            else:
+                 console.display_message(get_text("common.labels.error"), get_text("config.lang_select.error_invalid_input", max_lang=len(available_langs)),
+                                       console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+
+        except KeyboardInterrupt:
+            console.display_message(get_text("common.labels.warning"), get_text("config.lang_select.warn_cancel"),
+                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+            return None # Indicate cancellation/failure
+        except Exception as e:
+             logger.error(f"Error during language selection: {e}", exc_info=True)
+             console.display_message(get_text("common.labels.error"), get_text("config.lang_select.error_generic", error=e),
+                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+             return None # Indicate failure
+
 # --- Global Default Toolset Functions ---
 
 DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY = "default_enabled_toolsets"
@@ -310,14 +441,15 @@ DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY = "default_enabled_toolsets"
 def get_default_enabled_toolsets() -> List[str]:
     """
     Gets the globally configured default enabled toolset names.
-    Returns an empty list if not set.
+    Returns the default list from settings if not set or invalid in config.
     """
     config = _read_config()
-    # Ensure it returns a list, default to empty list if key missing or not a list
-    default_toolsets = config.get(DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY, [])
+    # Use imported constant as the fallback default
+    default_toolsets = config.get(DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY, DEFAULT_ENABLED_TOOLSETS_NAMES)
     if not isinstance(default_toolsets, list):
-        logger.warning(f"'{DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY}' in config is not a list. Returning empty list.")
-        return []
+        logger.warning(f"'{DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY}' in config is not a list. Returning default from settings.")
+        # Return a copy of the default list from settings
+        return list(DEFAULT_ENABLED_TOOLSETS_NAMES)
     # Optionally validate against registered toolsets? Maybe not here, let caller handle.
     return default_toolsets
 
@@ -334,18 +466,3 @@ def set_default_enabled_toolsets(toolset_names: List[str]) -> None:
     config[DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY] = sorted(list(set(toolset_names))) # Store unique sorted names
     _write_config(config)
     logger.info(f"Global default enabled toolsets set to: {config[DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY]}")
-
-# All Aider-specific functions have been removed:
-# - get_aider_edit_format
-# - set_aider_edit_format
-# - prompt_for_edit_mode_selection
-# - _get_aider_model
-# - _set_aider_model
-# - get_aider_main_model
-# - set_aider_main_model
-# - get_aider_editor_model
-# - set_aider_editor_model
-# - get_aider_weak_model
-# - set_aider_weak_model
-# - _prompt_for_single_coder_model
-# - prompt_for_coder_models_selection

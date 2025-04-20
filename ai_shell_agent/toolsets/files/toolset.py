@@ -17,7 +17,8 @@ from langchain_core.runnables.config import run_in_executor
 # Local Imports
 from ... import logger
 from ...tool_registry import register_tools
-from ...utils import read_json, write_json, ensure_dotenv_key
+from ...utils.file_io import read_json, write_json
+from ...utils.env import ensure_dotenv_key
 from ...errors import PromptNeededError
 from ...console_manager import get_console_manager
 from ...chat_state_manager import (
@@ -25,50 +26,54 @@ from ...chat_state_manager import (
     get_toolset_data_path,
     check_and_configure_toolset # Keep import if needed elsewhere
 )
+from .settings import FILES_HISTORY_LIMIT # Import toolset specific settings
 from .prompts import FILES_TOOLSET_PROMPT
+from .texts import get_text # <--- ADDED IMPORT
 
 console = get_console_manager()
 
 # --- Toolset Metadata ---
 toolset_id = "files"
-toolset_name = "File Manager"
-toolset_description = "Provides tools for direct file and directory manipulation (create, read, edit, delete, copy, move, find, history)."
-
-# --- Toolset Configuration ---
-toolset_config_defaults: Dict[str, Any] = {
-    "history_retrieval_limit": 20 # Default number of history items to show
-}
-toolset_required_secrets: Dict[str, str] = {} # No secrets currently needed
+toolset_name = get_text("toolset.name") # MODIFIED
+toolset_description = get_text("toolset.description") # MODIFIED
+toolset_required_secrets: Dict[str, str] = {}
 
 # --- State Management Helpers ---
 def _get_history_path(chat_id: str) -> Path:
-    """Gets the path to the history state file for this toolset in the chat."""
-    return get_toolset_data_path(chat_id, toolset_id) # Uses state manager helper
+    return get_toolset_data_path(chat_id, toolset_id)
 
 def _read_history_state(chat_id: str) -> Dict:
-    """Reads the history state file, returning defaults if not found."""
     history_path = _get_history_path(chat_id)
-    # Default structure includes an empty history list
     return read_json(history_path, default_value={"history": []})
 
 def _write_history_state(chat_id: str, state_data: Dict) -> None:
-    """Writes the history state file."""
     history_path = _get_history_path(chat_id)
     write_json(history_path, state_data)
 
 def _log_history_event(chat_id: str, event_data: Dict) -> None:
-    """Adds an event to the chat's history state for this toolset."""
-    if not chat_id: return # Should not happen
+    if not chat_id: return
     try:
         state = _read_history_state(chat_id)
         if "history" not in state or not isinstance(state["history"], list):
-            state["history"] = [] # Ensure history list exists
+            state["history"] = []
 
-        # Add timestamp if not present
         if "timestamp" not in event_data:
             event_data["timestamp"] = datetime.now(timezone.utc).isoformat()
 
         state["history"].append(event_data)
+        # Apply history limit BEFORE writing
+        limit = FILES_HISTORY_LIMIT # Default
+        try: # Try to read chat-specific limit
+            config_path = get_toolset_data_path(chat_id, toolset_id)
+            tool_config = read_json(config_path, default_value=None)
+            if tool_config is not None and "history_retrieval_limit" in tool_config:
+                 limit = int(tool_config["history_retrieval_limit"])
+                 if limit < 0: limit = 0
+        except Exception: pass # Ignore errors reading limit, use default
+
+        if limit > 0 and len(state["history"]) > limit:
+             state["history"] = state["history"][-limit:] # Keep only the last 'limit' items
+
         _write_history_state(chat_id, state)
         logger.debug(f"Logged file history event for chat {chat_id}: {event_data.get('operation')}")
     except Exception as e:
@@ -77,113 +82,113 @@ def _log_history_event(chat_id: str, event_data: Dict) -> None:
 # --- Configuration Function ---
 def configure_toolset(
     global_config_path: Path,
-    local_config_path: Path,
+    local_config_path: Optional[Path], # Keep Optional for standard signature
     dotenv_path: Path,
     current_chat_config: Optional[Dict]
 ) -> Dict:
     """
     Configuration function for the File Manager toolset.
-    Prompts user for history retrieval limit.
+    Prompts user for history retrieval limit, using defaults from settings.
     """
+    if local_config_path is None: # Should not happen for toolsets with config like this one
+         logger.error("File Manager configure_toolset called without local_config_path.")
+         return current_chat_config or {}
+
     logger.info(f"Configuring File Manager toolset. Global: {global_config_path}, Local: {local_config_path}")
-    config_to_prompt = current_chat_config or toolset_config_defaults
+    config_to_prompt = current_chat_config if current_chat_config is not None else {}
     final_config = {}
 
-    console.display_message("SYSTEM:", "\n--- Configure File Manager Manager ---", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.display_message("SYSTEM:", get_text("config.header"), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT) # MODIFIED
 
     try:
-        # Prompt for history limit
+        default_limit = config_to_prompt.get("history_retrieval_limit", FILES_HISTORY_LIMIT)
         limit_str = console.prompt_for_input(
-            "Enter max number of history items to show",
-            default=str(config_to_prompt.get("history_retrieval_limit", 20))
+            get_text("config.prompt_limit"), # MODIFIED
+            default=str(default_limit)
         ).strip()
 
-        # Validate and set limit
         try:
-            limit = int(limit_str) if limit_str else config_to_prompt.get("history_retrieval_limit", 20)
-            if limit < 0: limit = 0 # Non-negative
+            limit = int(limit_str) if limit_str else default_limit
+            if limit < 0: limit = 0
             final_config["history_retrieval_limit"] = limit
         except ValueError:
-            console.display_message("WARNING:", "Invalid number entered. Using previous/default limit.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-            final_config["history_retrieval_limit"] = config_to_prompt.get("history_retrieval_limit", 20)
+            console.display_message("WARNING:", get_text("config.warn_invalid"), console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT) # MODIFIED
+            final_config["history_retrieval_limit"] = default_limit
 
     except (KeyboardInterrupt, EOFError):
-        console.display_message("WARNING:", "\nConfiguration cancelled. Using previous/default values.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-        return current_chat_config or toolset_config_defaults
+        console.display_message("WARNING:", get_text("config.warn_cancel"), console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT) # MODIFIED
+        return current_chat_config if current_chat_config is not None else {"history_retrieval_limit": FILES_HISTORY_LIMIT}
     except Exception as e:
         logger.error(f"Error during File Manager configuration: {e}", exc_info=True)
-        console.display_message("ERROR:", f"\nConfiguration error: {e}", console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        return current_chat_config or toolset_config_defaults
+        console.display_message("ERROR:", get_text("config.error_generic", error=e), console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+        return current_chat_config if current_chat_config is not None else {"history_retrieval_limit": FILES_HISTORY_LIMIT}
 
-    # Save the final configuration to BOTH local and global paths
     save_success = True
     try: write_json(local_config_path, final_config)
     except Exception as e: save_success = False; logger.error(f"Failed to save config to {local_config_path}: {e}")
     try: write_json(global_config_path, final_config)
     except Exception as e: save_success = False; logger.error(f"Failed to save config to {global_config_path}: {e}")
 
-    if save_success: console.display_message("INFO:", "\nFile Manager configuration saved.", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-    else: console.display_message("ERROR:", "\nFailed to save File Manager configuration.", console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+    if save_success: console.display_message("INFO:", get_text("config.info_saved"), console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT) # MODIFIED
+    else: console.display_message("ERROR:", get_text("config.error_save_failed"), console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
 
     return final_config
 
 # --- Tool Schemas ---
 class NoArgsSchema(BaseModel): pass
 class PathSchema(BaseModel):
-    path: str = Field(description="The absolute or relative path to the file or directory.")
+    path: str = Field(description=get_text("schemas.path.path_desc")) # MODIFIED
 class CreateSchema(BaseModel):
-    path: str = Field(description="The absolute or relative path for the new file or directory.")
-    content: Optional[str] = Field(None, description="Optional text content to write if creating a file.")
-    is_directory: bool = Field(False, description="Set to true if creating a directory, false (default) for a file.")
+    path: str = Field(description=get_text("schemas.create.path_desc")) # MODIFIED
+    content: Optional[str] = Field(None, description=get_text("schemas.create.content_desc")) # MODIFIED
+    is_directory: bool = Field(False, description=get_text("schemas.create.is_directory_desc")) # MODIFIED
 class EditSchemaSimple(BaseModel):
-    path: str = Field(description="The path to the file to edit.")
-    find_text: str = Field(description="The exact text content to find within the file.")
-    replace_text: str = Field(description="The text content to replace the 'find_text' with.")
-    summary: str = Field(description="A brief summary of the edit being performed.")
+    path: str = Field(description=get_text("schemas.edit_simple.path_desc")) # MODIFIED
+    find_text: str = Field(description=get_text("schemas.edit_simple.find_text_desc")) # MODIFIED
+    replace_text: str = Field(description=get_text("schemas.edit_simple.replace_text_desc")) # MODIFIED
+    summary: str = Field(description=get_text("schemas.edit_simple.summary_desc")) # MODIFIED
 class FromToSchema(BaseModel):
-    from_path: str = Field(description="The source path of the file or directory.")
-    to_path: str = Field(description="The destination path.")
+    from_path: str = Field(description=get_text("schemas.from_to.from_path_desc")) # MODIFIED
+    to_path: str = Field(description=get_text("schemas.from_to.to_path_desc")) # MODIFIED
 class RenameSchema(BaseModel):
-    path: str = Field(description="The current path of the file or directory to rename.")
-    new_name: str = Field(description="The desired new name for the file or directory (just the final component, not the full path).")
+    path: str = Field(description=get_text("schemas.rename.path_desc")) # MODIFIED
+    new_name: str = Field(description=get_text("schemas.rename.new_name_desc")) # MODIFIED
 class FindSchema(BaseModel):
-    query: str = Field(description="The filename or directory name pattern to search for.")
-    directory: Optional[str] = Field(None, description="Optional directory to start the search from (defaults to current working directory). Search includes subdirectories.")
+    query: str = Field(description=get_text("schemas.find.query_desc")) # MODIFIED
+    directory: Optional[str] = Field(None, description=get_text("schemas.find.directory_desc")) # MODIFIED
 
 # --- Tool Classes ---
 
 class FileManagerUsageGuideTool(BaseTool):
-    name: str = "file_manager_usage_guide"
-    description: str = "Displays usage instructions and context for the File Manager toolset."
+    name: str = get_text("tools.usage_guide.name") # MODIFIED
+    description: str = get_text("tools.usage_guide.description") # MODIFIED
     args_schema: Type[BaseModel] = NoArgsSchema
 
     def _run(self) -> str:
-        """Returns the usage instructions for the File Manager toolset."""
         logger.debug(f"FileManagerUsageGuideTool invoked.")
-        # Simply return the static prompt content
         return FILES_TOOLSET_PROMPT
 
     async def _arun(self) -> str: return await run_in_executor(None, self._run)
 
 class Create(BaseTool):
-    name: str = "create_file_or_dir"
-    description: str = "Creates a new file or directory at the specified path. Optionally writes content if creating a file."
+    name: str = get_text("tools.create.name") # MODIFIED
+    description: str = get_text("tools.create.description") # MODIFIED
     args_schema: Type[BaseModel] = CreateSchema
 
     def _run(self, path: str, content: Optional[str] = None, is_directory: bool = False) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
+        if not chat_id: return get_text("tools.create.error.no_chat") # MODIFIED
         target_path = Path(path).resolve()
 
         try:
             if target_path.exists():
-                return f"Error: Path already exists: {target_path}"
+                return get_text("tools.create.error.exists", path=str(target_path)) # MODIFIED
 
-            target_path.parent.mkdir(parents=True, exist_ok=True) # Ensure parent exists
+            target_path.parent.mkdir(parents=True, exist_ok=True)
 
             if is_directory:
                 if content:
-                    return f"Error: Cannot provide content when creating a directory: {target_path}"
+                    return get_text("tools.create.error.content_for_dir", path=str(target_path)) # MODIFIED
                 target_path.mkdir()
                 op_type = "directory"
                 log_data = {"operation": "create_dir", "path": str(target_path)}
@@ -194,67 +199,67 @@ class Create(BaseTool):
                 log_data = {"operation": "create_file", "path": str(target_path)}
 
             _log_history_event(chat_id, log_data)
-            return f"Successfully created {op_type}: {target_path}"
+            return get_text("tools.create.success", type=op_type, path=str(target_path)) # MODIFIED
 
         except Exception as e:
             logger.error(f"Error creating path {target_path}: {e}", exc_info=True)
-            return f"Error creating path {target_path}: {e}"
+            return get_text("tools.create.error.generic", path=str(target_path), error=e) # MODIFIED
 
     async def _arun(self, path: str, content: Optional[str] = None, is_directory: bool = False) -> str:
         return await run_in_executor(None, self._run, path, content, is_directory)
 
 class Read(BaseTool):
-    name: str = "read_file_content"
-    description: str = "Reads the content of a specified file as text."
+    name: str = get_text("tools.read.name") # MODIFIED
+    description: str = get_text("tools.read.description") # MODIFIED
     args_schema: Type[BaseModel] = PathSchema
 
     def _run(self, path: str) -> str:
         target_path = Path(path).resolve()
-        max_len = 4000 # Limit output size
+        max_len = 4000
 
         try:
             if not target_path.is_file():
-                return f"Error: Path is not a file or does not exist: {target_path}"
+                return get_text("tools.read.error.not_file", path=str(target_path)) # MODIFIED
 
             content = target_path.read_text(encoding='utf-8', errors='replace')
-            display_content = (content[:max_len] + "\n... (truncated)") if len(content) > max_len else content
-            return f"Content of {target_path}:\n---\n{display_content}\n---"
+            truncated_suffix = get_text("tools.read.truncated_suffix") # MODIFIED
+            display_content = (content[:max_len] + truncated_suffix) if len(content) > max_len else content
+            return get_text("tools.read.success", path=str(target_path), content=display_content) # MODIFIED
 
         except FileNotFoundError:
-            return f"Error: File not found: {target_path}"
+            return get_text("tools.read.error.not_found", path=str(target_path)) # MODIFIED
         except Exception as e:
             logger.error(f"Error reading file {target_path}: {e}", exc_info=True)
-            return f"Error reading file {target_path}: {e}"
+            return get_text("tools.read.error.generic", path=str(target_path), error=e) # MODIFIED
 
     async def _arun(self, path: str) -> str: return await run_in_executor(None, self._run, path)
 
 class Delete(BaseTool):
-    name: str = "delete_file_or_dir"
-    description: str = "Deletes a specified file or directory. Requires user confirmation."
+    name: str = get_text("tools.delete.name") # MODIFIED
+    description: str = get_text("tools.delete.description") # MODIFIED
     args_schema: Type[BaseModel] = PathSchema
     requires_confirmation: bool = True
 
     def _run(self, path: str, confirmed_input: Optional[str] = None) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
-        target_path_str = path # Keep original path string for prompt
+        if not chat_id: return get_text("tools.delete.error.no_chat") # MODIFIED
+        target_path_str = path
 
         if confirmed_input is None:
             logger.debug(f"Requesting confirmation to delete: {target_path_str}")
             raise PromptNeededError(
                 tool_name=self.name,
                 proposed_args={"path": target_path_str},
-                edit_key="path" # User confirms/edits the path
+                edit_key="path"
             )
         else:
-            # User confirmed, use the potentially edited path
             final_path_str = confirmed_input
             target_path = Path(final_path_str).resolve()
             logger.info(f"Executing confirmed delete: {target_path}")
 
             try:
                 if not target_path.exists():
-                    return f"Error: Path does not exist: {target_path}"
+                    return get_text("tools.delete.error.not_exists", path=str(target_path)) # MODIFIED
 
                 log_data = {"path": str(target_path)}
                 if target_path.is_dir():
@@ -267,103 +272,94 @@ class Delete(BaseTool):
                     log_data["operation"] = "delete_file"
 
                 _log_history_event(chat_id, log_data)
-                return f"Successfully deleted {op_type}: {target_path}"
+                return get_text("tools.delete.success", type=op_type, path=str(target_path)) # MODIFIED
 
             except Exception as e:
                 logger.error(f"Error deleting path {target_path}: {e}", exc_info=True)
-                return f"Error deleting path {target_path}: {e}"
+                return get_text("tools.delete.error.generic", path=str(target_path), error=e) # MODIFIED
 
     async def _arun(self, path: str, confirmed_input: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, path, confirmed_input)
 
 class Edit(BaseTool):
-    name: str = "edit_file"
-    description: str = "Edits a file by replacing occurrences of 'find_text' with 'replace_text'. Creates a backup first. Requires user confirmation of the edit summary and target file."
+    name: str = get_text("tools.edit.name") # MODIFIED
+    description: str = get_text("tools.edit.description") # MODIFIED
     args_schema: Type[BaseModel] = EditSchemaSimple
     requires_confirmation: bool = True
 
     def _run(self, path: str, find_text: str, replace_text: str, summary: str, confirmed_input: Optional[str] = None) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
+        if not chat_id: return get_text("tools.edit.error.no_chat") # MODIFIED
         target_path = Path(path).resolve()
 
         if confirmed_input is None:
             logger.debug(f"Requesting confirmation to edit '{target_path}' with summary: {summary}")
-            # We ask the user to confirm the summary (intent) for the given path.
             raise PromptNeededError(
                 tool_name=self.name,
-                # Provide all original args for context, even though only summary is the edit_key
                 proposed_args={"path": path, "find_text": find_text, "replace_text": replace_text, "summary": summary},
-                edit_key="summary" # User confirms/edits the summary
+                edit_key="summary"
             )
         else:
-            # User confirmed, use the potentially edited summary and original path/texts
             final_summary = confirmed_input
             logger.info(f"Executing confirmed edit on '{target_path}' with summary: {final_summary}")
 
             try:
                 if not target_path.is_file():
-                    return f"Error: Path is not a file or does not exist: {target_path}"
+                    return get_text("tools.edit.error.not_file", path=str(target_path)) # MODIFIED
 
-                # Create backup
                 timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
                 backup_path = target_path.with_suffix(f"{target_path.suffix}.bak.{timestamp}")
-                shutil.copy2(target_path, backup_path) # copy2 preserves metadata
+                shutil.copy2(target_path, backup_path)
                 logger.info(f"Created backup: {backup_path}")
 
-                # Read, replace, write
                 content = target_path.read_text(encoding='utf-8', errors='replace')
                 new_content = content.replace(find_text, replace_text)
 
                 if new_content == content:
-                     # Clean up backup if no changes were made
                      try: backup_path.unlink()
-                     except OSError: pass # Ignore if backup deletion fails
-                     return f"Edit completed on {target_path}. No changes made (find_text not found?). Original file untouched. No backup created."
+                     except OSError: pass
+                     return get_text("tools.edit.info_no_change", path=str(target_path)) # MODIFIED
 
                 target_path.write_text(new_content, encoding='utf-8')
 
-                # Log success
                 log_data = {
                     "operation": "edit",
                     "path": str(target_path),
                     "backup_path": str(backup_path),
                     "summary": final_summary,
-                    "find": find_text, # Log find/replace for audit? Maybe too verbose? Optional.
+                    "find": find_text,
                     "replace": replace_text
                 }
                 _log_history_event(chat_id, log_data)
 
-                return f"Successfully edited {target_path}.\nSummary: {final_summary}\nBackup created at: {backup_path}"
+                return get_text("tools.edit.success", path=str(target_path), summary=final_summary, backup_path=str(backup_path)) # MODIFIED
 
             except Exception as e:
                 logger.error(f"Error editing file {target_path}: {e}", exc_info=True)
-                # Attempt to clean up backup on error? Maybe not, leave it for inspection.
-                return f"Error editing file {target_path}: {e}"
+                return get_text("tools.edit.error.generic", path=str(target_path), error=e) # MODIFIED
 
     async def _arun(self, path: str, find_text: str, replace_text: str, summary: str, confirmed_input: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, path, find_text, replace_text, summary, confirmed_input)
 
 class Copy(BaseTool):
-    name: str = "copy_file_or_dir"
-    description: str = "Copies a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path."
+    name: str = get_text("tools.copy.name") # MODIFIED
+    description: str = get_text("tools.copy.description") # MODIFIED
     args_schema: Type[BaseModel] = FromToSchema
     requires_confirmation: bool = True
 
     def _run(self, from_path: str, to_path: str, confirmed_input: Optional[str] = None) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
-        source_path_str = from_path # Keep original for prompt
+        if not chat_id: return get_text("tools.copy.error.no_chat") # MODIFIED
+        source_path_str = from_path
 
         if confirmed_input is None:
             logger.debug(f"Requesting confirmation to copy from '{from_path}' to '{to_path}'")
             raise PromptNeededError(
                 tool_name=self.name,
                 proposed_args={"from_path": from_path, "to_path": to_path},
-                edit_key="from_path" # User confirms the source
+                edit_key="from_path"
             )
         else:
-            # User confirmed source, use potentially edited source and original destination
             final_from_str = confirmed_input
             final_to_str = to_path
             source_path = Path(final_from_str).resolve()
@@ -372,41 +368,41 @@ class Copy(BaseTool):
 
             try:
                 if not source_path.exists():
-                    return f"Error: Source path does not exist: {source_path}"
+                    return get_text("tools.copy.error.source_not_exists", path=str(source_path)) # MODIFIED
                 if dest_path.exists():
-                    return f"Error: Destination path already exists: {dest_path}. Overwriting not supported."
+                    return get_text("tools.copy.error.dest_exists", path=str(dest_path)) # MODIFIED
 
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
 
                 log_data = {"from_path": str(source_path), "to_path": str(dest_path)}
                 if source_path.is_dir():
-                    shutil.copytree(source_path, dest_path, dirs_exist_ok=False) # No overwrite
+                    shutil.copytree(source_path, dest_path, dirs_exist_ok=False)
                     op_type = "directory"
                     log_data["operation"] = "copy_dir"
                 else:
-                    shutil.copy2(source_path, dest_path) # copy2 preserves metadata
+                    shutil.copy2(source_path, dest_path)
                     op_type = "file"
                     log_data["operation"] = "copy_file"
 
                 _log_history_event(chat_id, log_data)
-                return f"Successfully copied {op_type} from {source_path} to {dest_path}"
+                return get_text("tools.copy.success", type=op_type, from_path=str(source_path), to_path=str(dest_path)) # MODIFIED
 
             except Exception as e:
                 logger.error(f"Error copying {source_path} to {dest_path}: {e}", exc_info=True)
-                return f"Error copying {source_path} to {dest_path}: {e}"
+                return get_text("tools.copy.error.generic", from_path=str(source_path), to_path=str(dest_path), error=e) # MODIFIED
 
     async def _arun(self, from_path: str, to_path: str, confirmed_input: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, from_path, to_path, confirmed_input)
 
 class Move(BaseTool):
-    name: str = "move_file_or_dir"
-    description: str = "Moves (renames) a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path."
+    name: str = get_text("tools.move.name") # MODIFIED
+    description: str = get_text("tools.move.description") # MODIFIED
     args_schema: Type[BaseModel] = FromToSchema
     requires_confirmation: bool = True
 
     def _run(self, from_path: str, to_path: str, confirmed_input: Optional[str] = None) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
+        if not chat_id: return get_text("tools.move.error.no_chat") # MODIFIED
         source_path_str = from_path
 
         if confirmed_input is None:
@@ -414,10 +410,9 @@ class Move(BaseTool):
             raise PromptNeededError(
                 tool_name=self.name,
                 proposed_args={"from_path": from_path, "to_path": to_path},
-                edit_key="from_path" # User confirms the source
+                edit_key="from_path"
             )
         else:
-            # User confirmed source, use potentially edited source and original destination
             final_from_str = confirmed_input
             final_to_str = to_path
             source_path = Path(final_from_str).resolve()
@@ -426,67 +421,63 @@ class Move(BaseTool):
 
             try:
                 if not source_path.exists():
-                    return f"Error: Source path does not exist: {source_path}"
+                    return get_text("tools.move.error.source_not_exists", path=str(source_path)) # MODIFIED
                 if dest_path.exists():
-                    return f"Error: Destination path already exists: {dest_path}. Overwriting not supported."
+                    return get_text("tools.move.error.dest_exists", path=str(dest_path)) # MODIFIED
 
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-                shutil.move(str(source_path), str(dest_path)) # shutil.move handles files/dirs
+                shutil.move(str(source_path), str(dest_path))
 
                 log_data = {
-                    "operation": "move", # General 'move' covers rename across/within dirs
+                    "operation": "move",
                     "from_path": str(source_path),
                     "to_path": str(dest_path)
                  }
                 _log_history_event(chat_id, log_data)
-                return f"Successfully moved {source_path} to {dest_path}"
+                return get_text("tools.move.success", from_path=str(source_path), to_path=str(dest_path)) # MODIFIED
 
             except Exception as e:
                 logger.error(f"Error moving {source_path} to {dest_path}: {e}", exc_info=True)
-                return f"Error moving {source_path} to {dest_path}: {e}"
+                return get_text("tools.move.error.generic", from_path=str(source_path), to_path=str(dest_path), error=e) # MODIFIED
 
     async def _arun(self, from_path: str, to_path: str, confirmed_input: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, from_path, to_path, confirmed_input)
 
-
 class Rename(BaseTool):
-    name: str = "rename_file_or_dir"
-    description: str = "Renames a file or directory within the same parent directory. Requires user confirmation of the new name."
+    name: str = get_text("tools.rename.name") # MODIFIED
+    description: str = get_text("tools.rename.description") # MODIFIED
     args_schema: Type[BaseModel] = RenameSchema
     requires_confirmation: bool = True
 
     def _run(self, path: str, new_name: str, confirmed_input: Optional[str] = None) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
+        if not chat_id: return get_text("tools.rename.error.no_chat") # MODIFIED
         original_path = Path(path).resolve()
-        original_new_name = new_name # Keep original for prompt
+        original_new_name = new_name
 
         if confirmed_input is None:
-             # Validate proposed new_name early
              if os.path.sep in new_name or (os.altsep and os.altsep in new_name):
-                  return f"Error: 'new_name' ({new_name}) cannot contain path separators. Use 'move_file_or_dir' to move between directories."
+                  return get_text("tools.rename.error.invalid_new_name", new_name=new_name) # MODIFIED
              logger.debug(f"Requesting confirmation to rename '{original_path}' to '{new_name}'")
              raise PromptNeededError(
                  tool_name=self.name,
                  proposed_args={"path": path, "new_name": new_name},
-                 edit_key="new_name" # User confirms the new name part
+                 edit_key="new_name"
              )
         else:
-            # User confirmed, use original path and potentially edited new_name
             final_new_name = confirmed_input.strip()
-            if not final_new_name: return "Error: Confirmed new name cannot be empty."
+            if not final_new_name: return get_text("tools.rename.error.empty_new_name") # MODIFIED
             if os.path.sep in final_new_name or (os.altsep and os.altsep in final_new_name):
-                 return f"Error: Confirmed 'new_name' ({final_new_name}) cannot contain path separators."
+                 return get_text("tools.rename.error.invalid_new_name", new_name=final_new_name) # MODIFIED
 
             logger.info(f"Executing confirmed rename of '{original_path}' to '{final_new_name}'")
             new_path = original_path.with_name(final_new_name)
 
             try:
                 if not original_path.exists():
-                    return f"Error: Original path does not exist: {original_path}"
+                    return get_text("tools.rename.error.path_not_exists", path=str(original_path)) # MODIFIED
                 if new_path.exists():
-                    return f"Error: Target path already exists: {new_path}"
+                    return get_text("tools.rename.error.target_exists", path=str(new_path)) # MODIFIED
 
                 original_path.rename(new_path)
 
@@ -496,114 +487,119 @@ class Rename(BaseTool):
                     "to_path": str(new_path)
                 }
                 _log_history_event(chat_id, log_data)
-                return f"Successfully renamed {original_path} to {new_path}"
+                return get_text("tools.rename.success", path=str(original_path), new_path=str(new_path)) # MODIFIED
 
             except Exception as e:
                 logger.error(f"Error renaming {original_path} to {new_path}: {e}", exc_info=True)
-                return f"Error renaming {original_path} to {new_path}: {e}"
+                return get_text("tools.rename.error.generic", path=str(original_path), new_path=str(new_path), error=e) # MODIFIED
 
     async def _arun(self, path: str, new_name: str, confirmed_input: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, path, new_name, confirmed_input)
 
-
 class Find(BaseTool):
-    name: str = "find_files"
-    description: str = "Searches for files or directories matching the query within a specified directory (or current directory) and its subdirectories."
+    name: str = get_text("tools.find.name") # MODIFIED
+    description: str = get_text("tools.find.description") # MODIFIED
     args_schema: Type[BaseModel] = FindSchema
 
     def _run(self, query: str, directory: Optional[str] = None) -> str:
         start_dir = Path(directory).resolve() if directory else Path.cwd()
         query_lower = query.lower()
         matches = []
-        limit = 50 # Limit number of results
+        limit = 50
+        start_dir_str = str(start_dir) # For use in get_text
 
         try:
             if not start_dir.is_dir():
-                return f"Error: Search directory does not exist or is not a directory: {start_dir}"
+                return get_text("tools.find.error.dir_not_found", directory=start_dir_str) # MODIFIED
 
-            logger.info(f"Searching for '{query}' in '{start_dir}'...")
-            for item in start_dir.rglob('*'): # Recursive glob
+            logger.info(f"Searching for '{query}' in '{start_dir_str}'...")
+            for item in start_dir.rglob('*'):
                 if query_lower in item.name.lower():
-                    matches.append(str(item.relative_to(start_dir))) # Show relative paths
+                    matches.append(str(item.relative_to(start_dir)))
                     if len(matches) >= limit:
                         break
 
             if not matches:
-                return f"No files or directories found matching '{query}' in {start_dir}."
+                return get_text("tools.find.info_no_matches", query=query, directory=start_dir_str) # MODIFIED
             else:
-                result_str = f"Found {len(matches)} match(es) for '{query}' in {start_dir}:\n"
-                result_str += "\n".join(f"- {m}" for m in matches)
+                matches_str = "\n".join(f"- {m}" for m in matches)
+                result_str = get_text("tools.find.success", count=len(matches), query=query, directory=start_dir_str, matches=matches_str) # MODIFIED
                 if len(matches) >= limit:
-                    result_str += "\n... (result limit reached)"
+                    result_str += get_text("tools.find.info_limit_reached") # MODIFIED
                 return result_str
 
         except PermissionError:
-             logger.warning(f"Permission denied during search in {start_dir}.")
-             # Return partial results if any found before error
+             logger.warning(f"Permission denied during search in {start_dir_str}.")
              if matches:
-                  return f"Found {len(matches)} match(es) before encountering permission error in {start_dir}:\n" + "\n".join(f"- {m}" for m in matches) + "\n(Search incomplete due to permissions)"
+                  matches_str = "\n".join(f"- {m}" for m in matches)
+                  return get_text("tools.find.warn_permission", count=len(matches), directory=start_dir_str, matches=matches_str) # MODIFIED
              else:
-                  return f"Error: Permission denied while searching in {start_dir}."
+                  return get_text("tools.find.error_permission", directory=start_dir_str) # MODIFIED
         except Exception as e:
-            logger.error(f"Error finding files matching '{query}' in {start_dir}: {e}", exc_info=True)
-            return f"Error finding files: {e}"
+            logger.error(f"Error finding files matching '{query}' in {start_dir_str}: {e}", exc_info=True)
+            return get_text("tools.find.error.generic", error=e) # MODIFIED
 
     async def _arun(self, query: str, directory: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, query, directory)
 
-
 class CheckExist(BaseTool):
-    name: str = "check_path_exists"
-    description: str = "Checks if a given file or directory path exists in the file system."
+    name: str = get_text("tools.check_exist.name") # MODIFIED
+    description: str = get_text("tools.check_exist.description") # MODIFIED
     args_schema: Type[BaseModel] = PathSchema
 
     def _run(self, path: str) -> str:
-        target_path = Path(path) # Don't resolve immediately, check exactly what user provided
+        target_path = Path(path)
         try:
             if target_path.exists():
                 type_str = "directory" if target_path.is_dir() else "file" if target_path.is_file() else "special file"
-                return f"Path exists: '{path}' (Type: {type_str})"
+                return get_text("tools.check_exist.success_exists", path=path, type=type_str) # MODIFIED
             else:
-                return f"Path does not exist: '{path}'"
-        except Exception as e: # Catch potential OS errors on checking invalid paths
+                return get_text("tools.check_exist.success_not_exists", path=path) # MODIFIED
+        except Exception as e:
             logger.error(f"Error checking existence of path '{path}': {e}", exc_info=True)
-            return f"Error checking existence of path '{path}': {e}"
+            return get_text("tools.check_exist.error.generic", path=path, error=e) # MODIFIED
 
     async def _arun(self, path: str) -> str: return await run_in_executor(None, self._run, path)
 
-
 class ShowHistory(BaseTool):
-    name: str = "show_file_change_history"
-    description: str = "Displays the recent history of file operations performed by this toolset in the current chat."
+    name: str = get_text("tools.history.name") # MODIFIED
+    description: str = get_text("tools.history.description") # MODIFIED
     args_schema: Type[BaseModel] = NoArgsSchema
 
     def _run(self) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
+        if not chat_id: return get_text("tools.history.error.no_chat") # MODIFIED
 
         try:
-            # Read history state for this chat
             state = _read_history_state(chat_id)
             history = state.get("history", [])
 
             if not history:
-                return "No file operations recorded in history for this chat."
+                return get_text("tools.history.info_empty") # MODIFIED
 
-            # Read global config to get retrieval limit
-            # Need to read the toolset's *own* config, not the main agent config
-            config_path = get_toolset_data_path(chat_id, toolset_id) # Check local first
-            tool_config = read_json(config_path, default_value=None)
-            if tool_config is None: # Fallback to global if local not found
-                 global_config_path = Path(f"data/toolsets/{toolset_id}.json") # Construct global path
-                 tool_config = read_json(global_config_path, default_value=toolset_config_defaults)
+            limit = FILES_HISTORY_LIMIT
+            try:
+                config_path = get_toolset_data_path(chat_id, toolset_id)
+                tool_config = read_json(config_path, default_value=None)
+                if tool_config is not None and "history_retrieval_limit" in tool_config:
+                     limit = int(tool_config["history_retrieval_limit"])
+                else:
+                    global_config_path = Path(f"data/toolsets/{toolset_id}.json")
+                    global_config = read_json(global_config_path, default_value=None)
+                    if global_config is not None and "history_retrieval_limit" in global_config:
+                         limit = int(global_config["history_retrieval_limit"])
 
-            limit = tool_config.get("history_retrieval_limit", toolset_config_defaults["history_retrieval_limit"])
+                if limit < 0: limit = 0
 
-            # Get the last 'limit' items
+            except (ValueError, TypeError, FileNotFoundError) as e:
+                logger.warning(f"Could not read/parse history limit from config for chat {chat_id}. Using default from settings ({FILES_HISTORY_LIMIT}). Error: {e}")
+
             recent_history = history[-limit:]
+            total_history = len(history)
+            actual_shown = len(recent_history)
 
-            output = f"Recent File Operations (Last {len(recent_history)} of {len(history)} total):\n"
-            for event in reversed(recent_history): # Show newest first
+            output = get_text("tools.history.header", count=actual_shown, total=total_history) # MODIFIED
+            for event in reversed(recent_history):
                 ts = event.get('timestamp', 'Timestamp missing')
                 op = event.get('operation', 'Unknown operation')
                 path = event.get('path')
@@ -613,12 +609,12 @@ class ShowHistory(BaseTool):
                 summary = event.get('summary')
 
                 ts_formatted = ""
-                try: # Format timestamp nicely
+                try:
                     ts_formatted = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone().strftime('%Y-%m-%d %H:%M:%S')
                 except: pass
 
-                line = f"- [{ts_formatted}] {op.upper()}"
-                if path: line += f": {path}"
+                line = get_text("tools.history.line_format", ts=ts_formatted, op=op.upper()) # MODIFIED
+                if path: line += f": {path}" # Keep details appended for now
                 if from_p: line += f": From {from_p}"
                 if to_p: line += f" To {to_p}"
                 if summary: line += f" (Summary: {summary})"
@@ -629,69 +625,60 @@ class ShowHistory(BaseTool):
 
         except Exception as e:
             logger.error(f"Error retrieving file history for chat {chat_id}: {e}", exc_info=True)
-            return f"Error retrieving file history: {e}"
+            return get_text("tools.history.error.generic", error=e) # MODIFIED
 
     async def _arun(self) -> str: return await run_in_executor(None, self._run)
 
-
 class Restore(BaseTool):
-    name: str = "restore_file_from_backup"
-    description: str = "Restores a file to the state saved in its most recent backup created by the 'edit_file' tool. Requires user confirmation."
+    name: str = get_text("tools.restore.name") # MODIFIED
+    description: str = get_text("tools.restore.description") # MODIFIED
     args_schema: Type[BaseModel] = PathSchema
     requires_confirmation: bool = True
 
     def _run(self, path: str, confirmed_input: Optional[str] = None) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
-        target_path_str = path # Keep original for prompt/logging
+        if not chat_id: return get_text("tools.restore.error.no_chat") # MODIFIED
+        target_path_str = path
 
         try:
-            # Find the latest backup for this path
             state = _read_history_state(chat_id)
             history = state.get("history", [])
             latest_backup_path_str = None
             latest_backup_ts = None
 
-            # Iterate backwards to find the most recent edit event for this path
             for event in reversed(history):
                 if event.get("operation") == "edit" and event.get("path") == target_path_str:
                     backup_path = event.get("backup_path")
                     event_ts = event.get("timestamp")
-                    if backup_path: # Found an edit event with a backup path
+                    if backup_path:
                         latest_backup_path_str = backup_path
                         latest_backup_ts = event_ts
-                        break # Stop searching
+                        break
 
             if not latest_backup_path_str:
-                return f"Error: No backup found in history for file: {target_path_str}"
+                return get_text("tools.restore.error.no_backup_history", path=target_path_str) # MODIFIED
 
             backup_path = Path(latest_backup_path_str)
             if not backup_path.exists():
-                return f"Error: Backup file recorded in history does not exist: {backup_path}"
+                return get_text("tools.restore.error.backup_missing", backup_path=latest_backup_path_str) # MODIFIED
 
-            # --- Confirmation ---
             if confirmed_input is None:
                 logger.debug(f"Requesting confirmation to restore '{target_path_str}' from backup '{backup_path}' (created around {latest_backup_ts})")
-                # Use the path as the edit key, but rely on description/prompt context
                 raise PromptNeededError(
                     tool_name=self.name,
                     proposed_args={"path": target_path_str},
                     edit_key="path",
-                    prompt_suffix=f"(Confirm restore from backup: {backup_path.name}) > "
+                    prompt_suffix=get_text("tools.restore.prompt_suffix", backup_name=backup_path.name) # MODIFIED
                 )
             else:
-                # User confirmed, use the potentially edited path
                 final_path_str = confirmed_input
                 target_path = Path(final_path_str).resolve()
                 logger.info(f"Executing confirmed restore of '{target_path}' from '{backup_path}'")
 
-                if not target_path.is_file():
-                     # Check if target exists *after* confirmation, maybe user deleted it?
-                     if target_path.exists():
-                          return f"Error: Target path exists but is not a file: {target_path}"
-                     # If target doesn't exist, that's fine, restore will create it
+                if target_path.exists() and not target_path.is_file():
+                     return get_text("tools.restore.error.target_not_file", path=str(target_path)) # MODIFIED
 
-                shutil.copy2(backup_path, target_path) # Restore by copying backup over
+                shutil.copy2(backup_path, target_path)
 
                 log_data = {
                     "operation": "restore",
@@ -699,28 +686,26 @@ class Restore(BaseTool):
                     "backup_path": str(backup_path)
                 }
                 _log_history_event(chat_id, log_data)
-                return f"Successfully restored {target_path} from backup {backup_path.name}"
+                return get_text("tools.restore.success", path=str(target_path), backup_name=backup_path.name) # MODIFIED
 
         except Exception as e:
             logger.error(f"Error restoring file {target_path_str}: {e}", exc_info=True)
-            return f"Error restoring file {target_path_str}: {e}"
+            return get_text("tools.restore.error.generic", path=target_path_str, error=e) # MODIFIED
 
     async def _arun(self, path: str, confirmed_input: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, path, confirmed_input)
 
-
 class FinalizeChanges(BaseTool):
-    name: str = "finalize_file_changes"
-    description: str = "Deletes all backup files created by this toolset in the current chat session."
+    name: str = get_text("tools.finalize.name") # MODIFIED
+    description: str = get_text("tools.finalize.description") # MODIFIED
     args_schema: Type[BaseModel] = NoArgsSchema
     requires_confirmation: bool = True
 
     def _run(self, confirmed_input: Optional[str] = None) -> str:
         chat_id = get_current_chat()
-        if not chat_id: return "Error: No active chat session."
+        if not chat_id: return get_text("tools.finalize.error.no_chat") # MODIFIED
 
         try:
-            # Find all unique backup paths
             state = _read_history_state(chat_id)
             history = state.get("history", [])
             backup_paths_to_delete = set()
@@ -736,22 +721,20 @@ class FinalizeChanges(BaseTool):
             num_backups = len(backup_paths_to_delete)
 
             if num_backups == 0:
-                return "No backup files found to delete."
+                return get_text("tools.finalize.info_no_backups") # MODIFIED
 
-            # --- Confirmation ---
             if confirmed_input is None:
                 logger.debug(f"Requesting confirmation to delete {num_backups} backup files for chat {chat_id}.")
-                # Use a dummy edit key since we just need a yes/no
+                confirm_prompt = get_text("tools.finalize.prompt_confirm", count=num_backups) # MODIFIED
                 raise PromptNeededError(
                     tool_name=self.name,
-                    proposed_args={"confirm": f"Delete {num_backups} backup files?"}, # Show info in prompt
+                    proposed_args={"confirm": confirm_prompt}, # Show info in prompt
                     edit_key="confirm",
-                    prompt_suffix="(Type 'yes' to confirm) > "
+                    prompt_suffix=get_text("tools.finalize.prompt_suffix") # MODIFIED
                 )
             else:
-                # User confirmed (we expect 'yes' or similar based on prompt)
                 if confirmed_input.lower().strip() != 'yes':
-                    return "Finalization cancelled by user."
+                    return get_text("tools.finalize.info_cancel") # MODIFIED
 
                 logger.info(f"Executing confirmed finalization: Deleting {num_backups} backups for chat {chat_id}.")
                 deleted_count = 0
@@ -768,7 +751,6 @@ class FinalizeChanges(BaseTool):
                         logger.error(f"Error deleting backup {backup_path_str}: {e}")
                         errors.append(backup_path_str)
 
-                # Log finalization
                 log_data = {
                     "operation": "finalize",
                     "deleted_backups": deleted_count,
@@ -776,20 +758,17 @@ class FinalizeChanges(BaseTool):
                 }
                 _log_history_event(chat_id, log_data)
 
-                # Prepare result message
-                result_msg = f"Finalized file changes. Deleted {deleted_count} of {num_backups} backup files."
+                result_msg = get_text("tools.finalize.success", deleted_count=deleted_count, total_count=num_backups) # MODIFIED
                 if errors:
-                    result_msg += f"\nErrors occurred deleting: {', '.join(errors)}"
+                    result_msg += get_text("tools.finalize.warn_errors", errors=', '.join(errors)) # MODIFIED
                 return result_msg
 
         except Exception as e:
             logger.error(f"Error finalizing file changes for chat {chat_id}: {e}", exc_info=True)
-            return f"Error finalizing file changes: {e}"
+            return get_text("tools.finalize.error.generic", error=e) # MODIFIED
 
     async def _arun(self, confirmed_input: Optional[str] = None) -> str:
-        # Need to pass the confirmed input correctly
         return await run_in_executor(None, self._run, confirmed_input)
-
 
 # --- Instantiate Tools ---
 file_manager_usage_guide_tool = FileManagerUsageGuideTool()
@@ -808,7 +787,7 @@ finalize_tool = FinalizeChanges()
 
 # --- Define Toolset Structure ---
 toolset_tools: List[BaseTool] = [
-    file_manager_usage_guide_tool, # Added
+    file_manager_usage_guide_tool,
     create_tool,
     read_tool,
     delete_tool,

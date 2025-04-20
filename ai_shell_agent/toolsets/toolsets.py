@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from langchain_core.tools import BaseTool
 from pathlib import Path # Keep Path import
 
-from .. import logger, ROOT_DIR # Use relative import for logger/ROOT_DIR
+from .. import logger
+from ..paths import ROOT_DIR # Removed console_io import
 from ..tool_registry import get_tool # Import get_tool for validation
 
 TOOLSETS_DIR = ROOT_DIR / 'ai_shell_agent' / 'toolsets'

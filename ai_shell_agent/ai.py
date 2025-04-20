@@ -15,9 +15,12 @@ env_path = get_install_dir() / '.env'
 load_dotenv(env_path)
 
 # Setup logger early
-from . import logger, ROOT_DIR # Remove console_io import
+from . import logger
+from .paths import ROOT_DIR # Import ROOT_DIR from paths.py
 # Import console manager
 from .console_manager import get_console_manager
+# Import text getter
+from .texts import get_text # <--- ADDED IMPORT
 
 # Get console manager instance
 console = get_console_manager()
@@ -28,7 +31,8 @@ from .config_manager import (
     ensure_api_key_for_current_model, get_api_key_for_model,
     set_api_key_for_model, # Added this back for CLI --set-api-key support
     get_model_provider, check_if_first_run,
-    set_default_enabled_toolsets # Keep for first run / select tools
+    set_default_enabled_toolsets, # Keep for first run / select tools
+    get_language, prompt_for_language_selection # Added language functions
 )
 
 # --- Import state manager functions with updated names ---
@@ -37,11 +41,16 @@ from .chat_state_manager import (
     save_session, get_current_chat, get_enabled_toolsets, update_enabled_toolsets,
     get_current_chat_title,
     # --- Import path helpers and JSON read needed here ---
-    get_toolset_data_path, get_toolset_global_config_path,
-    DEFAULT_ENABLED_TOOLSETS_NAMES
+    get_toolset_data_path, get_toolset_global_config_path
+    # REMOVED: DEFAULT_ENABLED_TOOLSETS_NAMES
 )
+
+# Import DEFAULT_ENABLED_TOOLSETS_NAMES from settings
+from .settings import DEFAULT_ENABLED_TOOLSETS_NAMES
+
 # --- Import utils for JSON reading ---
-from .utils import read_json as _read_json, read_dotenv, write_dotenv # Alias if preferred
+from .utils.env import read_dotenv, write_dotenv # Alias if preferred 
+from .utils.file_io import read_json, write_json # Keep these imports for file operations
 
 # --- Import chat manager AFTER state manager ---
 from .chat_manager import (
@@ -66,13 +75,27 @@ def first_time_setup():
         # Add log right before the console call
         logger.debug("Attempting to display 'Welcome...' message via console manager.")
         try:
-            console.display_message("INFO:", "Welcome to AI Shell Agent! Performing first-time setup.", 
+            console.display_message(get_text("common.labels.info"), get_text("setup.welcome"), # MODIFIED LABEL
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             logger.debug("Successfully displayed 'Welcome...' message.") # Log success after call
         except Exception as e:
             logger.error(f"Error calling console.display_message for Welcome: {e}", exc_info=True)
             # Decide how to handle this - maybe exit? For now, just log.
             # sys.exit(1) # Or perhaps raise
+
+        # --- Language Selection ---
+        logger.debug("Attempting language selection prompt.")
+        selected_lang = prompt_for_language_selection()
+        if not selected_lang:
+             # Handle case where user cancels language selection during first run
+             # TODO: Externalize this message in Phase 9.2
+             console.display_message(get_text("common.labels.warning"), "Language selection cancelled or failed. Defaulting to 'en'.",
+                                    console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+             # Ensure 'en' is set if selection failed
+             from .config_manager import set_language
+             set_language("en")
+        logger.debug(f"prompt_for_language_selection finished (selected: {selected_lang or 'None'}).")
+        # --- End Language Selection ---
 
         logger.debug("Attempting to call prompt_for_model_selection.")
         selected_model = prompt_for_model_selection() # This now uses console_manager internally
@@ -83,14 +106,14 @@ def first_time_setup():
         else:
             # Use console manager for critical error
             logger.critical("No model selected during first run. Exiting.")
-            console.display_message("ERROR:", "No model selected during first run. Exiting.", 
+            console.display_message(get_text("common.labels.error"), get_text("setup.errors.no_model_selected"), # MODIFIED LABEL
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             sys.exit(1)
 
         logger.debug("Attempting to call ensure_api_key.")
         if not ensure_api_key(): # ensure_api_key uses console_manager internally
             logger.critical("API Key not provided. Exiting.")
-            console.display_message("ERROR:", "API Key not provided. Exiting.", 
+            console.display_message(get_text("common.labels.error"), get_text("setup.errors.api_key_missing"), # MODIFIED LABEL
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             sys.exit(1)
         logger.debug("ensure_api_key successful.")
@@ -100,7 +123,7 @@ def first_time_setup():
         prompt_for_initial_toolsets() # This uses console_manager internally
         logger.debug("prompt_for_initial_toolsets finished.")
 
-        console.display_message("INFO:", "First-time setup complete.", 
+        console.display_message(get_text("common.labels.info"), get_text("setup.complete"), # MODIFIED LABEL
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         logger.debug("Displayed 'First-time setup complete.'")
     else:
@@ -113,24 +136,21 @@ def ensure_api_key() -> bool:
 def prompt_for_initial_toolsets():
     """Prompts user to select default enabled toolsets during first run."""
     # Combine introductory messages
-    intro_text = """
---- Select Default Enabled Toolsets ---
-These toolsets will be enabled by default when you create new chats.
-"""
-    console.display_message("SYSTEM:", intro_text.strip(), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT) 
+    intro_text = get_text("setup.toolsets.prompt_intro")
+    console.display_message(get_text("common.labels.system"), intro_text.strip(), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT) # MODIFIED LABEL
 
     from .toolsets.toolsets import get_registered_toolsets
     from .config_manager import set_default_enabled_toolsets
-    from .chat_state_manager import DEFAULT_ENABLED_TOOLSETS_NAMES
+    from .settings import DEFAULT_ENABLED_TOOLSETS_NAMES
 
     all_toolsets = get_registered_toolsets()
     if not all_toolsets:
-        console.display_message("WARNING:", "No toolsets found/registered.", 
+        console.display_message(get_text("common.labels.warning"), get_text("setup.toolsets.warn_none_found"), # MODIFIED LABEL
                               console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
         set_default_enabled_toolsets([])
         return
 
-    console.display_message("SYSTEM:", "\nAvailable Toolsets:", 
+    console.display_message(get_text("common.labels.system"), get_text("setup.toolsets.available_title"), # MODIFIED LABEL
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     options = {}
     idx = 1
@@ -153,23 +173,20 @@ These toolsets will be enabled by default when you create new chats.
 
     # Combine prompt instructions
     default_toolsets_str = ", ".join(DEFAULT_ENABLED_TOOLSETS_NAMES) if DEFAULT_ENABLED_TOOLSETS_NAMES else "None"
-    prompt_instructions = f"""
-Enter comma-separated numbers TO ENABLE by default (e.g., 1,3).
-To enable none by default, enter 'none'.
-Leave empty to use {default_toolsets_str} as defaults.
-"""
-    console.display_message("SYSTEM:", prompt_instructions.strip(), 
+    prompt_instructions = get_text("setup.toolsets.prompt_instructions", default_toolsets_str=default_toolsets_str)
+    console.display_message(get_text("common.labels.system"), prompt_instructions.strip(), # MODIFIED LABEL
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     while True:
         try:
             # Use console manager for prompting
-            choice_str = console.prompt_for_input("> ").strip()
+            choice_str = console.prompt_for_input(get_text("common.prompt_input_marker")).strip()
             selected_names = []
             if not choice_str:
                 # Use DEFAULT_ENABLED_TOOLSETS_NAMES when no selection is made
                 selected_names = list(DEFAULT_ENABLED_TOOLSETS_NAMES)
-                console.display_message("INFO:", f"No selection made. Using default toolsets: {', '.join(selected_names)}", 
+                toolset_list_str = ', '.join(selected_names) or 'None'
+                console.display_message(get_text("common.labels.info"), get_text("setup.toolsets.info_using_defaults", toolset_list=toolset_list_str), # MODIFIED LABEL
                                       console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             elif choice_str.lower() == 'none':
                 pass # selected_names remains empty
@@ -181,7 +198,7 @@ Leave empty to use {default_toolsets_str} as defaults.
                         selected_names.append(options[index])
                     else:
                         # Use console manager for error
-                        console.display_message("ERROR:", f"Invalid selection '{index}'. Please use numbers from 1 to {idx-1}.", 
+                        console.display_message(get_text("common.labels.error"), get_text("setup.toolsets.error_invalid_selection", index=index, max_idx=idx-1), # MODIFIED LABEL
                                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
                         valid_selection = False
                         break
@@ -189,23 +206,24 @@ Leave empty to use {default_toolsets_str} as defaults.
 
             # Remove duplicates and sort
             final_selection = sorted(list(set(selected_names)))
+            final_selection_str = ', '.join(final_selection) or 'None'
 
             # Save as global default
             set_default_enabled_toolsets(final_selection)
             # Use console manager for confirmation with updated wording
-            console.display_message("INFO:", f"Selected toolsets set to: {', '.join(final_selection) or 'None'}", 
+            console.display_message(get_text("common.labels.info"), get_text("setup.toolsets.info_selection_saved", toolset_list=final_selection_str), # MODIFIED LABEL
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             return
 
         except (EOFError, KeyboardInterrupt):
             # console.prompt_for_input handles the KeyboardInterrupt print
             default_toolsets_str = ", ".join(DEFAULT_ENABLED_TOOLSETS_NAMES) if DEFAULT_ENABLED_TOOLSETS_NAMES else "None"
-            console.display_message("WARNING:", f"Selection cancelled. Setting {default_toolsets_str} as default toolsets.", 
+            console.display_message(get_text("common.labels.warning"), get_text("setup.toolsets.warn_cancel", default_toolsets_str=default_toolsets_str), # MODIFIED LABEL
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             set_default_enabled_toolsets(list(DEFAULT_ENABLED_TOOLSETS_NAMES))
             return
         except Exception as e: # Catch other potential errors
-            console.display_message("ERROR:", f"An error occurred: {e}", 
+            console.display_message(get_text("common.labels.error"), get_text("setup.toolsets.error_generic", error=e), # MODIFIED LABEL
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             logger.error(f"Error in toolset prompt: {e}", exc_info=True)
             return # Exit for now
@@ -217,7 +235,7 @@ def select_enabled_toolsets(): # Renamed from select_tools_for_chat
 
     all_toolsets = get_registered_toolsets() # Dict[id, ToolsetMetadata]
     if not all_toolsets:
-        console.display_message("WARNING:", "No toolsets found/registered.",
+        console.display_message(get_text("common.labels.warning"), get_text("select_tools.warn_none_found"), # MODIFIED LABEL
                               console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
         return
 
@@ -225,70 +243,68 @@ def select_enabled_toolsets(): # Renamed from select_tools_for_chat
     is_global_context = chat_id is None
     if is_global_context:
         from .config_manager import get_default_enabled_toolsets # Import here
-        chat_title = "Global Defaults"
-        context_explanation = "These toolsets will be enabled by default when you create new chats."
+        chat_title = get_text("select_tools.context_global")
+        context_explanation = get_text("select_tools.explanation_global")
         current_enabled_names = get_default_enabled_toolsets()
-        save_confirmation_message = "Global default enabled toolsets set to:"
-        keep_message = "Kept current global default enabled toolsets:"
-        update_global_default = True # Always update global in this context
+        save_confirmation_message = get_text("select_tools.info_selection_saved") # key only
+        keep_message = get_text("select_tools.keep_message_global")
+        update_global_default = True
         update_chat_specific = False
     else:
-        chat_title = get_current_chat_title() # Use new function name
-        if not chat_title: # Should not happen if chat_id exists
-            console.display_message("ERROR:", f"Could not determine title for active chat {chat_id}.",
+        chat_title_from_state = get_current_chat_title()
+        if not chat_title_from_state:
+            console.display_message(get_text("common.labels.error"), get_text("select_tools.error_chat_title_missing", chat_id=chat_id), # MODIFIED LABEL
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             return
-        context_explanation = "Toolsets determine which capabilities the agent can potentially use in this chat."
-        current_enabled_names = get_enabled_toolsets(chat_id) # Pass chat_id
-        save_confirmation_message = "Enabled toolsets for this chat set to:"
-        keep_message = "Kept current enabled toolsets for this chat:"
-        update_global_default = True # Also update global when in chat context
+        chat_title = get_text("select_tools.context_chat", chat_title=chat_title_from_state)
+        context_explanation = get_text("select_tools.explanation_chat")
+        current_enabled_names = get_enabled_toolsets(chat_id)
+        save_confirmation_message = get_text("select_tools.info_selection_saved") # key only
+        keep_message = get_text("select_tools.keep_message_chat")
+        update_global_default = True
         update_chat_specific = True
 
     # --- Display Header ---
-    intro_text = f"""
---- Select Enabled Toolsets ({'Global Defaults' if is_global_context else f'Chat: {chat_title}'}) ---
-{context_explanation}
-"""
-    console.display_message("SYSTEM:", intro_text.strip(),
+    context_header_str = get_text("select_tools.context_global") if is_global_context else get_text("select_tools.context_chat", chat_title=get_current_chat_title())
+    intro_text = get_text("select_tools.prompt_header", context=context_header_str, explanation=context_explanation)
+    console.display_message(get_text("common.labels.system"), intro_text.strip(), # MODIFIED LABEL
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     # --- Display Toolset Options ---
-    console.display_message("SYSTEM:", "\nAvailable Toolsets:",
+    console.display_message(get_text("common.labels.system"), get_text("select_tools.available_title"), # MODIFIED LABEL
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     options = {}
     idx = 1
     from rich.text import Text # Import Text here
     toolset_lines = []
+    enabled_marker = get_text("select_tools.marker_enabled")
+    disabled_marker = get_text("select_tools.marker_disabled")
     # Sort toolsets by name for consistent display
     for ts_id, meta in sorted(all_toolsets.items(), key=lambda item: item[1].name):
-        marker = "[ENABLED]" if meta.name in current_enabled_names else "[DISABLED]"
+        marker = enabled_marker if meta.name in current_enabled_names else disabled_marker
         line_text = Text.assemble(
             "  ",
             (f"{idx}", console.STYLE_INPUT_OPTION), # Highlight number
-            f": {meta.name.ljust(25)} {marker} - {meta.description}" # Adjusted padding
+            f": {meta.name.ljust(25)} {marker} - {meta.description}"
         )
         toolset_lines.append(line_text)
-        options[str(idx)] = meta.name # Map index to display name
+        options[str(idx)] = meta.name
         idx += 1
     for line in toolset_lines:
-        console.console.print(line) # Use console.print directly for Text objects
+        console.console.print(line)
 
     # --- Prompt Instructions ---
-    prompt_instructions = """
-Enter comma-separated numbers TO ENABLE (e.g., 1,3).
-To disable all, enter 'none'.
-Leave empty to keep current settings.
-"""
-    console.display_message("SYSTEM:", prompt_instructions.strip(),
+    prompt_instructions = get_text("select_tools.prompt_instructions")
+    console.display_message(get_text("common.labels.system"), prompt_instructions.strip(), # MODIFIED LABEL
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     # --- Prompt Loop ---
     while True:
         try:
-            choice_str = console.prompt_for_input("> ").strip()
+            choice_str = console.prompt_for_input(get_text("common.prompt_input_marker")).strip()
             if not choice_str:
-                console.display_message("INFO:", f"{keep_message} {', '.join(sorted(current_enabled_names)) or 'None'}",
+                toolset_list_str = ', '.join(sorted(current_enabled_names)) or 'None'
+                console.display_message(get_text("common.labels.info"), get_text("select_tools.info_kept_settings", keep_message=keep_message, toolset_list=toolset_list_str), # MODIFIED LABEL
                                       console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                 return
 
@@ -302,7 +318,7 @@ Leave empty to keep current settings.
                     if index in options:
                         new_enabled_list_names.append(options[index])
                     else:
-                        console.display_message("ERROR:", f"Invalid selection '{index}'. Please use numbers from 1 to {idx-1}.",
+                        console.display_message(get_text("common.labels.error"), get_text("select_tools.error_invalid_selection", index=index, max_idx=idx-1), # MODIFIED LABEL
                                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
                         valid_selection = False
                         break
@@ -310,32 +326,31 @@ Leave empty to keep current settings.
 
             # Remove duplicates and sort
             final_selection = sorted(list(set(new_enabled_list_names)))
+            final_selection_str = ', '.join(final_selection) or 'None'
 
             # --- Update State ---
             if update_chat_specific:
-                update_enabled_toolsets(chat_id, final_selection) # Pass chat_id and list of names
-                console.display_message("INFO:", f"Selected toolsets set to: {', '.join(final_selection) or 'None'}",
+                update_enabled_toolsets(chat_id, final_selection)
+                console.display_message(get_text("common.labels.info"), get_text("select_tools.info_selection_saved", toolset_list=final_selection_str), # MODIFIED LABEL
                                       console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
 
             if update_global_default:
                 from .config_manager import set_default_enabled_toolsets # Import here
                 set_default_enabled_toolsets(final_selection)
-                # Only show the global update message if we weren't already in global context
                 if not is_global_context:
-                    console.display_message("INFO:", "Global defaults also updated.",
+                    console.display_message(get_text("common.labels.info"), get_text("select_tools.info_global_updated"), # MODIFIED LABEL
                                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-                elif update_chat_specific == False: # Explicitly show global confirmation when only global was updated
-                     console.display_message("INFO:", f"Selected toolsets set to: {', '.join(final_selection) or 'None'}",
+                elif update_chat_specific == False:
+                     console.display_message(get_text("common.labels.info"), get_text("select_tools.info_selection_saved", toolset_list=final_selection_str), # MODIFIED LABEL
                                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
 
-            # Only show essential information about when changes apply
             if update_chat_specific:
-                 console.display_message("INFO:", "Changes apply on next interaction.",
+                 console.display_message(get_text("common.labels.info"), get_text("select_tools.info_apply_next"), # MODIFIED LABEL
                                       console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             return
 
         except (EOFError, KeyboardInterrupt):
-            console.display_message("WARNING:", "\nSelection cancelled. No changes made.",
+            console.display_message(get_text("common.labels.warning"), get_text("select_tools.warn_cancel"), # MODIFIED LABEL
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             return
 
@@ -357,14 +372,14 @@ def configure_toolset_cli(toolset_name: str):
             break
 
     if not target_metadata or not target_toolset_id:
-        console.display_message("ERROR:", f"Toolset '{toolset_name}' not found.",
+        console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_not_found", toolset_name=toolset_name), # MODIFIED LABEL
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        console.display_message("SYSTEM:", "Available toolsets: " + ", ".join(get_toolset_names()),
+        console.display_message(get_text("common.labels.system"), get_text("configure_toolset.info_available", toolset_list=", ".join(get_toolset_names())), # MODIFIED LABEL
                               console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
         return
 
     if not target_metadata.configure_func:
-        console.display_message("INFO:", f"Toolset '{target_metadata.name}' does not require specific configuration.", # Changed to INFO
+        console.display_message(get_text("common.labels.info"), get_text("configure_toolset.info_not_configurable", toolset_name=target_metadata.name), # MODIFIED LABEL
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
 
@@ -374,93 +389,88 @@ def configure_toolset_cli(toolset_name: str):
 
     if is_global_context:
         chat_title = "Global Defaults"
-        local_config_path = None # Indicate global-only context
-        # Read global config to pass as "current" state for prompting consistency
-        current_config_for_prompting = _read_json(global_config_path, default_value=None)
-        context_info = f"""
---- Configuring Global Defaults for '{target_metadata.name}' ---
-(Applying settings to global default: {global_config_path})
-(Checking/Storing secrets in: {dotenv_path})
-"""
+        local_config_path = None
+        current_config_for_prompting = read_json(global_config_path, default_value=None)
+        context_info = get_text("configure_toolset.context_header_global",
+                                toolset_name=target_metadata.name,
+                                global_config_path=global_config_path,
+                                dotenv_path=dotenv_path)
     else: # Chat context
-        chat_title = get_current_chat_title()
-        if not chat_title: # Should not happen
-            console.display_message("ERROR:", f"Could not determine title for active chat {chat_id}.",
+        chat_title_from_state = get_current_chat_title()
+        if not chat_title_from_state:
+            console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_chat_title_missing", chat_id=chat_id), # MODIFIED LABEL
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             return
+        chat_title = chat_title_from_state
         local_config_path = get_toolset_data_path(chat_id, target_toolset_id)
-        current_config_for_prompting = _read_json(local_config_path, default_value=None) # Pass None default
-        context_info = f"""
---- Configuring '{target_metadata.name}' for Chat '{chat_title}' ---
-(Applying settings to chat config: {local_config_path})
-(Applying settings to global default: {global_config_path})
-(Checking/Storing secrets in: {dotenv_path})
-"""
+        current_config_for_prompting = read_json(local_config_path, default_value=None)
+        context_info = get_text("configure_toolset.context_header_chat",
+                                toolset_name=target_metadata.name,
+                                chat_title=chat_title,
+                                local_config_path=local_config_path,
+                                global_config_path=global_config_path,
+                                dotenv_path=dotenv_path)
 
     # --- Display Context ---
-    console.display_message("SYSTEM:", context_info.strip(),
+    console.display_message(get_text("common.labels.system"), context_info.strip(), # MODIFIED LABEL
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     # --- Execute Configuration ---
     try:
-        # Call the toolset's configure function with all necessary paths and current config
-        # Signature: configure_func(global_path, local_path, dotenv_path, current_local_config) -> Dict
-        # current_local_config here is the config read for prompting (either global or local)
         final_config = target_metadata.configure_func(
             global_config_path,
-            local_config_path,    # Will be None in global context
+            local_config_path,
             dotenv_path,
-            current_config_for_prompting # Pass the read config (or None)
+            current_config_for_prompting
         )
-        # Confirmation message should be printed within configure_func now.
-
     except (EOFError, KeyboardInterrupt):
          logger.warning(f"Configuration cancelled for {toolset_name} by user.")
-         console.display_message("WARNING:", "\nConfiguration cancelled.",
+         console.display_message(get_text("common.labels.warning"), get_text("configure_toolset.warn_cancel"), # MODIFIED LABEL
                                console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
     except Exception as e:
         logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
-        console.display_message("ERROR:", f"\nAn error occurred during configuration: {e}",
+        console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_generic", error=e), # MODIFIED LABEL
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
 
 # --- Main CLI Execution Logic ---
 def main():
     env_path = os.path.join(get_install_dir(), '.env'); load_dotenv(env_path)
-    parser = argparse.ArgumentParser(description="AI Shell Agent CLI", formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description=get_text("cli.parser.description"), formatter_class=argparse.RawTextHelpFormatter)
     # --- Argument Groups ---
-    model_group = parser.add_argument_group('Model Configuration')
-    chat_group = parser.add_argument_group('Chat Management')
-    tool_group = parser.add_argument_group('Toolset Configuration')
-    msg_group = parser.add_argument_group('Messaging & Interaction')
+    model_group = parser.add_argument_group(get_text("cli.groups.model"))
+    chat_group = parser.add_argument_group(get_text("cli.groups.chat"))
+    tool_group = parser.add_argument_group(get_text("cli.groups.toolset"))
+    msg_group = parser.add_argument_group(get_text("cli.groups.message"))
 
-    # --- Arguments ---
-    model_group.add_argument("-llm", "--model", help="Set LLM model")
-    model_group.add_argument("--select-model", action="store_true", help="Interactively select LLM model")
-    model_group.add_argument("-k", "--set-api-key", nargs="?", const=True, metavar="API_KEY", 
-                             help="Set API key for the main agent model") # Clarified help text
+    # --- Arguments (using get_text for help) ---
+    model_group.add_argument("-llm", "--model", help=get_text("cli.args.model.help"))
+    model_group.add_argument("--select-model", action="store_true", help=get_text("cli.args.select_model.help"))
+    model_group.add_argument("-k", "--set-api-key", nargs="?", const=True, metavar="API_KEY",
+                             help=get_text("cli.args.set_api_key.help"))
+    model_group.add_argument("--select-language", action="store_true", help="Interactively select application language") # Added Language Arg
 
-    chat_group.add_argument("-c", "--chat", metavar="TITLE", help="Create or load chat session")
-    chat_group.add_argument("-lc", "--load-chat", metavar="TITLE", help="Load chat (same as -c)")
-    chat_group.add_argument("-lsc", "--list-chats", action="store_true", help="List chats")
-    chat_group.add_argument("-rnc", "--rename-chat", nargs=2, metavar=("OLD", "NEW"), help="Rename chat")
-    chat_group.add_argument("-delc", "--delete-chat", metavar="TITLE", help="Delete chat")
-    chat_group.add_argument("--temp-flush", action="store_true", help="Remove temp chats")
-    chat_group.add_argument("-ct", "--current-chat-title", action="store_true", help="Print current chat title")
+    chat_group.add_argument("-c", "--chat", metavar="TITLE", help=get_text("cli.args.chat.help"))
+    chat_group.add_argument("-lc", "--load-chat", metavar="TITLE", help=get_text("cli.args.load_chat.help"))
+    chat_group.add_argument("-lsc", "--list-chats", action="store_true", help=get_text("cli.args.list_chats.help"))
+    chat_group.add_argument("-rnc", "--rename-chat", nargs=2, metavar=("OLD", "NEW"), help=get_text("cli.args.rename_chat.help"))
+    chat_group.add_argument("-delc", "--delete-chat", metavar="TITLE", help=get_text("cli.args.delete_chat.help"))
+    chat_group.add_argument("--temp-flush", action="store_true", help=get_text("cli.args.temp_flush.help"))
+    chat_group.add_argument("-ct", "--current-chat-title", action="store_true", help=get_text("cli.args.current_chat_title.help"))
 
-    tool_group.add_argument("--select-tools", action="store_true", 
-                           help="Interactively select enabled toolsets (chat-specific if active, otherwise global defaults)")
-    tool_group.add_argument("--list-toolsets", action="store_true", 
-                           help="List available toolsets and their enabled status (chat-specific if active, otherwise global defaults)")
-    tool_group.add_argument("--configure-toolset", metavar="TOOLSET_NAME", 
-                           help="Manually run configuration wizard for a toolset (chat-specific if active, otherwise global defaults)")
-    
-    msg_group.add_argument("-m", "--send-message", metavar='"MSG"', help="Send message")
-    msg_group.add_argument("-tc", "--temp-chat", metavar='"MSG"', help="Start temporary chat")
-    msg_group.add_argument("-e", "--edit", nargs="+", metavar="IDX|last \"MSG\"", help="Edit message & resend")
-    msg_group.add_argument("-lsm", "--list-messages", action="store_true", help="Print chat history")
-    msg_group.add_argument("-x", "--execute", metavar='"CMD"', help="Execute shell command directly")
+    tool_group.add_argument("--select-tools", action="store_true",
+                           help=get_text("cli.args.select_tools.help"))
+    tool_group.add_argument("--list-toolsets", action="store_true",
+                           help=get_text("cli.args.list_toolsets.help"))
+    tool_group.add_argument("--configure-toolset", metavar="TOOLSET_NAME",
+                           help=get_text("cli.args.configure_toolset.help"))
 
-    parser.add_argument("message", nargs="?", help="Send message (default action)")
+    msg_group.add_argument("-m", "--send-message", metavar='"MSG"', help=get_text("cli.args.send_message.help"))
+    msg_group.add_argument("-tc", "--temp-chat", metavar='"MSG"', help=get_text("cli.args.temp_chat.help"))
+    msg_group.add_argument("-e", "--edit", nargs="+", metavar="IDX|last \"MSG\"", help=get_text("cli.args.edit.help"))
+    msg_group.add_argument("-lsm", "--list-messages", action="store_true", help=get_text("cli.args.list_messages.help"))
+    msg_group.add_argument("-x", "--execute", metavar='"CMD"', help=get_text("cli.args.execute.help"))
+
+    parser.add_argument("message", nargs="?", help=get_text("cli.args.message.help"))
     args = parser.parse_args()
 
     # --- Execution Order ---
@@ -468,21 +478,23 @@ def main():
     if args.model:
         set_model(args.model)
         ensure_api_key()
-        console.display_message("INFO:", f"Model set to {get_current_model()}.", 
+        current_model = get_current_model()
+        console.display_message(get_text("common.labels.info"), get_text("cli.info.model_set", model_name=current_model), # MODIFIED LABEL
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.select_model:
         m = prompt_for_model_selection()
-        if m and m != get_current_model():
+        current_model = get_current_model()
+        if m and m != current_model:
             set_model(m)
             ensure_api_key()
-            console.display_message("INFO:", f"Model set to {get_current_model()}.", 
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_set", model_name=get_current_model()), # MODIFIED LABEL
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         elif m:
-            console.display_message("INFO:", f"Model remains {get_current_model()}.", 
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_unchanged", model_name=current_model), # MODIFIED LABEL
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         else:
-            console.display_message("INFO:", "Model selection cancelled.", 
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.model_select_cancel"), # MODIFIED LABEL
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
 
@@ -497,7 +509,7 @@ def main():
     # 4. Ensure API Key (Exit if missing)
     if not ensure_api_key(): # Only checks agent key now
         logger.critical("Main agent API Key missing.")
-        console.display_message("ERROR:", "Agent API Key missing. Set with --set-api-key.", 
+        console.display_message(get_text("common.labels.error"), get_text("cli.errors.api_key_missing"), # MODIFIED LABEL
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
         sys.exit(1)
 
@@ -522,18 +534,22 @@ def main():
     # 8. Chat Management
     if args.chat:
         chat_id = create_or_load_chat(args.chat) # Use new function name
-        if chat_id: console.display_message("INFO:", f"Switched to chat: '{args.chat}'.", 
+        if chat_id: console.display_message(get_text("common.labels.info"), get_text("cli.info.chat_switched", chat_title=args.chat), # MODIFIED LABEL
                                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.load_chat:
         chat_id = create_or_load_chat(args.load_chat) # Use new function name
-        if chat_id: console.display_message("INFO:", f"Switched to chat: '{args.load_chat}'.", 
+        if chat_id: console.display_message(get_text("common.labels.info"), get_text("cli.info.chat_loaded", chat_title=args.load_chat), # MODIFIED LABEL
                                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.current_chat_title:
         title = get_current_chat_title() # Use new function name
-        console.display_message("INFO:", f"Current chat: {title}" if title else "No active chat.", 
-                              console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        if title:
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.current_chat_is", chat_title=title), # MODIFIED LABEL
+                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        else:
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.no_active_chat"), # MODIFIED LABEL
+                                  console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
     if args.list_chats:
         get_chat_titles_list()
@@ -554,14 +570,14 @@ def main():
     # 9. Messaging / History
     if args.list_messages:
         if not active_chat_id:
-            console.display_message("ERROR:", "No active chat. Use -c <title> first.", 
+            console.display_message(get_text("common.labels.error"), get_text("cli.errors.no_active_chat_for_list"), # MODIFIED LABEL
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             return
         list_messages() # chat_manager will get chat_id using get_current_chat()
         return
     if args.edit:
         if not active_chat_id:
-            console.display_message("ERROR:", "No active chat. Use -c <title> first.", 
+            console.display_message(get_text("common.labels.error"), get_text("cli.errors.no_active_chat_for_edit"), # MODIFIED LABEL
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             return
         idx_str, msg_parts = args.edit[0], args.edit[1:]
@@ -571,7 +587,7 @@ def main():
             try:
                 idx = int(idx_str)
             except ValueError:
-                console.display_message("ERROR:", f"Invalid index '{idx_str}'. Must be integer or 'last'.", 
+                console.display_message(get_text("common.labels.error"), get_text("cli.errors.edit_invalid_index", index=idx_str), # MODIFIED LABEL
                                       console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
                 return
         edit_message(idx, new_msg) # chat_manager will get chat_id using get_current_chat()
@@ -582,7 +598,7 @@ def main():
     if msg_to_send:
         if not active_chat_id and not args.temp_chat:
             # If no active chat and not explicitly temp
-            console.display_message("INFO:", "No active chat. Starting temporary chat...", 
+            console.display_message(get_text("common.labels.info"), get_text("cli.info.starting_temp_chat"), # MODIFIED LABEL
                                   console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
             start_temp_chat(msg_to_send)
         elif active_chat_id:

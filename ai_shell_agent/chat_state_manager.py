@@ -13,13 +13,22 @@ from datetime import datetime, timezone
 import shutil # Import shutil for directory removal
 
 # Local imports
-from . import logger, DATA_DIR, CHATS_DIR, TOOLSETS_GLOBAL_CONFIG_DIR, ROOT_DIR # Added ROOT_DIR import
+from . import logger, DATA_DIR, CHATS_DIR, TOOLSETS_GLOBAL_CONFIG_DIR
+from .paths import ROOT_DIR
 # Import JSON utility functions from utils
-from .utils import read_json, write_json
+from .utils.file_io import read_json, write_json
 # Import the static system prompt (now using static prompt)
 from .prompts.prompts import SYSTEM_PROMPT
 # Import toolset registry functions to get available toolsets
 from .toolsets.toolsets import get_toolset_ids, get_toolset_names  # Added get_toolset_names
+# Import default enabled toolsets from settings
+from .settings import DEFAULT_ENABLED_TOOLSETS_NAMES
+# Import console manager and texts
+from .console_manager import get_console_manager # <--- ADDED IMPORT
+from .texts import get_text # <--- ADDED IMPORT
+
+# Get console manager instance
+console = get_console_manager() # <--- ADDED INSTANCE
 
 # --- Constants ---
 SESSION_FILE = Path(DATA_DIR) / "session.json"
@@ -29,10 +38,6 @@ MODEL_KEY = "agent_model" # Optional override for the agent model per chat
 ENABLED_TOOLSETS_KEY = "enabled_toolsets"
 TITLE_KEY = "title"
 CREATED_AT_KEY = "created_at"
-
-# --- Default Toolsets ---
-# --- Define default enabled toolsets (File Manager and Terminal) ---
-DEFAULT_ENABLED_TOOLSETS_NAMES = ["File Manager", "Terminal"]
 
 # Ensure directories exist
 os.makedirs(CHATS_DIR, exist_ok=True)
@@ -264,7 +269,7 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
         # --- Check for required secrets even if configured ---
         if target_metadata.required_secrets:
              logger.debug(f"Checking required secrets for already configured toolset '{toolset_name}'...")
-             from .utils import ensure_dotenv_key # Import locally
+             from .utils.env import ensure_dotenv_key # Import locally
              all_secrets_ok = True
              for key, desc in target_metadata.required_secrets.items():
                   if ensure_dotenv_key(dotenv_path, key, desc) is None:
@@ -293,7 +298,7 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
             # --- Check required secrets AFTER copying global default ---
             if target_metadata.required_secrets:
                  logger.debug(f"Checking required secrets for '{toolset_name}' after applying global default...")
-                 from .utils import ensure_dotenv_key
+                 from .utils.env import ensure_dotenv_key
                  all_secrets_ok = True
                  for key, desc in target_metadata.required_secrets.items():
                       if ensure_dotenv_key(dotenv_path, key, desc) is None:
@@ -318,7 +323,8 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
 
     # --- Run the configuration function ---
     # It handles prompting, secret checks (using ensure_dotenv_key), and saving to both paths.
-    print(f"\nNOTICE: Toolset '{toolset_name}' needs configuration for this chat (no valid local or global default was found).")
+    console.display_message(get_text("common.labels.info"), get_text("state.tool_config.notice_needs_config", toolset_name=toolset_name), 
+                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT) # MODIFIED
     logger.info(f"Running configuration function for '{toolset_name}' (ID: {target_id}) for chat {chat_id}.")
     try:
         # Call configure_func, passing paths and the potentially invalid local_config (or None)
@@ -334,12 +340,12 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
 
     except (EOFError, KeyboardInterrupt):
          logger.warning(f"Configuration cancelled by user for {toolset_name}. Toolset may not work correctly.")
-         print(f"\nConfiguration for '{toolset_name}' cancelled. It may not function correctly.")
-         # Should we create empty files? Assume configure_func might have partially created them or failed cleanly.
-         # We could write empty dicts here to prevent re-prompting immediately, but let's rely on the func for now.
+         console.display_message(get_text("common.labels.warning"), get_text("state.tool_config.warn_cancel", toolset_name=toolset_name),
+                                console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT) # MODIFIED
     except Exception as e:
          logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
-         print(f"\nError configuring '{toolset_name}': {e}. It may not function correctly.")
+         console.display_message(get_text("common.labels.error"), get_text("state.tool_config.error_failed", toolset_name=toolset_name, error=e),
+                                console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
 
 # --- Chat Creation/Management ---
 def create_or_load_chat(title: str) -> Optional[str]:
@@ -438,12 +444,14 @@ def rename_chat(old_title: str, new_title: str) -> bool:
     title_to_id = {v: k for k, v in chat_map.items()}
     if old_title not in title_to_id: 
         logger.error(f"Chat '{old_title}' not found.")
-        print(f"Error: Chat '{old_title}' not found.")
+        console.display_message(get_text("common.labels.error"), get_text("state.rename.error_old_not_found", old_title=old_title),
+                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
         return False
     chat_id = title_to_id[old_title]
     if new_title in title_to_id and title_to_id[new_title] != chat_id: 
         logger.error(f"Chat '{new_title}' already exists.")
-        print(f"Error: Chat '{new_title}' already exists.")
+        console.display_message(get_text("common.labels.error"), get_text("state.rename.error_new_exists", new_title=new_title),
+                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
         return False
     
     chat_map[chat_id] = new_title
@@ -458,7 +466,8 @@ def delete_chat(title: str) -> bool:
     title_to_id = {v: k for k, v in chat_map.items()}
     if title not in title_to_id: 
         logger.error(f"Chat '{title}' not found.")
-        print(f"Error: Chat '{title}' not found.")
+        console.display_message(get_text("common.labels.error"), get_text("state.delete.error_not_found", title=title),
+                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
         return False
     
     chat_id = title_to_id[title]
@@ -481,8 +490,8 @@ def delete_chat(title: str) -> bool:
         return True
     except Exception as e: 
         logger.error(f"Could not delete chat directory {chat_dir_path}: {e}", exc_info=True)
-        print(f"Error: Failed to delete chat '{title}' directory: {e}")
-        # We won't add the chat back to the map, as it might be in an inconsistent state
+        console.display_message(get_text("common.labels.error"), get_text("state.delete.error_failed", title=title, error=e),
+                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
         return False
 
 def get_chat_titles() -> Dict[str, str]: 

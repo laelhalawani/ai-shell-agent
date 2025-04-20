@@ -3,6 +3,8 @@
 Defines the tools and metadata for the Terminal toolset.
 """
 import subprocess
+import os
+import shutil
 from typing import Dict, List, Optional, Any, Union, Type
 from pathlib import Path
 
@@ -26,23 +28,17 @@ from ...chat_state_manager import (
     get_current_chat,
     check_and_configure_toolset
 )
-# Import console manager instead of console_io
-from ...console_manager import get_console_manager
-# Import the new custom exceptions
-from ...errors import PromptNeededError
-
-# Import the prompt content to be returned by the start tool
-from .prompts import TERMINAL_TOOLSET_PROMPT
-
-# Import utils for JSON I/O
-from ...utils import write_json as _write_json, read_json as _read_json
+from ...console_manager import get_console_manager # Import console manager
+from ...errors import PromptNeededError # Import the new custom exceptions
+from .prompts import TERMINAL_TOOLSET_PROMPT # Import the prompt content
+from ...utils.file_io import write_json, read_json # Import utils for JSON I/O
+from .texts import get_text # <--- ADDED IMPORT
 
 # --- Toolset Metadata ---
-toolset_name = "Terminal"
+toolset_name = get_text("toolset.name") # MODIFIED
 toolset_id = "terminal"
-toolset_description = "Provides tools to execute shell commands and Python code."
+toolset_description = get_text("toolset.description") # MODIFIED
 toolset_required_secrets: Dict[str, str] = {}
-toolset_config_defaults = {}
 
 # --- Get console manager instance ---
 console = get_console_manager()
@@ -50,177 +46,178 @@ console = get_console_manager()
 # --- configure_toolset ---
 def configure_toolset(
     global_config_path: Path,
-    local_config_path: Path,
+    local_config_path: Optional[Path],
     dotenv_path: Path,
     current_chat_config: Optional[Dict]
 ) -> Dict:
     """
     Configuration function for the Terminal toolset. Terminal currently needs
-    no specific configuration, so this writes empty config files to both paths
-    to mark it as configured.
+    no specific configuration.
     """
-    logger.info(f"Terminal toolset requires no specific configuration. Writing empty config to local: {local_config_path} and global: {global_config_path}")
-    final_config = {} # Empty config
-    save_success = True
-    try:
-        # Ensure directory exists before writing
-        local_config_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_json(local_config_path, final_config)
-        logger.debug(f"Wrote empty config for Terminal toolset to local path: {local_config_path}")
-    except Exception as e:
-         save_success = False
-         logger.error(f"Failed to write empty config for Terminal toolset to local path {local_config_path}: {e}")
+    final_config = {}
+    is_global_only = local_config_path is None
+    context_name = "Global Defaults" if is_global_only else "Current Chat"
+
+    logger.info(f"Configuring Terminal toolset ({context_name}). No user-configurable settings currently.")
+    console.display_message("INFO:", get_text("config.info_no_settings"), # MODIFIED
+                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+
+    save_success_global = True
+    save_success_local = True
 
     try:
-        # Ensure directory exists before writing
         global_config_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_json(global_config_path, final_config)
+        write_json(global_config_path, final_config)
         logger.debug(f"Wrote empty config for Terminal toolset to global path: {global_config_path}")
     except Exception as e:
-         save_success = False
+         save_success_global = False
          logger.error(f"Failed to write empty config for Terminal toolset to global path {global_config_path}: {e}")
 
-    if not save_success:
-        console.display_message("WARNING:", "Failed to write configuration files for Terminal toolset. Check logs.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+    if not is_global_only and local_config_path: # Check local_config_path exists
+        try:
+            local_config_path.parent.mkdir(parents=True, exist_ok=True)
+            write_json(local_config_path, final_config)
+            logger.debug(f"Wrote empty config for Terminal toolset to local path: {local_config_path}")
+        except Exception as e:
+             save_success_local = False
+             logger.error(f"Failed to write empty config for Terminal toolset to local path {local_config_path}: {e}")
+
+    if not save_success_global or not save_success_local:
+        console.display_message("WARNING:", get_text("config.warn_write_failed"), # MODIFIED
+                               console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
 
     return final_config
 
 # --- Tool Classes ---
 
-# Define schema for StartTerminalTool if needed (even if empty)
-class StartTerminalToolArgs(BaseModel):
-    pass
+class StartTerminalToolArgs(BaseModel): pass # Keep schema definition
 
 class TerminalUsageGuideTool(BaseTool):
-    name: str = "terminal_usage_guide"
-    description: str = "Displays usage instructions and context for the Terminal toolset."
-    args_schema: Type[BaseModel] = StartTerminalToolArgs # Keep schema name for now
+    name: str = get_text("tools.usage_guide.name") # MODIFIED
+    description: str = get_text("tools.usage_guide.description") # MODIFIED
+    args_schema: Type[BaseModel] = StartTerminalToolArgs
 
     def _run(self) -> str:
-        """Returns the usage instructions for the Terminal toolset."""
         logger.debug(f"TerminalUsageGuideTool invoked.")
-        # Simply return the static prompt content
         return TERMINAL_TOOLSET_PROMPT
 
     async def _arun(self) -> str:
         return self._run()
 
-# Define schema for TerminalTool_HITL
 class TerminalToolArgs(BaseModel):
-    cmd: str = Field(..., description="The command to execute in the terminal.")
+    cmd: str = Field(..., description=get_text("schemas.terminal.cmd_desc")) # MODIFIED
 
 class TerminalTool_HITL(BaseTool):
     """
     Tool for interacting with the system's shell with human-in-the-loop confirmation.
     """
-    name: str = "run_terminal_command"
-    description: str = (
-        "Use to run any command in the terminal and return the output."
-    )
-    args_schema: Type[BaseModel] = TerminalToolArgs # Use specific schema
-    requires_confirmation: bool = True # Mark this tool as requiring HITL
+    name: str = get_text("tools.terminal_hitl.name") # MODIFIED
+    description: str = get_text("tools.terminal_hitl.description") # MODIFIED
+    args_schema: Type[BaseModel] = TerminalToolArgs
+    requires_confirmation: bool = True
 
-    # Make cmd the first argument to match schema, add confirmed_input for HITL support
     def _run(self, command: str, confirmed_input: Optional[str] = None) -> str:
         """
         Run a command in a shell. Raises PromptNeededError if confirmation needed.
-        Executes directly if confirmed_input is provided.
         """
         cmd_to_execute = command.strip()
         if not cmd_to_execute:
-            return "Error: Empty command proposed."
+            return get_text("tools.terminal_hitl.error_empty_cmd") # MODIFIED
 
         if confirmed_input is None:
-            # First call: Raise error to request prompt from chat_manager loop
             logger.debug(f"TerminalTool: Raising PromptNeededError for cmd: '{cmd_to_execute}'")
-            # --- MODIFIED LINE ---
-            # console.display_message("WARNING:", "The AI wants to run a shell command:", 
-            #                        console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-            logger.debug("The AI wants to run a shell command.") # Changed to debug log
-            # --- END MODIFIED LINE ---
-            logger.debug("COMMAND:", cmd_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
+            logger.debug("The AI wants to run a shell command.")
+            # Display command for confirmation via logger/console handled by chat_manager now if needed
             raise PromptNeededError(
                 tool_name=self.name,
                 proposed_args={"command": cmd_to_execute},
                 edit_key="command"
             )
         else:
-            # Second call: Input has been confirmed by the user
-            final_command = confirmed_input.strip() # Use the confirmed input
+            final_command = confirmed_input.strip()
             if not final_command:
                 logger.warning("TerminalTool: Received empty confirmed input.")
-                return "Error: Confirmed command is empty."
+                return get_text("tools.terminal_hitl.error_empty_confirmed") # MODIFIED
 
             logger.info(f"Executing confirmed terminal command: {final_command}")
-            # --- Actual Execution Logic ---
             formatted_result = ""
+            details_parts = []
             try:
+                # Determine shell based on OS
+                shell_executable = None
+                shell_flag = True # Use shell=True by default
+                if os.name == 'nt': # Windows
+                    # Prefer powershell if available, fallback to cmd
+                    if shutil.which('powershell'):
+                        shell_executable = shutil.which('powershell')
+                    elif shutil.which('cmd'):
+                        shell_executable = shutil.which('cmd')
+                    # No need to set shell=False when executable is specified
+                elif os.name == 'posix': # Linux, macOS, etc.
+                    # Use default shell (usually bash or zsh)
+                     pass # shell=True is sufficient
+
                 result = subprocess.run(
                     final_command,
-                    shell=True,
+                    shell=shell_flag,
                     capture_output=True,
                     text=True,
                     encoding='utf-8',
                     errors='replace',
-                    timeout=300
+                    timeout=300,
+                    executable=shell_executable # Pass specific shell if found
                 )
-                # Format the result
-                output_parts = []
-                output_parts.append(f"Executed: `{final_command}`")
-                if result.returncode != 0: output_parts.append(f"Exit Code: {result.returncode}")
+
+                if result.returncode != 0:
+                     details_parts.append(get_text("tools.terminal_hitl.details.exit_code", code=result.returncode)) # MODIFIED
                 stdout = result.stdout.strip(); stderr = result.stderr.strip()
                 if stdout:
                     max_out_len = 2000
-                    display_stdout = (stdout[:max_out_len] + "\n... (truncated)") if len(stdout) > max_out_len else stdout
-                    output_parts.append(f"Output:\n---\n{display_stdout}\n---")
+                    trunc_marker = "\n... (truncated)" # Default truncation marker
+                    display_stdout = (stdout[:max_out_len] + trunc_marker) if len(stdout) > max_out_len else stdout
+                    details_parts.append(get_text("tools.terminal_hitl.details.stdout", output=display_stdout)) # MODIFIED
                 if stderr:
                     max_err_len = 1000
-                    display_stderr = (stderr[:max_err_len] + "\n... (truncated)") if len(stderr) > max_err_len else stderr
-                    output_parts.append(f"Errors/Warnings:\n---\n{display_stderr}\n---")
+                    trunc_marker = "\n... (truncated)" # Default truncation marker  
+                    display_stderr = (stderr[:max_err_len] + trunc_marker) if len(stderr) > max_err_len else stderr
+                    details_parts.append(get_text("tools.terminal_hitl.details.stderr", output=display_stderr)) # MODIFIED
                 if not stdout and not stderr:
-                    status_msg = "Command completed successfully with no output." if result.returncode == 0 else "Command failed with no output."
-                    output_parts.append(f"Status: {status_msg}")
+                    status_msg = get_text("tools.terminal_hitl.details.no_output_success") if result.returncode == 0 else get_text("tools.terminal_hitl.details.no_output_fail") # MODIFIED
+                    details_parts.append(status_msg)
 
-                formatted_result = "\n".join(output_parts)
+                formatted_result = get_text("tools.terminal_hitl.result_format", command=final_command, details="\n".join(details_parts)) # MODIFIED
 
             except subprocess.TimeoutExpired:
                  logger.error(f"Command '{final_command}' timed out.")
-                 formatted_result = f"Error: Command timed out after 300 seconds.\n(Attempted: `{final_command}`)"
+                 formatted_result = get_text("tools.terminal_hitl.error_timeout", command=final_command) # MODIFIED
             except FileNotFoundError:
                  logger.error(f"Error executing command '{final_command}': Command not found.")
-                 formatted_result = f"Error: Command not found: '{final_command.split()[0]}'. Ensure it's installed/in PATH.\n(Attempted: `{final_command}`)"
+                 # Try to get just the command name
+                 command_name = final_command.split()[0] if final_command else final_command
+                 formatted_result = get_text("tools.terminal_hitl.error_not_found", command_name=command_name, command=final_command) # MODIFIED
             except Exception as e:
                 logger.error(f"Error executing command '{final_command}': {e}", exc_info=True)
-                formatted_result = f"Error executing command: {str(e)}\n(Attempted: `{final_command}`)"
-            # --- End Execution Logic ---
+                formatted_result = get_text("tools.terminal_hitl.error_generic", error=str(e), command=final_command) # MODIFIED
 
-            # Return the result string (ConsoleManager will display it)
             return formatted_result
 
     async def _arun(self, cmd: str, confirmed_input: Optional[str] = None) -> str:
-        """
-        Async version of _run that delegates to the synchronous implementation
-        """
         return await run_in_executor(None, self._run, cmd, confirmed_input)
 
-# Define schema for PythonREPLTool_HITL
 class PythonREPLToolArgs(BaseModel):
-    query: str = Field(..., description="The Python code snippet to execute.")
+    query: str = Field(..., description=get_text("schemas.python.query_desc")) # MODIFIED
 
 class PythonREPLTool_HITL(BaseTool):
     """
     Human-in-the-loop wrapper for Python REPL execution.
     """
-    name: str = "python_repl"
-    description: str = (
-        "Evaluates Python code snippets in a REPL environment, use only when requested to run a script or automation."
-    )
-    args_schema: Type[BaseModel] = PythonREPLToolArgs # Use specific schema
+    name: str = get_text("tools.python_repl_hitl.name") # MODIFIED
+    description: str = get_text("tools.python_repl_hitl.description") # MODIFIED
+    args_schema: Type[BaseModel] = PythonREPLToolArgs
     python_repl: PythonREPL = Field(default_factory=_get_default_python_repl)
-    sanitize_input: bool = True # Keep sanitize option
-    requires_confirmation: bool = True # Mark this tool as requiring HITL
+    sanitize_input: bool = True
+    requires_confirmation: bool = True
 
-    # Make query the first argument to match schema, add confirmed_input for HITL support
     def _run(
         self,
         query: str,
@@ -228,64 +225,50 @@ class PythonREPLTool_HITL(BaseTool):
     ) -> str:
         """
         Evaluates Python code. Raises PromptNeededError if confirmation needed.
-        Executes directly if confirmed_input is provided.
         """
         code_to_execute = query
         if not code_to_execute:
-             return "Error: No Python code provided to execute."
+             return get_text("tools.python_repl_hitl.error_no_code") # MODIFIED
 
-        # Apply sanitization on the *initial* proposal
         if self.sanitize_input:
             original_code = code_to_execute
             code_to_execute = sanitize_input(code_to_execute)
-            # Log only if changed
             if original_code != code_to_execute:
                  logger.debug(f"Sanitized Python code: {code_to_execute}")
 
-
         if confirmed_input is None:
-            # First call: Raise error to request prompt
             logger.debug(f"PythonREPLTool: Raising PromptNeededError for query: '{code_to_execute[:50]}...'")
-            # --- MODIFIED LINE ---
-            # console.display_message("WARNING:", "The AI wants to run a Python code snippet:", 
-            #                        console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-            logger.debug("The AI wants to run a Python code snippet.") # Changed to debug log
-            # --- END MODIFIED LINE ---
-            console.display_message("CODE:", code_to_execute, console.STYLE_COMMAND_LABEL, console.STYLE_COMMAND_CONTENT)
+            logger.debug("The AI wants to run a Python code snippet.")
+            # Display code for confirmation via logger/console handled by chat_manager now
             raise PromptNeededError(
                 tool_name=self.name,
-                proposed_args={"query": code_to_execute}, # Pass potentially sanitized code
+                proposed_args={"query": code_to_execute},
                 edit_key="query",
-                prompt_suffix="(edit or confirm python code) > "
+                prompt_suffix=get_text("tools.python_repl_hitl.prompt_suffix") # MODIFIED
             )
         else:
-            # Second call: Input has been confirmed
-            final_query = confirmed_input # Use the raw confirmed input (user might bypass sanitization)
+            final_query = confirmed_input
             if not final_query.strip():
                  logger.warning("PythonREPLTool: Received empty confirmed input.")
-                 return "Error: Confirmed Python code is empty."
+                 return get_text("tools.python_repl_hitl.error_empty_confirmed") # MODIFIED
 
             logger.info(f"Executing confirmed Python code: {final_query[:100]}...")
-            # --- Actual Execution Logic ---
             formatted_result = ""
             try:
                 result = self.python_repl.run(final_query)
-                # Format result
                 max_res_len = 2000
                 result_str = str(result)
-                display_result = (result_str[:max_res_len] + "\n... (truncated)") if len(result_str) > max_res_len else result_str
-                formatted_result = f"Executed: `python_repl(query='''{final_query}''')`\nResult:\n---\n{display_result}\n---"
+                trunc_marker = "\n... (truncated)" # Default truncation marker
+                display_result = (result_str[:max_res_len] + trunc_marker) if len(result_str) > max_res_len else result_str
+                formatted_result = get_text("tools.python_repl_hitl.result_format", query=final_query, result=display_result) # MODIFIED
             except Exception as e:
                 logger.error(f"Error executing Python code '{final_query}': {e}", exc_info=True)
-                formatted_result = f"Error executing Python code:\n---\n{str(e)}\n---\n(Attempted Code:\n'''\n{final_query}\n'''\n)"
-            # --- End Execution Logic ---
+                formatted_result = get_text("tools.python_repl_hitl.error_generic", error=str(e), query=final_query) # MODIFIED
 
-            # Return the result string
             return formatted_result
 
     async def _arun(self, query: str, confirmed_input: Optional[str] = None) -> str:
         return await run_in_executor(None, self._run, query, confirmed_input)
-
 
 # --- Tool Instances ---
 terminal_usage_guide_tool = TerminalUsageGuideTool()
@@ -294,7 +277,7 @@ python_repl_tool = PythonREPLTool_HITL()
 
 # --- Toolset Definition ---
 toolset_tools: List[BaseTool] = [
-    terminal_usage_guide_tool, # Added
+    terminal_usage_guide_tool,
     terminal_tool,
     python_repl_tool,
 ]
@@ -303,49 +286,61 @@ toolset_tools: List[BaseTool] = [
 register_tools(toolset_tools)
 logger.debug(f"Terminal toolset tools registered: {[t.name for t in toolset_tools]}")
 
-# --- Direct Execution Helper (remains the same) ---
+# --- Direct Execution Helper ---
 class TerminalTool_Direct(BaseTool):
-    name: str = "_internal_direct_terminal" # Internal name
-    description: str = "Internal tool for direct command execution without HITL."
-    # Add args_schema for consistency, even if used internally
+    name: str = get_text("tools.direct_terminal.name") # MODIFIED
+    description: str = get_text("tools.direct_terminal.description") # MODIFIED
+
     class DirectArgs(BaseModel):
-        command: str = Field(...)
+        command: str = Field(..., description=get_text("schemas.direct_terminal.cmd_desc")) # MODIFIED
 
     args_schema: Type[BaseModel] = DirectArgs
 
     def _run(self, command: str) -> str:
         logger.info(f"Executing direct command internally: {command}")
+        output_parts = []
         try:
+            shell_executable = None
+            shell_flag = True
+            if os.name == 'nt':
+                if shutil.which('powershell'): shell_executable = shutil.which('powershell')
+                elif shutil.which('cmd'): shell_executable = shutil.which('cmd')
+            elif os.name == 'posix': pass
+
             result = subprocess.run(
                 command,
-                shell=True,
+                shell=shell_flag,
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=300 # Add timeout
+                timeout=300,
+                executable=shell_executable
             )
             stdout = result.stdout.strip()
             stderr = result.stderr.strip()
-            output = ""
-            if stdout:
-                output += f"Output:\n{stdout}\n"
-            if stderr:
-                output += f"Errors/Warnings:\n{stderr}\n"
-            if result.returncode != 0:
-                 output += f"Exit Code: {result.returncode}\n"
-            if not output.strip() and result.returncode == 0: # Check if essentially empty
-                output = "Command executed successfully with no output."
-            elif not output.strip() and result.returncode != 0:
-                 output = f"Command failed with no output. Exit Code: {result.returncode}"
 
-            return output.strip()
+            if stdout:
+                output_parts.append(get_text("tools.direct_terminal.result_details.stdout", output=stdout)) # MODIFIED
+            if stderr:
+                output_parts.append(get_text("tools.direct_terminal.result_details.stderr", output=stderr)) # MODIFIED
+            if result.returncode != 0:
+                 output_parts.append(get_text("tools.direct_terminal.result_details.exit_code", code=result.returncode)) # MODIFIED
+
+            if not output_parts: # Check if list is empty
+                 if result.returncode == 0:
+                      output_parts.append(get_text("tools.direct_terminal.result_details.no_output_success")) # MODIFIED
+                 else:
+                      output_parts.append(get_text("tools.direct_terminal.result_details.no_output_fail", code=result.returncode)) # MODIFIED
+
+            return "".join(output_parts).strip() # Join parts
+
         except subprocess.TimeoutExpired:
              logger.error(f"Direct execution timed out for '{command}'")
-             return f"Error: Command timed out after 300 seconds.\n(Attempted: `{command}`)"
+             return get_text("tools.direct_terminal.error_timeout", command=command) # MODIFIED
         except Exception as e:
             logger.error(f"Direct execution failed for '{command}': {e}", exc_info=True)
-            return f"Error executing command: {str(e)}"
+            return get_text("tools.direct_terminal.error_generic", error=str(e)) # MODIFIED
 
     async def _arun(self, command: str) -> str:
          return await run_in_executor(None, self._run, command)

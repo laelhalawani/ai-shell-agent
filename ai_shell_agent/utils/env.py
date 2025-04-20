@@ -1,63 +1,13 @@
 """
 Utility functions used across the AI Shell Agent.
+Focuses on .env file handling and other non-I/O utilities.
 """
 import os
-import json
-import uuid
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional # Added Dict, Optional
+from typing import Any, Dict, Optional
 
-from . import logger
-from .console_manager import get_console_manager # Replace console_io import
-
-# Get console manager instance
-console = get_console_manager()
-
-def read_json(file_path: Path, default_value=None) -> Any:
-    """Reads a JSON file or returns a default value if not found.
-
-    Args:
-        file_path: Path to the JSON file
-        default_value: Value to return if the file doesn't exist or is invalid
-
-    Returns:
-        The parsed JSON data or the default value
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        if not isinstance(e, FileNotFoundError):
-            logger.error(f"Error parsing JSON from {file_path}: {e}. Returning default.")
-        # Return a deep copy of the default value if it's mutable
-        if isinstance(default_value, (dict, list)):
-             return json.loads(json.dumps(default_value))
-        return default_value if default_value is not None else {}
-
-def write_json(file_path: Path, data: Any) -> None:
-    """Writes data to a JSON file, creating directories if needed.
-
-    Args:
-        file_path: Path to the JSON file
-        data: Data to write to the file
-    """
-    try:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path_str = f"{file_path}.tmp.{uuid.uuid4()}"
-        tmp_path = Path(tmp_path_str)
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-        # Use replace for atomic write on Unix-like systems, fallback needed for others?
-        # os.replace is generally cross-platform for files.
-        os.replace(tmp_path, file_path)
-    except Exception as e:
-        logger.error(f"Error writing JSON to {file_path}: {e}", exc_info=True)
-        if 'tmp_path' in locals() and tmp_path.exists():
-            try: tmp_path.unlink()
-            except Exception as rm_e: logger.error(f"Failed to remove temporary file {tmp_path}: {rm_e}")
-
-# --- NEW .env Utility Functions ---
+from .. import logger
 
 def read_dotenv(dotenv_path: Path) -> Dict[str, str]:
     """
@@ -83,20 +33,22 @@ def read_dotenv(dotenv_path: Path) -> Dict[str, str]:
 def write_dotenv(dotenv_path: Path, env_vars: Dict[str, str]) -> None:
     """
     Writes a dictionary of key-value pairs to a .env file.
-    Overwrites the file, ensuring proper formatting.
+    Overwrites the file, ensuring proper formatting. Uses atomic write.
     """
+    tmp_path = None # Initialize
     try:
         # Ensure parent directory exists
         dotenv_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Create temp file path
-        tmp_path_str = f"{dotenv_path}.tmp.{uuid.uuid4()}"
-        tmp_path = Path(tmp_path_str)
+        tmp_path_str = f"{dotenv_path.name}.tmp.{uuid.uuid4()}.env" # Need uuid here still
+        import uuid
+        tmp_path = dotenv_path.parent / tmp_path_str
 
         with open(tmp_path, 'w', encoding='utf-8') as f:
             for key, value in sorted(env_vars.items()): # Write sorted for consistency
                  # Basic quoting for values with spaces or special chars, adjust if needed
-                 if ' ' in value or '#' in value or '=' in value:
+                 if ' ' in value or '#' in value or '=' in value or not value: # Also quote empty strings
                       f.write(f'{key}="{value}"\n')
                  else:
                       f.write(f'{key}={value}\n')
@@ -107,67 +59,59 @@ def write_dotenv(dotenv_path: Path, env_vars: Dict[str, str]) -> None:
 
     except Exception as e:
         logger.error(f"Error writing to .env file {dotenv_path}: {e}", exc_info=True)
-        if 'tmp_path' in locals() and tmp_path.exists():
+        if tmp_path and tmp_path.exists():
             try: tmp_path.unlink()
             except Exception as rm_e: logger.error(f"Failed to remove temporary .env file {tmp_path}: {rm_e}")
+    finally:
+        if tmp_path and tmp_path.exists():
+             try: tmp_path.unlink()
+             except Exception: pass
 
 def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = None) -> Optional[str]:
     """
     Ensures a key exists in the environment and .env file using ConsoleManager for prompts.
-
     Checks os.environ first. If not found, prompts the user.
     If the user provides a value, it's saved to the .env file and os.environ.
-
-    Args:
-        dotenv_path: Path to the .env file.
-        key: The environment variable key to ensure.
-        description: A description shown to the user when prompting (e.g., 'API Key for X service' or a URL).
-
-    Returns:
-        The value of the key if found or provided, otherwise None.
     """
     value = os.getenv(key)
     if value:
         logger.debug(f"Found key '{key}' in environment.")
         return value
 
+    from ..console_manager import get_console_manager
+    console = get_console_manager()
+
     logger.warning(f"Environment variable '{key}' not found.")
-    # Use ConsoleManager for system/info messages
-    console.display_message("SYSTEM:", f"\nConfiguration required: Missing environment variable '{key}'.", 
+    console.display_message("SYSTEM:", f"\nConfiguration required: Missing environment variable '{key}'.",
                            console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     if description:
-        console.display_message("INFO:", f"Description: {description}", 
+        console.display_message("INFO:", f"Description: {description}",
                                console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
 
     try:
-        # Use ConsoleManager prompt
         user_input = console.prompt_for_input(f"Please enter the value for {key}", is_password=True).strip()
 
         if not user_input:
             logger.warning(f"User skipped providing value for '{key}'.")
-            console.display_message("WARNING:", "Input skipped.", 
+            console.display_message("WARNING:", "Input skipped.",
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             return None
 
-        # Value provided, save it
         current_env_vars = read_dotenv(dotenv_path)
         current_env_vars[key] = user_input
         write_dotenv(dotenv_path, current_env_vars)
-        
-        # Update os.environ for the current session
+
         os.environ[key] = user_input
 
         logger.info(f"Saved '{key}' to {dotenv_path} and updated environment.")
-        console.display_message("INFO:", f"Value for '{key}' saved.", 
+        console.display_message("INFO:", f"Value for '{key}' saved.",
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return user_input
 
     except KeyboardInterrupt:
-         # Handled by ConsoleManager.prompt_for_input
-         # logger.warning is already done in console.prompt_for_input
          return None
     except Exception as e:
          logger.error(f"Error during ensure_dotenv_key for '{key}': {e}", exc_info=True)
-         console.display_message("ERROR:", f"An unexpected error occurred while handling '{key}'. Check logs.", 
+         console.display_message("ERROR:", f"An unexpected error occurred while handling '{key}'. Check logs.",
                                console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
          return None
