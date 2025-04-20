@@ -23,7 +23,7 @@ Please translate the following text string:
 
 Translate ONLY the text string itself. Preserve any original variable placeholders like `{{variable_name}}` or `%s` or `%d` exactly as they appear in the original string. Maintain the original meaning and tone appropriate for a CLI application UI.
 
-Output ONLY the translated text string in {target_language}:"""
+Output ONLY the translated text string in {target_language}, without quotes or any additional text, just the translated string."""
 
 SYSTEM_PROMPT = f"""\
 {BASE_SYSTEM_PROMPT}

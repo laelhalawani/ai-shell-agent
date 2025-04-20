@@ -1,43 +1,43 @@
 {
     "toolset": {
-        "name": "Mened\u017cer Plik\u00f3w",
-        "description": "Zapewnia narz\u0119dzia do bezpo\u015bredniej manipulacji plikami i katalogami (tworzenie, odczyt, edycja, usuwanie, kopiowanie, przenoszenie, znajdowanie, historia)."
+        "name": "Datei-Manager",
+        "description": "Stellt Werkzeuge zur direkten Manipulation von Dateien und Verzeichnissen bereit (erstellen, lesen, bearbeiten, l\u00f6schen, kopieren, verschieben, finden, Verlauf)."
     },
     "config": {
-        "header": "--- Konfiguracja ustawie\u0144 mened\u017cera plik\u00f3w ---",
-        "prompt_limit": "Wprowad\u017a maksymaln\u0105 liczb\u0119 element\u00f3w historii do wy\u015bwietlenia",
-        "warn_invalid": "Wprowadzono nieprawid\u0142ow\u0105 liczb\u0119. U\u017cywam poprzedniego/ustawionego limitu.",
-        "warn_cancel": "Koniec konfiguracji. U\u017cycie poprzednich/warto\u015bci domy\u015blnych.",
-        "error_generic": "B\u0142\u0105d konfiguracji: {error}",
-        "info_saved": "Konfiguracja Mened\u017cera Plik\u00f3w zosta\u0142a zapisana.",
-        "error_save_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 konfiguracji Mened\u017cera Plik\u00f3w."
+        "header": "--- Dateimanager-Einstellungen konfigurieren ---",
+        "prompt_limit": "Geben Sie die maximale Anzahl der anzuzeigenden Verlaufselemente ein",
+        "warn_invalid": "Ung\u00fcltige Zahl eingegeben. Verwende den vorherigen/standardm\u00e4\u00dfigen Grenzwert.",
+        "warn_cancel": "Konfiguration abgebrochen. Verwende vorherige/Standardwerte.",
+        "error_generic": "\\nKonfigurationsfehler: {error}",
+        "info_saved": "\\nDateimanager-Konfiguration gespeichert.",
+        "error_save_failed": "Die Konfiguration des Dateimanagers konnte nicht gespeichert werden."
     },
     "schemas": {
         "path": {
-            "path_desc": "Absolutna lub wzgl\u0119dna \u015bcie\u017cka do pliku lub katalogu."
+            "path_desc": "Der absolute oder relative Pfad zur Datei oder zum Verzeichnis."
         },
         "create": {
-            "path_desc": "Absolutna lub wzgl\u0119dna \u015bcie\u017cka do nowego pliku lub katalogu.",
-            "content_desc": "Opcjonalna tre\u015b\u0107 tekstowa do zapisania przy tworzeniu pliku.",
-            "is_directory_desc": "Ustaw na true, je\u015bli tworzysz katalog, false (domy\u015blnie) dla pliku."
+            "path_desc": "Der absolute oder relative Pfad f\u00fcr die neue Datei oder das neue Verzeichnis.",
+            "content_desc": "Optionaler Textinhalt, der geschrieben werden soll, wenn eine Datei erstellt wird.",
+            "is_directory_desc": "Setze auf true, wenn ein Verzeichnis erstellt wird, false (Standard) f\u00fcr eine Datei."
         },
         "edit_simple": {
-            "path_desc": "\u015acie\u017cka do pliku do edytowania.",
-            "find_text_desc": "Dok\u0142adna tre\u015b\u0107 tekstu do znalezienia w pliku.",
-            "replace_text_desc": "Tre\u015b\u0107 tekstowa, kt\u00f3r\u0105 nale\u017cy zast\u0105pi\u0107 'find_text'.",
-            "summary_desc": "Kr\u00f3tkie podsumowanie edycji, kt\u00f3ra jest wykonywana."
+            "path_desc": "Der Pfad zur Datei, die bearbeitet werden soll.",
+            "find_text_desc": "Der genaue Textinhalt, der innerhalb der Datei gefunden werden soll.",
+            "replace_text_desc": "Der Textinhalt, um den 'find_text' zu ersetzen.",
+            "summary_desc": "Eine kurze Zusammenfassung der durchgef\u00fchrten Bearbeitung."
         },
         "from_to": {
-            "from_path_desc": "\u015acie\u017cka \u017ar\u00f3d\u0142owa pliku lub katalogu.",
-            "to_path_desc": "\u015acie\u017cka docelowa."
+            "from_path_desc": "Der Quellpfad der Datei oder des Verzeichnisses.",
+            "to_path_desc": "Der Zielpfad."
         },
         "rename": {
-            "path_desc": "Aktualna \u015bcie\u017cka pliku lub katalogu do zmiany nazwy.",
-            "new_name_desc": "Po\u017c\u0105dana nowa nazwa pliku lub katalogu (tylko ostatni element, nie pe\u0142na \u015bcie\u017cka)."
+            "path_desc": "Der aktuelle Pfad der Datei oder des Verzeichnisses, das umbenannt werden soll.",
+            "new_name_desc": "Der gew\u00fcnschte neue Name f\u00fcr die Datei oder das Verzeichnis (nur die letzte Komponente, nicht der vollst\u00e4ndige Pfad)."
         },
         "find": {
-            "query_desc": "Wzorzec nazwy pliku lub nazwy katalogu do wyszukania.",
-            "directory_desc": "Opcjonalny katalog, od kt\u00f3rego nale\u017cy rozpocz\u0105\u0107 wyszukiwanie (domy\u015blnie bie\u017c\u0105cy katalog roboczy). Wyszukiwanie obejmuje podkatalogi."
+            "query_desc": "Das Dateinamen- oder Verzeichnisnamenmuster, nach dem gesucht werden soll.",
+            "directory_desc": "Optionales Verzeichnis zum Starten der Suche (standardm\u00e4\u00dfig aktuelles Arbeitsverzeichnis). Die Suche umfasst Unterverzeichnisse."
         }
     },
     "tools": {

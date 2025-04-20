@@ -1,0 +1,404 @@
+{
+    "common": {
+        "prompt_input_marker": ">",
+        "labels": {
+            "info": "INFO:",
+            "error": "FEHLER:",
+            "system": "SYSTEM:",
+            "warning": "WARNUNG:",
+            "ai": "KI:",
+            "tool": "WERKZEUG:"
+        },
+        "truncation_marker": "..."
+    },
+    "setup": {
+        "welcome": "Willkommen beim AI Shell Agent! Erster Setup wird durchgef\u00fchrt.",
+        "complete": "Ersteinrichtungsprozess abgeschlossen.",
+        "errors": {
+            "no_model_selected": "Kein Modell w\u00e4hrend des ersten Laufs ausgew\u00e4hlt. Beende.",
+            "api_key_missing": "API-Schl\u00fcssel nicht angegeben. Beende."
+        },
+        "toolsets": {
+            "prompt_intro": "--- W\u00e4hlen Sie standardm\u00e4\u00dfig aktivierte Toolsets aus ---  \nDiese Toolsets werden standardm\u00e4\u00dfig aktiviert, wenn Sie neue Chats erstellen.",
+            "warn_none_found": "Keine Toolsets gefunden/registriert.",
+            "available_title": "Verf\u00fcgbare Toolsets:",
+            "prompt_instructions": "Geben Sie durch Kommas getrennte Zahlen ein, UM STANDARDM\u00c4\u00dfIG ZU AKTIVIEREN (z. B. 1,3).  \nUm standardm\u00e4\u00dfig nichts zu aktivieren, geben Sie 'none' ein.  \nLassen Sie das Feld leer, um {default_toolsets_str} als Standard zu verwenden.",
+            "info_using_defaults": "Keine Auswahl getroffen. Standard-Toolsets werden verwendet: {toolset_list}",
+            "error_invalid_selection": "Ung\u00fcltige Auswahl '{index}'. Bitte verwenden Sie Zahlen von 1 bis {max_idx}.",
+            "info_selection_saved": "Ausgew\u00e4hlte Toolsets festgelegt auf: {toolset_list}",
+            "warn_cancel": "Auswahl abgebrochen. Setze {default_toolsets_str} als Standard-Toolsets.",
+            "error_generic": "Ein Fehler ist aufgetreten: {error}"
+        }
+    },
+    "select_tools": {
+        "warn_none_found": "Keine Toolsets gefunden/registriert.",
+        "error_chat_title_missing": "Konnte den Titel f\u00fcr den aktiven Chat {chat_id} nicht bestimmen.",
+        "prompt_header": "--- Aktivierte Werkzeugsets ausw\u00e4hlen ({context}) ---  \n{explanation}",
+        "context_global": "Globale Standards",
+        "context_chat": "Chat: {chat_title}",
+        "explanation_global": "Diese Werkzeugsammlungen werden standardm\u00e4\u00dfig aktiviert, wenn Sie neue Chats erstellen.",
+        "explanation_chat": "Toolsets bestimmen, welche F\u00e4higkeiten der Agent in diesem Chat potenziell nutzen kann.",
+        "available_title": "Verf\u00fcgbare Toolsets:",
+        "marker_enabled": "[AKTIVIERT]",
+        "marker_disabled": "[DEAKTIVIERT]",
+        "prompt_instructions": "Geben Sie durch Komma getrennte Zahlen EIN, UM ZU AKTIVIEREN (z.B. 1,3).  \nUm alle zu deaktivieren, geben Sie 'none' ein.  \nLassen Sie das Feld leer, um die aktuellen Einstellungen beizubehalten.",
+        "info_kept_settings": "\"{keep_message} {toolset_list}\"",
+        "keep_message_global": "Beibehaltung der aktuellen globalen Standard-Toolsets:",
+        "keep_message_chat": "Aktuelle aktivierte Toolsets f\u00fcr diesen Chat beibehalten:",
+        "error_invalid_selection": "Ung\u00fcltige Auswahl '{index}'. Bitte verwenden Sie Zahlen von 1 bis {max_idx}.",
+        "info_selection_saved": "Ausgew\u00e4hlte Werkzeugsets festgelegt auf: {toolset_list}",
+        "info_global_updated": "Globale Standardwerte wurden ebenfalls aktualisiert.",
+        "info_apply_next": "\u00c4nderungen werden bei der n\u00e4chsten Interaktion wirksam.",
+        "warn_cancel": "\\nAuswahl abgebrochen. Keine \u00c4nderungen vorgenommen."
+    },
+    "configure_toolset": {
+        "error_not_found": "Toolset '{toolset_name}' nicht gefunden.",
+        "info_available": "Verf\u00fcgbare Toolsets: {toolset_list}",
+        "info_not_configurable": "Toolset '{toolset_name}' ben\u00f6tigt keine spezifische Konfiguration.",
+        "error_chat_title_missing": "Der Titel f\u00fcr den aktiven Chat {chat_id} konnte nicht bestimmt werden.",
+        "context_header_global": "\\n--- Konfiguration der globalen Standardwerte f\u00fcr '{toolset_name}' ---\\n(Einstellungen werden auf globalen Standard angewendet: {global_config_path})\\n(\u00dcberpr\u00fcfen/Speichern von Geheimnissen in: {dotenv_path})\\n",
+        "context_header_chat": "\\n--- Konfiguration von '{toolset_name}' f\u00fcr Chat '{chat_title}' ---\\n(Einstellungen werden auf die Chat-Konfiguration angewendet: {local_config_path})\\n(Einstellungen werden auf die globalen Standardwerte angewendet: {global_config_path})\\n(\u00dcberpr\u00fcfen/Ablegen von Geheimnissen in: {dotenv_path})\\n",
+        "warn_cancel": "Konfiguration abgebrochen.",
+        "error_generic": "\\nEin Fehler ist w\u00e4hrend der Konfiguration aufgetreten: {error}"
+    },
+    "cli": {
+        "parser": {
+            "description": "AI Shell Agent CLI"
+        },
+        "groups": {
+            "model": "Modellkonfiguration",
+            "chat": "Chatverwaltung",
+            "toolset": "Werkzeugkonfiguration",
+            "message": "Nachrichten & Interaktion",
+            "util": "Dienstprogramme"
+        },
+        "args": {
+            "model": {
+                "help": "LLM-Modell festlegen (f\u00fcr Agent)"
+            },
+            "select_model": {
+                "help": "Interaktiv den Agenten-LLM-Modell ausw\u00e4hlen"
+            },
+            "set_api_key": {
+                "help": "API-Schl\u00fcssel f\u00fcr das aktuelle Hauptagentenmodell festlegen"
+            },
+            "select_translation_model": {
+                "help": "Interaktiv das \u00dcbersetzungs-LLM-Modell ausw\u00e4hlen"
+            },
+            "select_language": {
+                "help": "Interaktiv die Anwendungsprache ausw\u00e4hlen"
+            },
+            "localize": {
+                "help": "Generieren Sie lokalisierte Textdateien f\u00fcr die Zielsprache mit dem ausgew\u00e4hlten \u00dcbersetzungsmodell."
+            },
+            "chat": {
+                "help": "Erstellen oder Laden einer Chat-Sitzung"
+            },
+            "load_chat": {
+                "help": "Lade Chat (gleich wie -c)"
+            },
+            "list_chats": {
+                "help": "Chats auflisten"
+            },
+            "rename_chat": {
+                "help": "Chat umbenennen"
+            },
+            "delete_chat": {
+                "help": "Chat l\u00f6schen"
+            },
+            "temp_flush": {
+                "help": "Entfernen Sie tempor\u00e4re Chats"
+            },
+            "current_chat_title": {
+                "help": "Aktuellen Chat-Titel ausgeben"
+            },
+            "select_tools": {
+                "help": "W\u00e4hlen Sie interaktiv aktivierte Toolsets aus (chat-spezifisch, falls aktiv, ansonsten globale Vorgaben)"
+            },
+            "list_toolsets": {
+                "help": "Liste der verf\u00fcgbaren Toolsets und deren aktivem Status (chat-spezifisch, wenn aktiv, ansonsten globale Vorgaben)"
+            },
+            "configure_toolset": {
+                "help": "F\u00fchren Sie manuell den Konfigurationsassistenten f\u00fcr ein Toolset aus (chat-spezifisch, wenn aktiv, andernfalls globale Vorgaben)"
+            },
+            "send_message": {
+                "help": "Nachricht senden"
+            },
+            "temp_chat": {
+                "help": "Tempor\u00e4ren Chat starten"
+            },
+            "edit": {
+                "help": "Nachricht bearbeiten & erneut senden"
+            },
+            "list_messages": {
+                "help": "Chatverlauf drucken"
+            },
+            "execute": {
+                "help": "F\u00fchren Sie den Shell-Befehl direkt aus"
+            },
+            "message": {
+                "help": "Nachricht senden (Standardaktion)"
+            }
+        },
+        "info": {
+            "model_set": "Agentenmodell auf {model_name} gesetzt.",
+            "model_unchanged": "Das Agentenmodell bleibt bei {model_name}.",
+            "model_select_cancel": "Agentenauswahl des Modells abgebrochen.",
+            "translation_model_set": "\u00dcbersetzungsmodell eingestellt auf: {model_name}",
+            "translation_model_unchanged": "Das \u00dcbersetzungsmodell bleibt {model_name}.",
+            "language_set": "Sprache eingestellt auf: {lang_code}",
+            "language_unchanged": "Sprache bleibt {lang_code}.",
+            "language_restart_needed": "Bitte starten Sie die Anwendung neu oder f\u00fchren Sie Ihren Befehl erneut aus, damit die Sprach\u00e4nderung vollst\u00e4ndig wirksam wird.",
+            "language_restart_needed_setup": "Spracheinstellungen aktualisiert. Bitte f\u00fchren Sie die Anwendung erneut aus, damit die \u00c4nderungen wirksam werden.",
+            "chat_switched": "Wechsel zu Chat: '{chat_title}'.",
+            "chat_loaded": "Wechsel zu Chat: '{chat_title}'.",
+            "current_chat_is": "Aktueller Chat: {chat_title}",
+            "no_active_chat": "Kein aktiver Chat.",
+            "starting_temp_chat": "Kein aktiver Chat. Tempor\u00e4ren Chat starten..."
+        },
+        "errors": {
+            "api_key_missing": "Agent API-Schl\u00fcssel fehlt. Setzen Sie ihn mit --set-api-key.",
+            "no_active_chat_for_list": "Kein aktiver Chat. Verwenden Sie zuerst -c <Titel>.",
+            "no_active_chat_for_edit": "Kein aktiver Chat. Verwenden Sie zuerst -c <titel>.",
+            "edit_invalid_index": "Ung\u00fcltiger Index '{index}'. Muss eine Ganzzahl oder 'last' sein."
+        }
+    },
+    "chat_list": {
+        "info": {
+            "none_found": "Keine Chats gefunden."
+        },
+        "title": "Verf\u00fcgbare Chats:",
+        "marker_current": "<- Aktuell"
+    },
+    "rename_chat": {
+        "success": "Chat umbenannt: {old_title} -> {new_title}",
+        "error_failed": "Fehler beim Umbenennen des Chats: {old_title}"
+    },
+    "delete_chat": {
+        "success": "Chat gel\u00f6scht: {title}",
+        "error_failed": "Chat konnte nicht gel\u00f6scht werden: {title}"
+    },
+    "tool_handler": {
+        "error": {
+            "invalid_call_structure": "Fehler: Ung\u00fcltige Tool-Aufrufstruktur (Name oder ID fehlt): {tool_call}",
+            "tool_not_found": "Fehler: Tool '{tool_name}' nicht gefunden.",
+            "execution_failed": "Fehler bei der Ausf\u00fchrung des Werkzeugs '{tool_name}': {error_type}: {error_msg}"
+        }
+    },
+    "send_message": {
+        "warn": {
+            "no_chat_start_temp": "Keine aktive Unterhaltung. Starte tempor\u00e4re Unterhaltung.",
+            "empty_ai_response": "Die KI hat eine leere Antwort zur\u00fcckgegeben.",
+            "max_iterations": "Maximalzahl von {max_iterations} AI-Interaktionen erreicht. Stoppe."
+        },
+        "info": {
+            "tool_needs_input": "{signal} Das Tool '{tool_name}' ben\u00f6tigt eine Eingabe."
+        },
+        "error": {
+            "hitl_context_missing": "Interner Fehler: Tool-Kontext konnte nicht gefunden werden.",
+            "hitl_exec_failed": "Die Ausf\u00fchrung des Werkzeugs ist nach der Eingabe fehlgeschlagen.",
+            "hitl_prompt_again": "{signal} Das Tool '{tool_name}' ben\u00f6tigt unerwartet weitere Eingaben.",
+            "hitl_unexpected_result": "Fehler: Unerwarteter Ergebnistyp des Werkzeugs.",
+            "history_missing": "Chatverlauf nicht gefunden oder leer.",
+            "llm_init_failed": "Sztuczna Inteligencja-Modell-Initialisierung fehlgeschlagen: {error}",
+            "llm_response_conversion": "Sztuczna Inteligencja-Antwortkonvertierung fehlgeschlagen.",
+            "tool_unexpected_result": "Fehler: Unerwarteter Tool-Ergebnis-Typ.",
+            "generic_interaction": "Sztuczna Inteligencja Interaktionsfehler: {error}"
+        },
+        "hitl": {
+            "user_cancelled_tool_msg": "Benutzer hat die Eingabe abgebrochen."
+        }
+    },
+    "temp_chat": {
+        "format": "neuer Chat {chat_title}",
+        "info": {
+            "started": "Gestartet {chat_title}."
+        },
+        "error": {
+            "start_failed": "Konnte den tempor\u00e4ren Chat '{chat_title}' nicht starten."
+        }
+    },
+    "temp_flush": {
+        "info": {
+            "skipping_current": "\u00dcberspringe aktuellen tempor\u00e4ren Chat: {title}",
+            "none_found": "Keine tempor\u00e4ren Chats zum Entfernen gefunden.",
+            "removed_count": "Entfernt {count} tempor\u00e4re Chats."
+        }
+    },
+    "edit_message": {
+        "error": {
+            "no_active_chat": "Kein aktiver Chat zum Bearbeiten.",
+            "empty_message": "Kann keine leere Nachricht festlegen.",
+            "no_messages": "Keine Nachrichten zum Bearbeiten.",
+            "no_human_message": "Keine menschlichen Nachrichten gefunden, die bearbeitet werden k\u00f6nnen.",
+            "invalid_index": "Ung\u00fcltiger Index {index}. Muss zwischen 0 und {max_index} liegen.",
+            "not_human_message": "Die Nachricht an der Stelle {index} ist keine menschliche Nachricht."
+        },
+        "info": {
+            "reprocessing": "Bearbeitetes Nachricht an Position {index}. Wird neu verarbeitet..."
+        }
+    },
+    "execute": {
+        "info": {
+            "result": "Direktes Ausf\u00fchrungsergebnis:\\n{output}"
+        },
+        "error": {
+            "tool_unavailable": "Fehler: Direkte Terminal-Tool-Funktion nicht verf\u00fcgbar.",
+            "failed": "Fehler beim Ausf\u00fchren des Befehls: {error}"
+        }
+    },
+    "list_messages": {
+        "warn": {
+            "no_active_chat": "Kein aktiver Chat."
+        },
+        "info": {
+            "empty_chat": "Keine Nachrichten im Chat."
+        },
+        "fallback_title": "Aktueller Chat",
+        "header": "--- Chatverlauf f\u00fcr: {title} ---",
+        "roles": {
+            "system": "System",
+            "human": "Mensch",
+            "ai": "KI",
+            "tool": "Werkzeug",
+            "unknown": "unbekannt"
+        },
+        "no_timestamp": "Kein Zeitstempel",
+        "tool_calls": {
+            "header": "Initiierte Werkzeugaufrufe:",
+            "prefix": "- Werkzeug:",
+            "args_suffix": ", Args: {args}",
+            "id_suffix": ", ID: {id}\\n",
+            "error_invalid": "- Ung\u00fcltiger Eintrag f\u00fcr den Toolaufruf: {tc}\\n"
+        },
+        "tool_message": {
+            "id_prefix": "F\u00fcr Tool Call ID: {tool_call_id}"
+        },
+        "metadata": {
+            "edited": "[Bearbeitet - Urspr\u00fcnglicher TS: {original_ts}]",
+            "edited_na": "Nicht verf\u00fcgbar"
+        },
+        "footer": "--- Ende der Historie ---"
+    },
+    "list_toolsets": {
+        "warn": {
+            "none_found": "Keine Toolsets gefunden/registriert."
+        },
+        "title": {
+            "chat": "Werkzeuge f\u00fcr Chat '{title}':",
+            "global": "Verf\u00fcgbare Toolsets:"
+        },
+        "marker": {
+            "enabled": "AKTIVIERT"
+        },
+        "explanation": {
+            "chat": "Toolset-Status:\n\u2022 AKTIVIERT: Die Werkzeuge des Toolsets stehen der Sztuczna Inteligencja in diesem Chat zur Verf\u00fcgung\n\nHinweis: Verwenden Sie --select-tools, um die aktivierten Toolsets f\u00fcr diesen Chat zu \u00e4ndern.",
+            "global": "Hinweis: Verwenden Sie --select-tools, um zu \u00e4ndern, welche Toolsets standardm\u00e4\u00dfig f\u00fcr neue Chats aktiviert werden."
+        }
+    },
+    "state": {
+        "rename": {
+            "error_old_not_found": "Fehler: Chat '{old_title}' nicht gefunden.",
+            "error_new_exists": "Fehler: Chat '{new_title}' existiert bereits."
+        },
+        "delete": {
+            "error_not_found": "Fehler: Chat '{title}' nicht gefunden.",
+            "error_failed": "Fehler: L\u00f6schen des Verzeichnisses des Chats '{title}' fehlgeschlagen: {error}"
+        },
+        "tool_config": {
+            "notice_needs_config": "HINWEIS: Das Werkzeugset '{toolset_name}' ben\u00f6tigt eine Konfiguration f\u00fcr diesen Chat (es wurde kein g\u00fcltiger lokaler oder globaler Standard gefunden).",
+            "warn_cancel": "Konfiguration f\u00fcr '{toolset_name}' abgebrochen. Sie funktioniert m\u00f6glicherweise nicht korrekt.",
+            "error_failed": "Fehler bei der Konfiguration von '{toolset_name}': {error}. M\u00f6glicherweise funktioniert es nicht korrekt."
+        }
+    },
+    "config": {
+        "model_select": {
+            "available_title": "Verf\u00fcgbare Modelle:",
+            "openai_header": "OpenAI:",
+            "google_header": "Google:",
+            "aliases_suffix": "(Alias: {alias_str})",
+            "current_marker": "<- Aktuelles Modell",
+            "prompt": "Bitte geben Sie das Modell ein, das Sie verwenden m\u00f6chten, oder lassen Sie es leer, um '{current_model}' beizubehalten.",
+            "prompt_agent": "Bitte geben Sie das HAUPTAGENT-Modell ein, oder lassen Sie es leer, um '{current_model}' beizubehalten.",
+            "warn_unknown": "Unbekanntes Modell: {selected_model}. Aktuelles Modell beibehalten: {current_model}",
+            "error_generic": "Ein Fehler ist w\u00e4hrend der Modellauswahl aufgetreten: {error}"
+        },
+        "trans_model_select": {
+            "title": "--- \u00dcbersetzung Modell ausw\u00e4hlen ---",
+            "prompt": "Bitte geben Sie das \u00dcBERSETZUNGSmodell ein, oder lassen Sie es leer, um '{current_model}' beizubehalten.",
+            "warn_unknown": "Unbekanntes \u00dcbersetzungsmodell: {selected_model}. Aktuelles Modell beibehalten: {current_model}",
+            "warn_cancel": "\u00dcbersetzungsmodell-Auswahl abgebrochen.",
+            "info_needed": "\u00dcbersetzungsmodell ist nicht konfiguriert. Bitte w\u00e4hlen Sie eines aus.",
+            "info_set": "\u00dcbersetzungsmodell auf gesetzt: {model_name}",
+            "error_not_set": "\u00dcbersetzungsmodell nicht ausgew\u00e4hlt. Prozess wird abgebrochen.",
+            "error_generic": "Ein Fehler ist w\u00e4hrend der Auswahl des \u00dcbersetzungsmodells aufgetreten: {error}"
+        },
+        "api_key": {
+            "prompt_instructions": "Bitte geben Sie Ihren {provider_name} API-Schl\u00fcssel ein.  \nSie k\u00f6nnen ihn hier erhalten: {api_key_link}",
+            "prompt_instructions_model": "Bitte geben Sie Ihren {provider_name} API-Schl\u00fcssel f\u00fcr das Modell '{model_name}' ein.  \nSie k\u00f6nnen ihn erhalten von: {api_key_link}",
+            "prompt_input": "Geben Sie den API-Schl\u00fcssel f\u00fcr {provider_name} ein",
+            "prompt_input_model": "Geben Sie den {provider_name} API-Schl\u00fcssel ein (f\u00fcr {model_name})",
+            "error_generic": "Ein Fehler ist w\u00e4hrend der Eingabe des API-Schl\u00fcssels aufgetreten: {error}",
+            "warn_none_provided": "Kein {provider_name} API-Schl\u00fcssel angegeben. Vorgang wird abgebrochen.",
+            "info_saved": "'{provider_name} API-Schl\u00fcssel erfolgreich in .env gespeichert'"
+        },
+        "lang_select": {
+            "error_discovery_failed": "Keine Sprachdateien gefunden. Es wird 'en' als Standard verwendet.",
+            "prompt_title": "Bitte w\u00e4hlen Sie die Anwendungsprache aus:",
+            "current_marker": "<- Aktuell",
+            "option_format": "{idx}: {code}{marker}",
+            "prompt_input": "Geben Sie eine Zahl ein (1-{max_lang}) oder lassen Sie das Feld leer, um '{current_lang}' beizubehalten:",
+            "info_kept_current": "Beibehalten der aktuellen Sprache: {lang_code}",
+            "info_set_success": "Sprache gesetzt auf: {lang_code}",
+            "error_save_failed": "Fehler beim Speichern der Spracheinstellungen.",
+            "error_invalid_input": "Ung\u00fcltige Auswahl. Bitte geben Sie eine Zahl zwischen 1 und {max_lang} ein.",
+            "warn_cancel": "Sprachauswahl abgebrochen. Es wurden keine \u00c4nderungen vorgenommen.",
+            "warn_cancel_default": "Spracheauswahl abgebrochen. R\u00fcckfall auf 'en'.",
+            "error_generic": "Ein unerwarteter Fehler ist aufgetreten: {error}"
+        }
+    },
+    "console": {
+        "thinking_text": "\u23f3 Denke nach...",
+        "tool_output": {
+            "format": "({tool_name}) {output}"
+        },
+        "tool_confirm": {
+            "used_tool": "Verwendetes Tool '{tool_name}'",
+            "with_args": "mit",
+            "arg_separator": ":",
+            "arg_list_separator": ","
+        },
+        "hitl_prompt": {
+            "prefix_action": "AI m\u00f6chte eine Aktion '",
+            "suffix_edit_confirm": "'', bearbeiten oder best\u00e4tigen: '",
+            "error_edit_key_missing": "Interner Fehler: edit_key '{edit_key}' wurde in den vorgeschlagenen Argumenten f\u00fcr das Tool '{tool_name}' nicht gefunden.",
+            "error_generic": "Fehler bei der Eingabeaufforderung: {error}"
+        },
+        "prompt": {
+            "suffix": ":",
+            "default_hint_format": "[{default}]",
+            "error_generic": "Fehler beim Abrufen der Eingabe: {error}"
+        },
+        "common": {
+            "input_cancelled": "Eingabe abgebrochen."
+        }
+    },
+    "localize": {
+        "start": "Starte den Lokalisierungsprozess f\u00fcr die Sprache: {target_language}",
+        "start_detailed": "Starte die Lokalisierung auf '{target_language}' mit dem Modell '{model_name}'...",
+        "select_model_prompt": "Modell f\u00fcr die \u00dcbersetzung ausw\u00e4hlen:",
+        "select_model_confirm": "Verwendung des aktuellen \u00dcbersetzungsmodells: {model_name}",
+        "select_model_cancel": "Auswahl des \u00dcbersetzungsmodells abgebrochen. Lokalisierung wird abgebrochen.",
+        "select_model_set": "\u00dcbersetzungsmodell eingestellt auf: {model_name}",
+        "error_llm_init": "Fehler beim Initialisieren des LLM f\u00fcr die \u00dcbersetzung. Abbruch.",
+        "error_llm_init_specific": "Fehler bei der Initialisierung des angegebenen LLM '{model_name}' f\u00fcr die \u00dcbersetzung. Abbruch.",
+        "warn_no_files": "Keine 'en_texts.json'-Dateien zum \u00dcbersetzen gefunden.",
+        "warn_no_keys": "Keine lokaliserbaren Zeichenfolgen-Schl\u00fcssel in den entdeckten Dateien gefunden.",
+        "translating_start": "\u00dcbersetzung von {count} Textelementen nach {target_language} unter Verwendung von {model_name}...",
+        "progress_format": "Fortschritt: {current}/{total} Schl\u00fcssel \u00fcbersetzt...",
+        "saving": "Speichern der \u00dcbersetzungen in: {target_file}",
+        "error_save": "Fehler beim Speichern der \u00fcbersetzten Datei: {target_file}",
+        "complete": "Lokalisierung abgeschlossen f\u00fcr {target_language}. Verarbeitete {count} Schl\u00fcssel.",
+        "complete_errors": "Die Lokalisierung ist abgeschlossen, aber es sind einige Fehler aufgetreten (\u00dcbersetzungen sind m\u00f6glicherweise unvollst\u00e4ndig oder Dateien konnten nicht gespeichert werden). \u00dcberpr\u00fcfen Sie die Protokolle."
+    }
+}

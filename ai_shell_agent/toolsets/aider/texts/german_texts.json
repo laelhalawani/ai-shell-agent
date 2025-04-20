@@ -1,48 +1,48 @@
 {
     "toolset": {
-        "name": "Edytor Kodu Aider **EKSPERYMENTALNY**",
-        "description": "Zapewnia narz\u0119dzia do interakcji z edytorem kodu Aider."
+        "name": "Aider Code Editor **EXPERIMENTELL**",
+        "description": "Bietet Werkzeuge zur Interaktion mit dem Aider-Code-Editor."
     },
     "config": {
-        "header": "--- Konfiguracja ustawie\u0144 Edytora Plik\u00f3w (Aider) ({context}) ---",
-        "instructions": "Wybierz modele i format edycji, kt\u00f3re powinien u\u017cywa\u0107 Edytor Plik\u00f3w.  \n{save_location_info}  \nPozostaw pole puste na kt\u00f3rymkolwiek etapie, aby zachowa\u0107 bie\u017c\u0105ce ustawienie.  \nWpisz 'none', aby zresetowa\u0107 ustawienie do warto\u015bci domy\u015blnej.",
-        "save_location_global": "Ta konfiguracja zostanie zapisana jako globalny domy\u015blny ustawienie dla nowych czat\u00f3w.",
-        "save_location_chat": "Ta konfiguracja zostanie zapisana dla bie\u017c\u0105cego czatu ORAZ jako globalny domy\u015blny ustawienie dla nowych czat\u00f3w.",
-        "model_header": "--- Wybierz model edytora plik\u00f3w '{role}' ---",
-        "model_available_title": "Dost\u0119pne modele:",
-        "model_current_marker": "<- Ustawienie bie\u017c\u0105ce",
-        "model_aliases_suffix": "(aliasy: {alias_str})",
-        "model_prompt": "Wprowad\u017a nazw\u0119 modelu dla '{role}' (pozostaw puste, aby zachowa\u0107 '{current_setting}', wpisz 'none', aby zresetowa\u0107 do warto\u015bci domy\u015blnej)",
-        "model_info_keep": "Zachowywanie bie\u017c\u0105cego ustawienia: {setting}",
-        "model_info_reset": "Resetowanie modelu {role} do ustawie\u0144 domy\u015blnych ('{default_name}')",
-        "model_error_unknown": "Nieznany model '{selected}'. Prosz\u0119 wybra\u0107 z listy lub wpisa\u0107 'none'",
-        "model_warn_cancel": "Wybor anulowany. Utrzymuj\u0119 bie\u017c\u0105ce ustawienie.",
-        "format_header": "--- Wybierz Format Edycji Edytora Plik\u00f3w ---",
+        "header": "--- Konfigurieren Sie die Einstellungen des Dateieditors (Aider) ({context}) ---",
+        "instructions": "W\u00e4hlen Sie die Modelle und das Bearbeitungsformat, das der Dateiredakteur verwenden soll.\\n{save_location_info}\\nLassen Sie die Eingabe an jeder Stelle leer, um die aktuelle Einstellung beizubehalten.\\nGeben Sie 'none' ein, um eine Einstellung auf den Standardwert zur\u00fcckzusetzen.",
+        "save_location_global": "Diese Konfiguration wird als globaler Standard f\u00fcr neue Chats gespeichert.",
+        "save_location_chat": "Diese Konfiguration wird f\u00fcr den aktuellen Chat UND als globale Standardkonfiguration f\u00fcr neue Chats gespeichert.",
+        "model_header": "--- W\u00e4hlen Sie das Modell des Datei-Editors '{role}' aus ---",
+        "model_available_title": "Verf\u00fcgbare Modelle:",
+        "model_current_marker": "<- Aktuelle Einstellung",
+        "model_aliases_suffix": "(Alias: {alias_str})",
+        "model_prompt": "Geben Sie den Modellnamen f\u00fcr '{role}' ein (lassen Sie es leer, um '{current_setting}' beizubehalten, geben Sie 'none' ein, um auf die Standardeinstellung zur\u00fcckzusetzen)",
+        "model_info_keep": "Aktuelle Einstellung beibehalten: {setting}",
+        "model_info_reset": "Setze das {role} Modell auf die Standardwerte zur\u00fcck ('{default_name}')",
+        "model_error_unknown": "Unbekanntes Modell '{selected}'. Bitte w\u00e4hlen Sie aus der Liste oder geben Sie 'none' ein.",
+        "model_warn_cancel": "Auswahl abgebrochen. Aktuelle Einstellung beibehalten.",
+        "format_header": "--- W\u00e4hlen Sie das Bearbeitungsformat des Dateieditors ---",
         "format_option_default": "0: {default_display} {marker}",
-        "format_option": "{idx}: {format}{marker} - {opis}",
-        "format_default_name": "Domy\u015blny Aider (specyficzny dla modelu)",
-        "format_prompt": "Wprowad\u017a wyb\u00f3r (0-{max_idx}), pozostaw puste, aby zachowa\u0107 obecny:",
-        "format_info_keep": "Zachowanie bie\u017c\u0105cego ustawienia: {setting}",
-        "format_info_selected": "Wybrany format: {setting}",
-        "format_error_invalid": "Nieprawid\u0142owy wyb\u00f3r. Spr\u00f3buj ponownie.",
-        "format_warn_cancel": "Wybranie anulowane. Utrzymanie bie\u017c\u0105cego ustawienia: {setting}",
-        "api_key_check_header": "Sprawdzanie kluczy API dla wybranych modeli Edytora Plik\u00f3w...",
-        "api_key_error_check": "B\u0142\u0105d podczas sprawdzania klucza API dla modelu '{model_name}'. Sprawd\u017a logi.",
-        "save_success_global": "\\nGlobalna domy\u015blna konfiguracja edytora plik\u00f3w zosta\u0142a zaktualizowana.",
-        "save_success_chat": "\\nKonfiguracja Edytora Plik\u00f3w zosta\u0142a zaktualizowana dla tej rozmowy i globalnie.",
-        "save_warn_missing_keys": "Uwaga: Niekt\u00f3re klucze API s\u0105 brakuj\u0105ce/pomini\u0119te. Upewnij si\u0119, \u017ce s\u0105 ustawione w .env.",
-        "save_error_failed": "Aktualizacja konfiguracji Edytora Plik\u00f3w nie powiod\u0142a si\u0119. Sprawd\u017a dzienniki."
+        "format_option": "{idx}: {format}{marker} - {beschreibung}",
+        "format_default_name": "Aider-Standard (modellabh\u00e4ngig)",
+        "format_prompt": "Geben Sie die Auswahl ein (0-{max_idx}), lassen Sie es leer, um die aktuelle Einstellung beizubehalten:",
+        "format_info_keep": "Aktuelle Einstellung beibehalten: {setting}",
+        "format_info_selected": "Ausgew\u00e4hlte Format: {setting}",
+        "format_error_invalid": "Ung\u00fcltige Auswahl. Bitte versuchen Sie es erneut.",
+        "format_warn_cancel": "Auswahl abgebrochen. Beibehalten der aktuellen Einstellung: {setting}",
+        "api_key_check_header": "\u00dcberpr\u00fcfe API-Schl\u00fcssel f\u00fcr ausgew\u00e4hlte Modelle des Datei-Editors...",
+        "api_key_error_check": "Fehler bei der \u00dcberpr\u00fcfung des API-Schl\u00fcssels f\u00fcr das Modell '{model_name}'. \u00dcberpr\u00fcfen Sie die Protokolle.",
+        "save_success_global": "Globale Standardkonfiguration des Dateiredaktors aktualisiert.",
+        "save_success_chat": "Dateikonfiguration f\u00fcr diesen Chat und global aktualisiert.",
+        "save_warn_missing_keys": "Hinweis: Einige API-Schl\u00fcssel fehlen/wurden \u00fcbersprungen. Stellen Sie sicher, dass sie in .env festgelegt sind.",
+        "save_error_failed": "Die Aktualisierung der File Editor-Konfiguration ist fehlgeschlagen. \u00dcberpr\u00fcfen Sie die Protokolle."
     },
     "schemas": {
         "no_args": {},
         "file_path": {
-            "path_desc": "Absolutna lub wzgl\u0119dna \u015bcie\u017cka do pliku."
+            "path_desc": "Der absolute oder relative Pfad zur Datei."
         },
         "instruction": {
-            "instruction_desc": "Naturalna instrukcja j\u0119zykowa dla \u017c\u0105dania edycji."
+            "instruction_desc": "Die nat\u00fcrliche Sprache-Anweisung f\u00fcr die Bearbeitungsanfrage."
         },
         "user_response": {
-            "response_desc": "Twoja odpowied\u017a na podpowied\u017a edytora."
+            "response_desc": "Ihre Antwort auf die Aufforderung des Editors."
         }
     },
     "tools": {
@@ -164,6 +164,6 @@
         }
     },
     "integration": {
-        "run_error": "B\u0142\u0105d podczas edytowania: {error}\\nWyj\u015bcie przed b\u0142\u0119dem:\\n{output}"
+        "run_error": "Fehler w\u00e4hrend der Bearbeitung: {error}  \nAusgabe vor dem Fehler:  \n{output}"
     }
 }

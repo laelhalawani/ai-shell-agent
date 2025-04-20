@@ -1,21 +1,21 @@
 {
     "toolset": {
         "name": "Terminal",
-        "description": "Zapewnia narz\u0119dzia do wykonywania polece\u0144 pow\u0142oki i kodu Pythona."
+        "description": "Bietet Werkzeuge zum Ausf\u00fchren von Shell-Befehlen und Python-Code."
     },
     "config": {
-        "info_no_settings": "Zestaw narz\u0119dzi Terminal w tej chwili nie wymaga \u017cadnej szczeg\u00f3lnej konfiguracji.",
-        "warn_write_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 jednego lub wi\u0119cej plik\u00f3w konfiguracyjnych dla zestawu narz\u0119dzi Terminal. Sprawd\u017a dzienniki."
+        "info_no_settings": "Das Terminal-Toolset erfordert derzeit keine spezifische Konfiguration.",
+        "warn_write_failed": "Fehler beim Schreiben von einer oder mehreren Konfigurationsdateien f\u00fcr das Terminal-Toolset. \u00dcberpr\u00fcfen Sie die Protokolle."
     },
     "schemas": {
         "terminal": {
-            "cmd_desc": "Polecenie do wykonania w terminalu."
+            "cmd_desc": "Der Befehl, der im Terminal ausgef\u00fchrt werden soll."
         },
         "python": {
-            "query_desc": "Fragment kodu Pythona do wykonania."
+            "query_desc": "Der auszuf\u00fchrende Python-Codeausschnitt."
         },
         "direct_terminal": {
-            "cmd_desc": "Polecenie do wykonania bezpo\u015brednio."
+            "cmd_desc": "Der Befehl, der direkt ausgef\u00fchrt werden soll."
         }
     },
     "tools": {
