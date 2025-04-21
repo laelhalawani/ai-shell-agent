@@ -1,28 +1,177 @@
+Okay, let's update the contributing guide (`how_to_add_toolsets.md`) based on the current codebase structure, features, and the `files` toolset example.
+
+```markdown
 # How to Add a New Toolset
 
-The `ai-shell-agent` uses a modular architecture where capabilities are grouped into "Toolsets." Each toolset is self-contained within its own directory. This guide explains how to create and integrate a new toolset.
+The `ai-shell-agent` uses a modular architecture where capabilities are grouped into "Toolsets." Each toolset is self-contained within its own directory, defining its tools, configuration, and user-facing text. This guide explains how to create and integrate a new toolset.
 
-## 1. Create the Toolset Directory
+## 1. Create the Toolset Directory Structure
 
-*   Navigate to the `ai_shell_agent/toolsets/` directory within the project.
-*   Create a new subdirectory for your toolset. The name of this directory will become the unique **Toolset ID**. Choose a concise, descriptive name (e.g., `web_search`, `database_query`).
+*   Navigate to the `ai_shell_agent/toolsets/` directory.
+*   Create a new subdirectory for your toolset. The name of this directory becomes the unique **Toolset ID** (e.g., `web_search`, `database_query`, `files`). Choose a concise, lowercase name.
     *   Example: `ai_shell_agent/toolsets/my_toolset/`
+*   Inside this directory, create the following structure:
 
-## 2. Create Required Files
+    ```
+    ai_shell_agent/
+    └── toolsets/
+        └── my_toolset/
+            ├── __init__.py             # Package marker
+            ├── toolset.py              # Core logic: tools, metadata, config
+            ├── prompts.py              # (Optional) AI context prompt on activation
+            ├── settings.py             # (Optional) Loads default settings
+            ├── default_settings/       # (Optional) Directory for settings
+            │   └── default_settings.json # (Optional) Default values
+            ├── texts/                  # (Recommended) Directory for UI texts
+            │   └── en_texts.json       # English UI texts (required if texts/ exists)
+            │   └── <lang>_texts.json   # (Optional) Other language UI texts
+            └── texts.py                # Loads UI texts for the toolset
+    ```
 
-Inside your new toolset directory (`ai_shell_agent/toolsets/my_toolset/`), create the following files:
+## 2. Implement Core Files
 
-*   **`__init__.py`**: An empty file to mark the directory as a Python package.
+**a) `__init__.py`**
+
+*   Marks the directory as a Python package.
+*   Crucially, it **must** import the `toolset` module to trigger registration during discovery.
+
     ```python
     # ai_shell_agent/toolsets/my_toolset/__init__.py
     """
     My Toolset package initialization.
+    Provides tools for X and Y.
     """
     from . import toolset # Import toolset to ensure registration runs on discovery
     ```
-*   **`toolset.py`**: This is the main file where you define the toolset's tools, metadata, and configuration logic.
 
-*   **(Optional) `prompts.py`**: If your toolset activation should provide specific instructions or context to the AI, create this file. Define a string variable named `<TOOLSET_ID>_TOOLSET_PROMPT` (all uppercase).
+**b) `texts/en_texts.json` (Recommended)**
+
+*   Stores all user-facing strings for your toolset in English (descriptions, prompts, error messages, etc.) in a nested JSON format.
+*   **Important:** Do **NOT** put internal tool names (like `mytool_do_something`) here. Tool names must be hardcoded in `toolset.py` to comply with API requirements.
+*   Follow the structure of existing `en_texts.json` files (e.g., `files/texts/en_texts.json`). Define logical top-level keys (like `toolset`, `config`, `schemas`, `tools`).
+
+    ```json
+    // ai_shell_agent/toolsets/my_toolset/texts/en_texts.json
+    {
+      "toolset": {
+        "name": "My Custom Toolset",
+        "description": "Provides tools for doing custom things."
+      },
+      "config": {
+        "header": "--- Configure My Toolset ---",
+        "prompt_endpoint": "Enter API endpoint",
+        "info_saved": "My Toolset configuration saved."
+        // ... other config-related texts
+      },
+      "schemas": {
+        "do_something": {
+          "target_desc": "The target object.",
+          "value_desc": "The value to set."
+        }
+        // ... other schema descriptions
+      },
+      "tools": {
+        "usage_guide": {
+           // "name" key is NOT needed here anymore
+           "description": "Displays usage instructions for My Toolset."
+        },
+        "do_something": {
+          // "name" key is NOT needed here anymore
+          "description": "Performs a specific action on a target.",
+          "success": "Successfully did something with {target}.",
+          "error_generic": "Failed to do something with {target}: {error}"
+        },
+        "risky_action": {
+          // "name" key is NOT needed here anymore
+          "description": "Performs a potentially risky action that requires user confirmation.",
+          "prompt_suffix": "(Confirm risky action on {target}) > ",
+          "success": "Successfully performed confirmed risky action on {final_target}.",
+          "error_generic": "Failed risky action on {target}: {error}"
+        }
+        // ... texts for other tools
+      }
+    }
+
+    ```
+
+**c) `texts.py` (Recommended)**
+
+*   Loads the text strings from the `texts/` directory based on the application's selected language, falling back to English.
+*   Provides a `get_text(key_path, **kwargs)` function specific to this toolset.
+*   You can mostly copy the structure from `ai_shell_agent/toolsets/files/texts.py`, just update the `_toolset_id`.
+
+    ```python
+    # ai_shell_agent/toolsets/my_toolset/texts.py
+    from pathlib import Path
+    from string import Formatter
+    from ...utils.file_io import read_json
+    from ...utils.dict_utils import deep_merge_dicts
+    from ...utils.config_reader import get_config_value
+    from ... import logger
+    from ...settings import APP_DEFAULT_LANGUAGE
+
+    _toolset_id = 'my_toolset' # <-- SET YOUR TOOLSET ID
+    _texts_dir = Path(__file__).parent / 'texts'
+    _texts_data = {}
+
+    def _load_texts():
+        # ... (copy implementation from files/texts.py) ...
+        pass
+
+    def get_text(key_path: str, **kwargs) -> str:
+        # ... (copy implementation from files/texts.py) ...
+        pass
+
+    _load_texts() # Load texts when module is imported
+    ```
+
+**d) `default_settings/default_settings.json` (Optional)**
+
+*   If your toolset has specific default parameters (not user-configurable via the wizard, but potentially useful internally or as fallbacks), define them here.
+    *   Example: `files` toolset defines defaults for its `find` tool.
+
+    ```json
+    // ai_shell_agent/toolsets/my_toolset/default_settings/default_settings.json
+    {
+        "default_timeout_ms": 5000,
+        "internal_batch_size": 100
+    }
+    ```
+
+**e) `settings.py` (Optional)**
+
+*   Loads the values from `default_settings.json` into Python constants.
+*   Copy the structure from `ai_shell_agent/toolsets/files/settings.py`, update `_toolset_id` and the constants you define.
+
+    ```python
+    # ai_shell_agent/toolsets/my_toolset/settings.py
+    from pathlib import Path
+    from typing import Any, Dict
+    from ...utils.file_io import read_json
+    from ... import logger
+
+    _toolset_id = 'my_toolset' # <-- SET YOUR TOOLSET ID
+    _settings_file = Path(__file__).parent / 'default_settings' / 'default_settings.json'
+
+    def _load_data(file_path):
+        # ... (copy implementation) ...
+        pass
+
+    _settings_data: Dict[str, Any] = _load_data(_settings_file)
+
+    try:
+        # Load your specific settings into constants
+        MYTOOLSET_DEFAULT_TIMEOUT: int = _settings_data['default_timeout_ms']
+        MYTOOLSET_BATCH_SIZE: int = _settings_data['internal_batch_size']
+    except KeyError as e:
+        logger.critical(f"Missing expected key in {_toolset_id} default_settings.json: {e}.")
+        raise
+    ```
+
+**f) `prompts.py` (Optional)**
+
+*   Define a constant string `MY_TOOLSET_PROMPT` (replace `MY_TOOLSET` with your toolset ID in uppercase). This text will be shown to the AI as a `ToolMessage` when the toolset is first activated in a chat, providing context on how to use it.
+
     ```python
     # ai_shell_agent/toolsets/my_toolset/prompts.py
     """
@@ -30,271 +179,190 @@ Inside your new toolset directory (`ai_shell_agent/toolsets/my_toolset/`), creat
     """
     MY_TOOLSET_PROMPT = """\
     You have activated My Toolset.
-    Use tool 'do_something' to achieve X.
-    Use tool 'get_info' to retrieve Y.
+    Use tool 'mytool_do_something' to achieve X by providing target and value.
+    Use tool 'mytool_risky_action' for Y, but be aware it requires confirmation.
     Remember to check Z before proceeding.
     """
     ```
 
-## 3. Implement `toolset.py`
+**g) `toolset.py` (Core Implementation)**
 
-This file is the heart of your toolset. It needs to define several components:
+This file defines the toolset's metadata, tools, and configuration logic.
 
-**a) Imports:** Import necessary modules, including `BaseTool` from `langchain_core.tools`, any schemas for your tools (`BaseModel`, `Field` from `pydantic`), helper functions from `ai_shell_agent.utils`, and crucially, `register_tools` from `ai_shell_agent.tool_registry`.
+*   **Imports:** Import necessary modules (`BaseTool`, `BaseModel`, `Field`, `register_tools`, `logger`, utils, errors, `console_manager`, `get_text` from *your* `texts.py`).
+*   **Metadata Variables:** Define these at the top level:
+    *   `toolset_id`: String, must match the directory name (e.g., `"my_toolset"`).
+    *   `toolset_name`: String, user-friendly name from your texts file (e.g., `get_text("toolset.name")`).
+    *   `toolset_description`: String, description from your texts file (e.g., `get_text("toolset.description")`).
+    *   `toolset_required_secrets`: Dict[str, str], mapping environment variable names to user-friendly descriptions/URLs (e.g., `{"MYTOOL_API_KEY": "API Key from example.com"}`). Leave as `{}` if none are needed.
 
-**b) Tool Classes:** Define your tool classes, inheriting from `langchain_core.tools.BaseTool`.
-    *   Each tool needs a unique `name`, a `description` (this is crucial for the AI to understand when to use it), and an `args_schema` (using `pydantic.BaseModel`).
-    *   Implement the `_run` method for synchronous execution.
-    *   Optionally implement `_arun` for asynchronous execution (can delegate to `_run` using `run_in_executor` if needed).
-    *   **HITL Tools:** If a tool requires user confirmation/editing before execution (like running a potentially risky command), add `requires_confirmation: bool = True` to the class definition and modify `_run` to accept an optional `confirmed_input: Optional[str] = None` argument. In the `_run` method:
-        *   If `confirmed_input is None`, raise `PromptNeededError` (from `ai_shell_agent.errors`) with the proposed arguments.
-        *   If `confirmed_input is not None`, use that value to perform the action.
+*   **`configure_toolset` Function (Optional but Recommended):**
+    *   Define this function if your toolset needs settings beyond simple secrets or requires custom validation/prompting.
+    *   **Signature:** `configure_toolset(global_config_path: Path, local_config_path: Optional[Path], dotenv_path: Path, current_chat_config: Optional[Dict]) -> Dict:`
+    *   **Responsibilities:**
+        *   Use `current_chat_config` or toolset defaults to pre-fill prompts.
+        *   Use `console.prompt_for_input` (from `ai_shell_agent.console_manager`) to interact with the user. Use `get_text()` for all prompts and messages.
+        *   Use `ensure_dotenv_key` (from `ai_shell_agent.utils.env`) to prompt for and save any secrets defined in `toolset_required_secrets`.
+        *   Build the final configuration dictionary.
+        *   Save the `final_config` dictionary using `write_json` to **both** `local_config_path` (if not `None`) and `global_config_path`.
+        *   Return the `final_config` dictionary.
+    *   Refer to the `files` or `aider` toolsets for examples.
 
-    ```python
-    # ai_shell_agent/toolsets/my_toolset/toolset.py
-    from typing import List, Dict, Optional, Any, Type, Callable # Add Callable
-    from pathlib import Path
-    from pydantic import BaseModel, Field
-    from langchain_core.tools import BaseTool
-    from langchain_core.runnables.config import run_in_executor
+*   **Tool Schemas (Pydantic Models):** Define input schemas for your tools using `pydantic.BaseModel` and `Field`. Use `get_text()` for the `description` of each field.
 
-    from ai_shell_agent import logger # Use the central logger
-    from ai_shell_agent.tool_registry import register_tools
-    from ai_shell_agent.utils import read_json, write_json, ensure_dotenv_key # Import utils
-    from ai_shell_agent.errors import PromptNeededError # For HITL tools
-    from ai_shell_agent.console_manager import get_console_manager # For configure_toolset prompting
+*   **Tool Classes:**
+    *   Inherit from `langchain_core.tools.BaseTool`.
+    *   **`name`:** **Hardcode** the API-compliant tool name (letters, numbers, `_`, `-` only). **Do NOT use `get_text()` here.** (e.g., `name: str = "mytool_do_something"`)
+    *   **`description`:** Use `get_text()` to provide a clear description for the AI and user (e.g., `description: str = get_text("tools.do_something.description")`).
+    *   **`args_schema`:** Assign your Pydantic schema class (e.g., `args_schema: Type[BaseModel] = DoSomethingSchema`).
+    *   **`_run` method:** Implement synchronous logic. Use `get_text()` for any return messages or error strings.
+    *   **`_arun` method (optional):** Implement async logic or use `run_in_executor`.
+    *   **HITL Tools:**
+        *   Add `requires_confirmation: bool = True`.
+        *   Add `confirmed_input: Optional[str] = None` to `_run`/`_arun` signature.
+        *   If `confirmed_input is None`, `raise PromptNeededError(...)`. Provide `tool_name=self.name`, `proposed_args` (dict matching `args_schema`), and `edit_key` (which argument field the user should edit/confirm). Use `get_text()` for `prompt_suffix` if customizing the prompt.
+        *   If `confirmed_input is not None`, execute the action using the `confirmed_input`.
 
-    console = get_console_manager()
+*   **Instantiate and Register Tools:**
+    *   Create instances of your tool classes.
+    *   Create a list `toolset_tools: List[BaseTool] = [instance1, instance2, ...]`.
+    *   Call `register_tools(toolset_tools)` at the **end of the file**.
 
-    # --- Tool Schemas ---
-    class DoSomethingSchema(BaseModel):
-        target: str = Field(description="The target object.")
-        value: int = Field(description="The value to set.")
+**Example Snippet (`toolset.py`):**
 
-    # --- Tool Classes ---
-    class DoSomethingTool(BaseTool):
-        name: str = "mytool_do_something" # Use a unique prefix
-        description: str = "Performs a specific action on a target."
-        args_schema: Type[BaseModel] = DoSomethingSchema
+```python
+# ai_shell_agent/toolsets/my_toolset/toolset.py
+from typing import List, Dict, Optional, Any, Type, Callable
+from pathlib import Path
+from pydantic import BaseModel, Field
+from langchain_core.tools import BaseTool
+from langchain_core.runnables.config import run_in_executor
 
-        def _run(self, target: str, value: int) -> str:
+# Use .. imports to navigate up from toolsets/my_toolset/ to the main package level
+from ... import logger
+from ...tool_registry import register_tools
+from ...utils.file_io import read_json, write_json # Example utils
+from ...utils.env import ensure_dotenv_key
+from ...errors import PromptNeededError
+from ...console_manager import get_console_manager
+from .texts import get_text # Import from local texts.py
+
+console = get_console_manager()
+
+# --- Toolset Metadata ---
+toolset_id = "my_toolset"
+toolset_name = get_text("toolset.name")
+toolset_description = get_text("toolset.description")
+toolset_required_secrets: Dict[str, str] = {
+    "MYTOOL_API_KEY": get_text("secrets.api_key_desc") # Get desc from texts
+}
+
+# --- Toolset Configuration Function (Optional) ---
+def configure_toolset(...) -> Dict:
+    # ... (Implementation as described above, using get_text) ...
+    pass
+
+# --- Tool Schemas ---
+class DoSomethingSchema(BaseModel):
+    target: str = Field(description=get_text("schemas.do_something.target_desc"))
+    value: int = Field(description=get_text("schemas.do_something.value_desc"))
+
+class RiskyActionSchema(BaseModel):
+     target: str = Field(description=get_text("schemas.risky_action.target_desc"))
+
+# --- Tool Classes ---
+class DoSomethingTool(BaseTool):
+    name: str = "mytool_do_something" # HARDCODED name
+    description: str = get_text("tools.do_something.description")
+    args_schema: Type[BaseModel] = DoSomethingSchema
+
+    def _run(self, target: str, value: int) -> str:
+        try:
             logger.info(f"MyTool: Doing something with {target}={value}")
             # ... implementation ...
-            return f"Successfully did something with {target}."
-
-        async def _arun(self, target: str, value: int) -> str:
-            return await run_in_executor(None, self._run, target, value)
-
-    # --- Example HITL Tool ---
-    class RiskyActionTool(BaseTool):
-        name: str = "mytool_risky_action"
-        description: str = "Performs a potentially risky action that requires user confirmation."
-        args_schema: Type[BaseModel] = DoSomethingSchema # Reuse schema for example
-        requires_confirmation: bool = True
-
-        def _run(self, target: str, value: int, confirmed_input: Optional[str] = None) -> str:
-            # Note: For HITL, the args schema defines what the *LLM provides*.
-            # The `confirmed_input` comes from the user via the wrapper.
-            # We need to parse the `confirmed_input` if the user changed it.
-            # For simplicity here, we assume the user confirms/edits the 'target'.
-
-            if confirmed_input is None:
-                # First call, request confirmation
-                logger.debug(f"MyTool: Raising PromptNeededError for risky action on {target}")
-                # The key in proposed_args MUST match a field in args_schema
-                # The edit_key tells the system which arg the user should edit/confirm.
-                raise PromptNeededError(
-                    tool_name=self.name,
-                    proposed_args={"target": target, "value": value}, # Provide all args the LLM gave
-                    edit_key="target" # Ask user to confirm/edit the 'target'
-                )
-            else:
-                # Second call, input is confirmed/edited
-                final_target = confirmed_input # User confirmed/edited the 'target' string
-                final_value = value # Use the original value provided by LLM
-                logger.info(f"MyTool: Performing confirmed risky action on {final_target} with value {final_value}")
-                # ... perform the action using final_target and final_value ...
-                return f"Successfully performed confirmed risky action on {final_target}."
-
-        async def _arun(self, target: str, value: int, confirmed_input: Optional[str] = None) -> str:
-             return await run_in_executor(None, self._run, target, value, confirmed_input)
-    ```
-
-**c) Toolset Metadata Variables:** Define these variables at the module level.
-
-    ```python
-    # ai_shell_agent/toolsets/my_toolset/toolset.py
-
-    # --- Toolset Metadata ---
-    toolset_id = "my_toolset" # Should match the directory name
-    toolset_name = "My Custom Toolset" # User-friendly name
-    toolset_description = "Provides tools for doing custom things." # Description for the user
-    ```
-
-**d) Configuration Defaults and Secrets:** Define default configuration values and any required environment variables (secrets).
-
-    ```python
-    # ai_shell_agent/toolsets/my_toolset/toolset.py
-
-    # --- Toolset Configuration ---
-    # Default values for configuration settings specific to this toolset
-    toolset_config_defaults: Dict[str, Any] = {
-        "api_endpoint": "https://api.example.com/v1",
-        "retries": 3,
-        "feature_flag": False
-    }
-
-    # Secrets required by this toolset
-    # Key: Environment variable name
-    # Value: Description/URL shown to user if key is missing
-    toolset_required_secrets: Dict[str, str] = {
-        "MYTOOL_API_KEY": "API Key for the MyTool service (get from example.com/keys)",
-        "MYTOOL_SECRET_TOKEN": "Secret token for authentication"
-    }
-    ```
-
-**e) `configure_toolset` Function (Optional but Recommended):** If your toolset needs configuration beyond secrets (or needs complex secret handling), implement this function. It's called automatically when needed (e.g., first time the toolset is enabled in a chat without existing config).
-
-    ```python
-    # ai_shell_agent/toolsets/my_toolset/toolset.py
-
-    # --- Toolset Configuration Function ---
-    def configure_toolset(
-        global_config_path: Path, # Path to save/read global defaults (data/toolsets/<id>.json)
-        local_config_path: Path,  # Path to save/read chat-specific config (data/chats/<chat>/toolsets/<id>.json)
-        dotenv_path: Path,        # Path to the main .env file
-        current_chat_config: Optional[Dict] # Existing config for this chat (if any)
-    ) -> Dict:
-        """
-        Prompts user for My Toolset configuration and saves it.
-        """
-        logger.info(f"Configuring My Toolset. Global: {global_config_path}, Local: {local_config_path}")
-
-        # Use current_chat_config or defaults for prompting
-        config_to_prompt = current_chat_config or toolset_config_defaults
-        final_config = {} # Build the results here
-
-        console.display_message("SYSTEM:", "\n--- Configure My Toolset ---", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-
-        # Example: Prompt for API endpoint
-        try:
-            endpoint = console.prompt_for_input(
-                "Enter API endpoint",
-                default=config_to_prompt.get("api_endpoint")
-            ).strip()
-            final_config["api_endpoint"] = endpoint or config_to_prompt.get("api_endpoint") # Keep default if empty
-
-            # Example: Prompt for retries (numeric)
-            retries_str = console.prompt_for_input(
-                "Enter number of retries",
-                default=str(config_to_prompt.get("retries", 3)) # Ensure default is string
-            ).strip()
-            final_config["retries"] = int(retries_str) if retries_str else config_to_prompt.get("retries", 3)
-
-        except (KeyboardInterrupt, ValueError, EOFError):
-            console.display_message("WARNING:", "\nConfiguration cancelled or invalid input. Using previous/default values.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-            # Return the existing config or defaults on cancellation/error
-            return current_chat_config or toolset_config_defaults
+            return get_text("tools.do_something.success", target=target)
         except Exception as e:
-            logger.error(f"Error during My Toolset configuration: {e}", exc_info=True)
-            console.display_message("ERROR:", f"\nConfiguration error: {e}", console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-            return current_chat_config or toolset_config_defaults
+            logger.error(f"MyTool Error: {e}", exc_info=True)
+            return get_text("tools.do_something.error_generic", target=target, error=e)
 
-        # Ensure required secrets are present using the utility function
-        all_secrets_ok = True
-        console.display_message("SYSTEM:", "\nChecking required secrets...", console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-        for key, description in toolset_required_secrets.items():
-            if ensure_dotenv_key(dotenv_path, key, description) is None:
-                # ensure_dotenv_key handles prompting if needed
-                all_secrets_ok = False # Mark if any key was skipped/failed
+    async def _arun(self, target: str, value: int) -> str:
+        return await run_in_executor(None, self._run, target, value)
 
-        # Save the final configuration to BOTH local and global paths
-        save_success = True
-        try:
-            write_json(local_config_path, final_config)
-            logger.info(f"My Toolset configuration saved to local path: {local_config_path}")
-        except Exception as e:
-            save_success = False; logger.error(f"Failed to save config to {local_config_path}: {e}")
-        try:
-            write_json(global_config_path, final_config)
-            logger.info(f"My Toolset configuration saved to global path: {global_config_path}")
-        except Exception as e:
-            save_success = False; logger.error(f"Failed to save config to {global_config_path}: {e}")
+class RiskyActionTool(BaseTool):
+    name: str = "mytool_risky_action" # HARDCODED name
+    description: str = get_text("tools.risky_action.description")
+    args_schema: Type[BaseModel] = RiskyActionSchema
+    requires_confirmation: bool = True
 
-        # Provide feedback
-        if save_success:
-            console.display_message("INFO:", "\nMy Toolset configuration saved for this chat and globally.", console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-            if not all_secrets_ok:
-                 console.display_message("WARNING:", "Note: One or more required secrets were skipped. The toolset might not function correctly.", console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+    def _run(self, target: str, confirmed_input: Optional[str] = None) -> str:
+        if confirmed_input is None:
+            logger.debug(f"MyTool: Raising PromptNeededError for risky action on {target}")
+            raise PromptNeededError(
+                tool_name=self.name,
+                proposed_args={"target": target},
+                edit_key="target",
+                prompt_suffix=get_text("tools.risky_action.prompt_suffix", target=target)
+            )
         else:
-             console.display_message("ERROR:", "\nFailed to save My Toolset configuration. Check logs.", console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
+            final_target = confirmed_input
+            logger.info(f"MyTool: Performing confirmed risky action on {final_target}")
+            # ... perform action ...
+            return get_text("tools.risky_action.success", final_target=final_target)
 
-        return final_config # Return the configured dictionary
-    ```
-    *   **Important:** The `configure_toolset` function *must* save the resulting configuration dictionary to *both* `local_config_path` and `global_config_path` using `write_json`. It should also use `ensure_dotenv_key` (from `ai_shell_agent.utils`) to handle prompting for any secrets defined in `toolset_required_secrets`.
+    async def _arun(self, target: str, confirmed_input: Optional[str] = None) -> str:
+         return await run_in_executor(None, self._run, target, confirmed_input)
 
-**f) Instantiate and Register Tools:** Create instances of your tool classes and register them using `register_tools`. Define which tool (if any) acts as the "starter" for the toolset.
 
-    ```python
-    # ai_shell_agent/toolsets/my_toolset/toolset.py
+# --- Instantiate Tools ---
+do_something_tool_instance = DoSomethingTool()
+risky_action_tool_instance = RiskyActionTool()
 
-    # --- Instantiate Tools ---
-    do_something_tool = DoSomethingTool()
-    risky_action_tool = RiskyActionTool()
-    # Add other tool instances...
+# --- Define Toolset Structure ---
+toolset_tools: List[BaseTool] = [
+    do_something_tool_instance,
+    risky_action_tool_instance,
+]
 
-    # --- Define Toolset Structure ---
-    # Tool that activates the toolset (can be None)
-    toolset_start_tool: Optional[BaseTool] = None # Or assign one of your tool instances
+# --- Register Tools ---
+register_tools(toolset_tools)
+logger.debug(f"Registered {toolset_name} ({toolset_id}) with tools: {[t.name for t in toolset_tools]}")
 
-    # List of main tools available when the toolset is active
-    toolset_tools: List[BaseTool] = [
-        do_something_tool,
-        risky_action_tool,
-        # Add other tool instances...
-    ]
+```
 
-    # --- Register Tools (MUST be done at the end of the file) ---
-    # Combine start tool (if exists) and main tools for registration
-    all_tool_instances = ([toolset_start_tool] if toolset_start_tool else []) + toolset_tools
-    register_tools(all_tool_instances)
+## 3. Testing Your Toolset
 
-    logger.debug(f"Registered My Toolset ({toolset_id}) with tools: {[t.name for t in all_tool_instances]}")
-    ```
-
-## 4. How It Works (Summary)
-
-1.  **Discovery:** When the agent starts, `ai_shell_agent/toolsets/toolsets.py` scans the `toolsets/` directory.
-2.  **Import & Metadata:** It imports `toolset.py` from each subdirectory found. It reads the metadata variables (`toolset_name`, `toolset_description`, etc.) and the `configure_toolset` function reference (if defined).
-3.  **Tool Validation:** It checks if the tools listed in `toolset_tools` and `toolset_start_tool` are valid `BaseTool` instances AND are registered in the central `tool_registry` (this is why the `register_tools` call in your `toolset.py` is essential).
-4.  **Configuration Trigger:** When a toolset is enabled for a chat (either manually via `--select-tools` or by the AI activating its `start_tool`), the `chat_state_manager.check_and_configure_toolset` function runs.
-5.  **Config Handling:**
-    *   It checks for existing configuration (`local_config_path`, `global_config_path`).
-    *   If no valid config exists and your toolset provided a `configure_toolset` function, that function is called.
-    *   The `configure_toolset` function handles user interaction (via `console_manager`) and saves the config to *both* local and global paths.
-    *   If no `configure_toolset` function exists, default values (from `toolset_config_defaults`) and secrets (from `toolset_required_secrets`) are handled automatically (secrets will prompt the user if missing via `ensure_dotenv_key`).
-6.  **Tool Binding:** When the AI needs to respond in a chat, `llm.py` gets the list of currently *active* and *enabled* toolsets for that specific chat from `chat_state_manager`. It dynamically binds the appropriate tools (starter tool for enabled-but-inactive, main tools for active) to the LLM for that specific interaction.
-
-## 5. Testing Your Toolset
-
-*   **Discovery:** Run the agent (e.g., `ai --list-toolsets`). Check the output and logs (`data/agent.log` if configured) to ensure your toolset is listed correctly and no errors occurred during discovery.
+*   **Discovery & Metadata:** Run `ai --list-toolsets`. Verify your toolset appears with the correct name and description (from `texts.py`). Check `data/agent.log` for registration messages and errors.
 *   **Configuration:**
-    *   Enable your toolset in a chat (`ai -c test_chat --select-tools`, then select your toolset).
-    *   If you have a `configure_toolset` function, it should run automatically. Test the prompts and secret handling.
-    *   If you rely on defaults/secrets only, ensure `ensure_dotenv_key` prompts correctly if secrets are missing.
-    *   Check the contents of `data/chats/test_chat/toolsets/my_toolset.json` and `data/toolsets/my_toolset.json` to verify configuration was saved.
+    *   Enable the toolset: `ai -c test_chat --select-tools`.
+    *   Trigger configuration: The first time you use the toolset in `test_chat`, the `configure_toolset` function should run (if defined). Test its prompts, defaults, and secret handling (`ensure_dotenv_key`). If no `configure_toolset` is defined, ensure secrets prompt correctly if missing from `.env`.
+    *   Verify saved config: Check `data/chats/test_chat/toolsets/my_toolset.json` and `data/toolsets/my_toolset.json`.
 *   **Activation & Usage:**
-    *   If you have a `start_tool`, try asking the AI to use it (e.g., `ai -c test_chat "Start my toolset"`). Verify it becomes active (`ai --list-toolsets`). Check if the prompt content from `prompts.py` is returned.
-    *   Ask the AI to use the main tools defined in `toolset_tools`. Check logs for execution details and errors.
-    *   Test any HITL tools – ensure the confirmation prompt appears correctly and the tool executes after confirmation.
+    *   Ask the AI to perform tasks that should use your tools (e.g., `ai -c test_chat "Use my toolset to do something with target=abc and value=123"`).
+    *   Check logs for tool execution messages.
+    *   Verify expected outputs are returned.
+    *   Test HITL tools: Ensure confirmation prompts appear correctly (using `get_text` for the suffix), editing works, and the action executes only after confirmation. Check cancellation (Ctrl+C).
+*   **Localization (Optional):**
+    *   Run `ai --localize <lang_code>` to generate translations.
+    *   Check the generated `my_toolset/texts/<lang_code>_texts.json`. Verify tool names were *not* translated, but descriptions were.
+    *   Run `ai --select-language` to switch, restart, and test the UI in the new language.
 
-## Examples
+By following these steps and referencing the existing toolsets, you can effectively extend the AI Shell Agent with new capabilities.```
 
-Refer to the existing toolsets for practical examples:
+## 3. Testing Your Toolset
 
-*   `ai_shell_agent/toolsets/terminal/`: Simple toolset with HITL tools and minimal configuration.
-*   `ai_shell_agent/toolsets/aider/`: Complex toolset with significant state management, background threads, and a detailed `configure_toolset` function.
+*   **Discovery & Metadata:** Run `ai --list-toolsets`. Verify your toolset appears with the correct name and description (from `texts.py`). Check `data/agent.log` for registration messages and errors.
+*   **Configuration:**
+    *   Enable the toolset: `ai -c test_chat --select-tools`.
+    *   Trigger configuration: The first time you use the toolset in `test_chat`, the `configure_toolset` function should run (if defined). Test its prompts, defaults, and secret handling (`ensure_dotenv_key`). If no `configure_toolset` is defined, ensure secrets prompt correctly if missing from `.env`.
+    *   Verify saved config: Check `data/chats/test_chat/toolsets/my_toolset.json` and `data/toolsets/my_toolset.json`.
+*   **Activation & Usage:**
+    *   Ask the AI to perform tasks that should use your tools (e.g., `ai -c test_chat "Use my toolset to do something with target=abc and value=123"`).
+    *   Check logs for tool execution messages.
+    *   Verify expected outputs are returned.
+    *   Test HITL tools: Ensure confirmation prompts appear correctly (using `get_text` for the suffix), editing works, and the action executes only after confirmation. Check cancellation (Ctrl+C).
+*   **Localization (Optional):**
+    *   Run `ai --localize <lang_code>` to generate translations.
+    *   Check the generated `my_toolset/texts/<lang_code>_texts.json`. Verify tool names were *not* translated, but descriptions were.
+    *   Run `ai --select-language` to switch, restart, and test the UI in the new language.
 
-By following these steps, you can effectively add new capabilities to the AI Shell Agent.
-
----
+By following these steps and referencing the existing toolsets, you can effectively extend the AI Shell Agent with new capabilities.

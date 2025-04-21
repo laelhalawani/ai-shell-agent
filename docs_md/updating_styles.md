@@ -1,222 +1,146 @@
+Okay, let's rewrite the `updating_styles.md` guide to reflect the new JSON-based styling system.
+
+```markdown
 # Customizing Styles in AI Shell Agent
 
-This guide explains how to update colors and styles for different types of messages in the AI Shell Agent. Whether you want to change the AI responses to be green instead of blue, or modify any other visual aspects of the application, this document will walk you through the process.
+This guide explains how to update colors and styles for the AI Shell Agent interface. The application uses a centralized JSON file to define colors and map them to different UI elements for both standard console output (`rich`) and interactive prompts (`prompt_toolkit`).
 
 ## Style System Overview
 
-AI Shell Agent uses two style systems that need to be kept in sync:
+Styles are defined in a single JSON file:
 
-1. **Rich Styles** - Used for console output via the `rich` library
-2. **Prompt Toolkit Styles** - Used for interactive prompts via the `prompt_toolkit` library
+*   **File:** `ai_shell_agent/styles/default_style.json`
 
-Both style systems are defined in `ai_shell_agent/console_manager.py`. When changing styles, you need to update both to ensure consistent appearance.
+This file contains three main sections:
 
-## Step 1: Locate the Style Definitions
+1.  **`colors`**: Defines named color variables (using hex codes). This is the recommended place to change base colors.
+2.  **`rich_styles`**: Defines styles used by the `rich` library for displaying messages (AI responses, system info, errors, etc.). These styles often *refer* to the colors defined in the `colors` section.
+3.  **`ptk_styles`**: Defines styles used by the `prompt_toolkit` library for interactive input prompts (user input line, HITL prompts, selection prompts). These styles also often *refer* to the colors defined in the `colors` section.
 
-Open `ai_shell_agent/console_manager.py` and find the style definitions near the top of the file. You'll see two main sections:
+The application automatically processes this JSON file via `ai_shell_agent/styles.py` to create the necessary style objects for `rich` and `prompt_toolkit`.
 
-```python
-# Rich styles
-STYLE_AI_LABEL = RichStyle(color="blue", bold=True)
-STYLE_AI_CONTENT = RichStyle(color="blue")
-STYLE_USER_LABEL = RichStyle(color="purple", bold=True)
-# ... more Rich styles ...
+## Modifying Styles: The Recommended Way (Changing Colors)
 
-# Prompt Toolkit styles
-PTK_STYLE = PTKStyle.from_dict({
-    'style_ai_label':          'bold fg:ansiblue',
-    'style_user_label':        'bold fg:ansimagenta',
-    # ... more PT styles ...
-})
-```
+The easiest and most consistent way to change the appearance is to modify the hex color codes in the `colors` section of `default_style.json`.
 
-## Step 2: Understand Style Formats
+**Example: Change AI message color from purple to green**
 
-### Rich Styles
+1.  **Open:** `ai_shell_agent/styles/default_style.json`
+2.  **Locate:** The `colors` section.
+3.  **Find:** The `"ai"` key. Its default value might be `"#B19CD9"` (a light purple).
+4.  **Change:** The hex value to your desired green, for example `"#90EE90"` (light green).
 
-Rich styles use descriptive color names or RGB hex codes:
+    ```json
+    {
+      "colors": {
+        "ai": "#90EE90", // Changed from #B19CD9
+        "user": "#FFAA99",
+        "info": "#8FD9A8",
+        // ... other colors ...
+      },
+      // ... rest of the file ...
+    }
+    ```
+5.  **Save** the file.
+6.  **Restart** the `ai` agent.
 
-```python
-RichStyle(color="green", bold=True)  # Named color
-RichStyle(color="#00FF00", bold=True)  # Hex color
-```
+Because the `rich_styles` (like `ai_label`, `ai_content`) and `ptk_styles` (like `style_ai_label`, `style_ai_content`) refer to `"colors.ai"`, changing this single color value will automatically update all relevant UI elements that use the "ai" color.
 
-Available attributes:
-- `color` - Text color (named color or hex)
-- `bgcolor` - Background color
-- `bold` - Bold text (True/False)
-- `italic` - Italic text (True/False)
-- `underline` - Underlined text (True/False)
-- `dim` - Dimmed text (True/False)
+## Advanced Modifications (Changing Style Attributes)
 
-### Prompt Toolkit Styles
+You can also modify specific style attributes (like bold, underline, background color) or assign different colors directly within the `rich_styles` and `ptk_styles` sections.
 
-Prompt Toolkit uses a different format:
+### Modifying Rich Styles (`rich_styles`)
 
-```python
-'bold fg:ansigreen'  # Bold green text
-'bg:ansiblue'        # Blue background
-```
+*   **Structure:** A dictionary where keys are style identifiers (e.g., `"error_label"`) and values are configuration objects.
+*   **Configuration:**
+    *   `"color"`: Can be a direct hex string (`"#FF0000"`) or a reference (`"colors.error"`).
+    *   `"bgcolor"`: Background color (hex or reference).
+    *   `"bold"`, `"italic"`, `"underline"`, `"strike"`, `"dim"`: Boolean values (`true` or `false`).
 
-Available formats:
-- `fg:color` - Foreground color
-- `bg:color` - Background color
-- `bold` - Bold text
-- `italic` - Italic text
-- `underline` - Underlined text
+*   **Example: Make error labels bold and underlined, keeping the referenced error color:**
 
-For colors, use either:
-- ANSI colors: `ansiblack`, `ansired`, `ansigreen`, `ansiyellow`, `ansiblue`, `ansimagenta`, `ansicyan`, `ansigray`
-- Hex colors: `#RRGGBB`
+    ```json
+    {
+      // ... colors ...
+      "rich_styles": {
+        // ... other styles ...
+        "error_label": { "color": "colors.error", "bold": true, "underline": true }, // Added underline
+        "error_content": { "color": "colors.error" },
+        // ... other styles ...
+      },
+      // ... ptk_styles ...
+    }
+    ```
 
-## Step 3: Modify Styles
+### Modifying Prompt Toolkit Styles (`ptk_styles`)
 
-To change a style, update both the Rich and Prompt Toolkit definitions. For example, to change AI messages from blue to green:
+*   **Structure:** A dictionary where keys are style class names (e.g., `"style_error_label"`, `"prompt.prefix"`) and values are style strings.
+*   **Style String Format:** Uses `prompt_toolkit`'s format (e.g., `bold`, `italic`, `underline`, `fg:#RRGGBB`, `bg:colorname`, `fg:colors.error`). See `prompt_toolkit` documentation for details. Color references like `"colors.some_color"` are resolved automatically.
 
-```python
-# Change Rich style from blue to green
-STYLE_AI_LABEL = RichStyle(color="green", bold=True)
-STYLE_AI_CONTENT = RichStyle(color="green")
+*   **Example: Add an underline to the error label in prompts:**
 
-# Change corresponding Prompt Toolkit style
-PTK_STYLE = PTKStyle.from_dict({
-    # ... other styles ...
-    'style_ai_label':          'bold fg:ansigreen',
-    'style_ai_content':        'fg:ansigreen',
-    # ... other styles ...
-})
-```
+    ```json
+    {
+      // ... colors ...
+      // ... rich_styles ...
+      "ptk_styles": {
+        // ... other styles ...
+        "style_error_label": "bold underline fg:colors.error", // Added underline
+        "style_error_content": "fg:colors.error",
+        // ... other styles ...
+      }
+    }
+    ```
 
-## Common Customization Examples
+**Consistency Note:** If you change attributes directly in `rich_styles` or `ptk_styles` without using color references, you might need to manually update both sections to keep the appearance perfectly consistent between standard output and interactive prompts. Using the `colors` section is generally preferred for color changes.
 
-### Example 1: Swap AI and INFO Colors
+## Adding New Styles
 
-To make AI messages green and INFO messages blue:
+If extending the application requires new styled elements:
 
-```python
-# Rich styles
-STYLE_AI_LABEL = RichStyle(color="green", bold=True)
-STYLE_AI_CONTENT = RichStyle(color="green")
-STYLE_INFO_LABEL = RichStyle(color="blue", bold=True)
-STYLE_INFO_CONTENT = RichStyle(color="blue")
+1.  **(Optional) Define a new color** in the `"colors"` section if needed (e.g., `"special_alert": "#FF8C00"`).
+2.  **Add a new entry** to `"rich_styles"` (e.g., `"special_alert_label": { "color": "colors.special_alert", "italic": true }`). The key (`"special_alert_label"`) will be used to generate the Python constant `STYLE_SPECIAL_ALERT_LABEL`.
+3.  **Add a corresponding entry** to `"ptk_styles"` (e.g., `"style_special_alert_label": "italic fg:colors.special_alert"`). The key should generally follow the `style_` prefix convention for consistency, but can be anything `prompt_toolkit` accepts.
+4.  After restarting the agent, you can import and use the new Rich style constant (e.g., `from .styles import STYLE_SPECIAL_ALERT_LABEL`) in your Python code. The PTK style will be automatically included in the main `PTK_STYLE` object used by `prompt_toolkit_prompt`.
 
-# PT styles
-PTK_STYLE = PTKStyle.from_dict({
-    # ... other styles ...
-    'style_ai_label':          'bold fg:ansigreen',
-    'style_ai_content':        'fg:ansigreen',
-    'style_info_label':        'bold fg:ansiblue',
-    'style_info_content':      'fg:ansiblue',
-    # ... other styles ...
-})
-```
+## Style Reference
 
-### Example 2: Use Custom Hex Colors
+This table maps the style keys in `default_style.json` to their purpose in the UI:
 
-To use specific hex colors:
+| `colors` Key         | `rich_styles` Key(s)           | `ptk_styles` Key(s)                       | Purpose                                     |
+| :------------------- | :----------------------------- | :---------------------------------------- | :------------------------------------------ |
+| `ai`                 | `ai_label`, `ai_content`, `thinking` | `style_ai_label`, `style_ai_content`, `style_thinking` | AI messages, thinking indicator           |
+| `user`               | `user_label`                   | `style_user_label`                        | User input labels (in history listing)      |
+| `info`               | `info_label`, `info_content`   | `style_info_label`, `style_info_content`  | Informational messages                    |
+| `warning`            | `warning_label`, `warning_content` | `style_warning_label`, `style_warning_content` | Warning messages                        |
+| `error`              | `error_label`, `error_content` | `style_error_label`, `style_error_content` | Error messages                          |
+| `system`             | `system_label`, `system_content` | `style_system_label`, `style_system_content` | System messages, UI instructions        |
+| `tool`               | `tool_name`                    | `style_tool_name`, `prompt.toolname`      | Tool names in output/prompts            |
+| `command`            | `command_label`, `command_content`, `code` | `style_command_label`, `style_command_content` | Direct command execution, Code snippets |
+| `dim_text`           | `arg_name`, `arg_value`, `tool_output_dim` | `style_arg_name`, `style_arg_value`, `style_tool_output_dim`, `prompt.argname`, `prompt.argvalue` | Dimmed text (args, condensed output)    |
+| `neutral`            | *(Used directly if needed)*    | *(Used directly if needed)*               | General neutral color (e.g., white)       |
+| `prompt_prefix`      | *(N/A)*                        | `prompt.prefix`                           | Prefix text for user input prompts      |
+| `prompt_default_hint`| *(N/A)*                        | `default`                                 | Default value hint in prompts           |
+| `input_text`         | *(N/A)*                        | `""` (Empty key)                          | Default text color for user input       |
+| `option_underline`   | `input_option`                 | `style_input_option`                      | Underlined options in selection lists   |
+| `code`               | `code`                         | *(Covered by command styles)*             | Standalone code block style             |
 
-```python
-# Rich styles
-STYLE_WARNING_LABEL = RichStyle(color="#FFA500", bold=True)  # Orange
-STYLE_WARNING_CONTENT = RichStyle(color="#FFA500")
-
-# PT styles
-PTK_STYLE = PTKStyle.from_dict({
-    # ... other styles ...
-    'style_warning_label':     'bold fg:#FFA500',
-    'style_warning_content':   'fg:#FFA500',
-    # ... other styles ...
-})
-```
-
-### Example 3: Add Background Colors
-
-To add background colors to labels:
-
-```python
-# Rich styles
-STYLE_ERROR_LABEL = RichStyle(color="white", bgcolor="red", bold=True)
-
-# PT styles
-PTK_STYLE = PTKStyle.from_dict({
-    # ... other styles ...
-    'style_error_label':       'bold fg:ansiwhite bg:ansired',
-    # ... other styles ...
-})
-```
-
-## Using a Single Color Definition Source
-
-While it's not possible to completely unify the two styling systems due to their different formats, you could create a single source of truth for color values by using hex colors exclusively and defining them as constants with semantic names:
-
-```python
-# Define colors as semantic constants
-AI_LABEL_COLOR = "#0000FF"       # Blue for AI labels
-AI_CONTENT_COLOR = "#0000FF"     # Blue for AI content
-INFO_LABEL_COLOR = "#00FF00"     # Green for info labels
-INFO_CONTENT_COLOR = "#00FF00"   # Green for info content
-WARNING_COLOR = "#FFFF00"        # Yellow for warnings
-ERROR_COLOR = "#FF0000"          # Red for errors
-SYSTEM_COLOR = "#00FFFF"         # Cyan for system messages
-USER_LABEL_COLOR = "#FF00FF"     # Magenta for user labels
-COMMAND_COLOR = "#FF00FF"        # Magenta for command content
-DIM_TEXT_COLOR = "#888888"       # Dim gray for less important text
-
-# Rich styles
-STYLE_AI_LABEL = RichStyle(color=AI_LABEL_COLOR, bold=True)
-STYLE_AI_CONTENT = RichStyle(color=AI_CONTENT_COLOR)
-STYLE_ERROR_LABEL = RichStyle(color=ERROR_COLOR, bold=True)
-STYLE_ERROR_CONTENT = RichStyle(color=ERROR_COLOR)
-# ...etc
-
-# Prompt Toolkit styles
-PTK_STYLE = PTKStyle.from_dict({
-    'style_ai_label':          f'bold fg:{AI_LABEL_COLOR}',
-    'style_ai_content':        f'fg:{AI_CONTENT_COLOR}',
-    'style_error_label':       f'bold fg:{ERROR_COLOR}',
-    'style_error_content':     f'fg:{ERROR_COLOR}',
-    # ...etc
-})
-```
-
-This approach provides several advantages:
-
-1. **Single Source of Truth**: Color values are defined once and used consistently
-2. **Semantic Naming**: Color constants are named by their purpose, not their value
-3. **Easy Updates**: Changing a color requires modifying only one line
-4. **Maintainability**: New developers can understand the purpose of each color at a glance
-
-The trade-off is that you lose access to the built-in named color systems of both libraries, but the improved maintainability is often worth it, especially if you're using custom brand colors.
-
-## Style Categories
-
-Here are all the style categories you can modify:
-
-| Category | Purpose |
-|----------|---------|
-| `AI_LABEL` / `AI_CONTENT` | AI messages and responses |
-| `USER_LABEL` | User input labels |
-| `INFO_LABEL` / `INFO_CONTENT` | Informational messages |
-| `WARNING_LABEL` / `WARNING_CONTENT` | Warning messages |
-| `ERROR_LABEL` / `ERROR_CONTENT` | Error messages |
-| `SYSTEM_LABEL` / `SYSTEM_CONTENT` | System messages |
-| `TOOL_NAME` | Tool names in output |
-| `ARG_NAME` / `ARG_VALUE` | Tool argument names and values |
-| `THINKING` | "AI: Thinking..." indicator |
-| `INPUT_OPTION` | Input options |
-| `COMMAND_LABEL` / `COMMAND_CONTENT` | Command input/output |
-| `TOOL_OUTPUT_DIM` | Dimmed tool output |
+*Note: Some `ptk_styles` keys like `prompt.prefix` or `""` are specific class names used by `prompt_toolkit` itself.*
 
 ## Testing Changes
 
-After making style changes, run the AI Shell Agent to verify that your changes look as expected across all types of interactions. Pay attention to both standard output and interactive prompts, as they use different styling systems.
+After modifying `default_style.json`, **you must restart the `ai` agent** for the changes to take effect. The JSON file is read only once during startup.
+
+Test various commands (`ai "hi"`, `ai --list-chats`, `ai --select-model`, triggering HITL prompts, etc.) to ensure your style changes appear correctly in all relevant parts of the UI.
 
 ## Best Practices
 
-1. **Maintain Contrast**: Ensure text remains readable on your terminal background
-2. **Keep Styles Consistent**: Use similar colors for related functionality
-3. **Consider Accessibility**: Some color combinations may be difficult to read for users with color vision deficiencies
-4. **Keep Both Style Systems in Sync**: Always update both Rich and Prompt Toolkit styles
-5. **Test in Different Terminals**: Styles may render differently across terminal applications
+*   **Use the `colors` Section:** Prefer changing colors in the `colors` section for consistency across Rich and Prompt Toolkit elements.
+*   **Maintain Contrast:** Ensure text remains readable against your terminal's background color.
+*   **Keep Styles Consistent:** Use similar colors/styles for related UI elements (e.g., all error messages).
+*   **Consider Accessibility:** Avoid color combinations that might be difficult to read for users with color vision deficiencies.
+*   **Test in Different Terminals:** Styles can sometimes render slightly differently across various terminal applications (Windows Terminal, WSL, macOS Terminal, GNOME Terminal, etc.).
 
-By following this guide, you can customize the visual appearance of AI Shell Agent to match your preferences or branding requirements.
+By editing the `default_style.json` file, you can easily customize the look and feel of the AI Shell Agent.
+```
