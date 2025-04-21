@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Shell Agent</title>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2c3e50;
+            --accent-color: #e74c3c;
+            --text-color: #333;
+            --light-bg: #f8f9fa;
+            --sidebar-width: 250px;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--secondary-color);
+            color: white;
+            padding: 2rem 1rem;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        
+        .sidebar h2 {
+            margin-bottom: 1.5rem;
+            font-size: 1.3rem;
+            color: white;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 0.5rem;
+        }
+        
+        .sidebar ul {
+            list-style: none;
+        }
+        
+        .sidebar li {
+            margin-bottom: 0.5rem;
+        }
+        
+        .sidebar a {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            font-size: 0.95rem;
+            display: block;
+            padding: 0.5rem;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        
+        .sidebar a:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        
+        .sidebar .submenu {
+            margin-left: 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+            margin-left: var(--sidebar-width);
+            max-width: calc(100% - var(--sidebar-width));
+        }
+        
+        h1, h2, h3, h4 {
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--secondary-color);
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            color: var(--primary-color);
+            margin-top: 0;
+        }
+        
+        h2 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid var(--light-bg);
+            padding-bottom: 0.5rem;
+            margin-top: 2.5rem;
+        }
+        
+        h3 {
+            font-size: 1.4rem;
+        }
+        
+        h4 {
+            font-size: 1.2rem;
+        }
+        
+        p {
+            margin-bottom: 1rem;
+        }
+        
+        ul, ol {
+            margin-bottom: 1rem;
+            padding-left: 2rem;
+        }
+        
+        li {
+            margin-bottom: 0.5rem;
+        }
+        
+        code {
+            background-color: var(--light-bg);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+        }
+        
+        pre {
+            background-color: var(--light-bg);
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+        }
+        
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--primary-color);
+            padding-left: 1rem;
+            margin-left: 0;
+            margin-bottom: 1rem;
+            color: #666;
+        }
+        
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        hr {
+            border: 0;
+            height: 1px;
+            background-color: var(--light-bg);
+            margin: 2rem 0;
+        }
+        
+        strong {
+            font-weight: 600;
+        }
+        
+        .terminal {
+            background-color: #282c34;
+            color: #abb2bf;
+            padding: 1rem;
+            border-radius: 5px;
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+            margin-bottom: 1.5rem;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                padding: 1rem;
+            }
+            
+            .main-content {
+                margin-left: 0;
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <h2>AI Shell Agent</h2>
+        <ul>
+            <li><a href="#top">Overview</a></li>
+            <li><a href="#core-strengths">Core Strengths & USP</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#quickstart-guide">Quickstart Guide</a>
+                <ul class="submenu">
+                    <li><a href="#first-time-setup">First-Time Setup</a></li>
+                    <li><a href="#basic-interaction">Basic Interaction</a></li>
+                    <li><a href="#using-toolsets">Using Toolsets</a></li>
+                    <li><a href="#configuration-management">Configuration & Management</a></li>
+                </ul>
+            </li>
+            <li><a href="#installation">Installation</a></li>
+        </ul>
+    </aside>
+
+    <main class="main-content">
+        <h1 id="top">AI Shell Agent</h1>
+
+        <p><strong>AI Shell Agent</strong> is a command-line LLM-powered assistant designed to streamline your development and system tasks. It interacts with your system through modular <strong>Toolsets</strong>, understanding your requests, planning actions, and leveraging capabilities like <strong>Terminal execution</strong> (with confirmation), <strong>AI-powered file editing</strong> (via <code>aider-chat</code>), and <strong>file system management</strong>. It operates directly within your console, learns from chat history, and adapts its available actions based on the toolsets you enable.</p>
+
+        <h2 id="core-strengths">Core Strengths & USP</h2>
+        <ul>
+            <li><strong>Safety First (HITL):</strong> Critical operations like running terminal commands or editing files require your explicit confirmation (Human-in-the-Loop), preventing accidental execution. You can review and even <em>edit</em> proposed actions before they run.</li>
+            <li><strong>Modular & Extensible:</strong> Easily enable/disable capabilities (Toolsets) like Terminal, File Management, or Code Editing (Aider) per chat session or globally. New toolsets can be added.</li>
+            <li><strong>Seamless File Editing:</strong> Deep integration with <code>aider-chat</code> allows for sophisticated, AI-driven code and text file manipulation directly from the command line, maintaining context within a chat session.</li>
+            <li><strong>Multi-LLM & Configurable:</strong> Supports various OpenAI and Google models for both the main agent and translation tasks. Configure models, API keys, default toolsets, and language preferences easily.</li>
+            <li><strong>Cross-Platform:</strong> Designed to work on Windows, Linux, and macOS, with OS-specific guidance provided to the AI for terminal commands.</li>
+            <li><strong>Persistent Context:</strong> Organizes interactions into distinct chat sessions, each with its own history and enabled toolsets, allowing you to pick up where you left off.</li>
+            <li><strong>Internationalization:</strong> Supports multiple languages for the user interface and includes a feature to automatically generate translations using an LLM.</li>
+        </ul>
+
+        <hr>
+
+        <h2 id="features">Features</h2>
+        <ul>
+            <li><strong>Modular Toolsets</strong>: Extensible architecture (Terminal, File Manager, Aider Code Editor).</li>
+            <li><strong>Safe Terminal Interaction (HITL)</strong>: Execute shell commands/Python after user review and confirmation.</li>
+            <li><strong>AI-Powered File Editing (Aider)</strong>: Integrates <code>aider-chat</code> for complex file creation and editing.</li>
+            <li><strong>Direct File Management (HITL)</strong>: Create, read, edit (simple replace), delete, copy, move, find files/directories with user confirmation for destructive actions. Includes history and backup/restore for edits.</li>
+            <li><strong>Multi-LLM Support</strong>: Choose OpenAI (<code>gpt-4o</code>, <code>gpt-4o-mini</code>, etc.) or Google AI (<code>gemini-1.5-pro</code>, etc.) models.</li>
+            <li><strong>Separate Translation Model</strong>: Configure a specific LLM for UI localization tasks.</li>
+            <li><strong>System-Aware Prompting</strong>: Detects OS (Windows, Linux, macOS) for relevant Terminal context.</li>
+            <li><strong>Persistent Chat Management</strong>: Create, load, rename, list, delete chat sessions.</li>
+            <li><strong>Per-Chat Toolset Selection</strong>: Activate specific toolsets for different tasks or projects.</li>
+            <li><strong>Global & Per-Chat Configuration</strong>: Set defaults for toolsets and manage toolset-specific settings (e.g., Aider models).</li>
+            <li><strong>Secure API Key Management</strong>: Stores keys in <code>.env</code>; prompts when needed.</li>
+            <li><strong>Multi-Language UI</strong>: Select application language.</li>
+            <li><strong>Automated Localization</strong>: Generate UI translations for new languages using <code>--localize</code>.</li>
+            <li><strong>Message Editing</strong>: Correct your last message and resend.</li>
+            <li><strong>Temporary Chats</strong>: Quick, disposable chat sessions.</li>
+            <li><strong>Direct Command Execution</strong>: Option to bypass AI/HITL for immediate command execution (<code>-x</code>).</li>
+        </ul>
+
+        <hr>
+
+        <h2 id="quickstart-guide">Quickstart Guide</h2>
+
+        <h3 id="first-time-setup">1. First-Time Setup</h3>
+
+        <p>Run <code>ai</code> for the first time to configure essentials:</p>
+
+        <ol>
+            <li>
+                <strong>Select Language</strong>: Choose the UI language.
+                <pre><code>SYSTEM: Please select the application language:
+SYSTEM:   1: en <- Current
+  2: pl
+Enter number (1-2) or leave empty to keep 'en': : [CURSOR]</code></pre>
+                <em>(If you change the language, you'll be asked to restart)</em>
+            </li>
+            <li>
+                <strong>Select Default AI Model</strong>: Choose the main LLM (e.g., <code>gpt-4o-mini</code>).
+                <pre><code>SYSTEM: Available models:
+SYSTEM: OpenAI:
+- gpt-4o (...)
+- gpt-4o-mini (...) <- Current Model
+SYSTEM: Google:
+- gemini-1.5-pro
+Please input the MAIN AGENT model, or leave empty to keep 'gpt-4o-mini':
+> : [CURSOR]</code></pre>
+            </li>
+            <li>
+                <strong>Provide API Key</strong>: Enter the key for the chosen model's provider (saved to <code>.env</code>).
+                <pre><code>SYSTEM: Configuration required: Missing environment variable 'OPENAI_API_KEY'.
+INFO: Description: OpenAI API Key (https://platform.openai.com/api-keys)
+Please enter the value for OPENAI_API_KEY: ****[INPUT HIDDEN]****</code></pre>
+            </li>
+            <li>
+                <strong>Select Default Enabled Toolsets</strong>: Pick toolsets active by default in new chats (e.g., Terminal, File Manager).
+                <pre><code>SYSTEM: --- Select Default Enabled Toolsets ---
+(...)
+SYSTEM: Available Toolsets:
+  1: Aider Code Editor **EXPERIMENTAL** (...)
+  2: File Manager (...)
+  3: Terminal (...)
+Enter comma-separated numbers TO ENABLE by default (e.g., 1,3):
+> : [CURSOR]</code></pre>
+            </li>
+        </ol>
+
+        <h3 id="basic-interaction">2. Basic Interaction</h3>
+        <ul>
+            <li>
+                <strong>Ask a question or give an instruction:</strong>
+                <pre><code>ai "What are the top 5 largest files in my Downloads folder?"</code></pre>
+                <p>The AI will analyze, possibly enable the Terminal or File Manager toolset, propose actions (requiring your confirmation if needed), and provide the answer.</p>
+            </li>
+            <li>
+                <strong>Work within a project context:</strong>
+                <pre><code>ai -c "my-web-project" # Creates/loads the chat
+ai "Refactor the main api route in routes.py to use async await"
+# AI will likely activate File Editor, add routes.py, request the edit.</code></pre>
+            </li>
+        </ul>
+
+        <h3 id="using-toolsets">3. Using Toolsets (Examples)</h3>
+        <ul>
+            <li>
+                <strong>Terminal:</strong>
+                <pre><code>ai "Show running python processes"
+# AI activates Terminal, proposes command (e.g., ps aux | grep python)
+# SYSTEM: AI wants to perform an action 'run_terminal_command', edit or confirm: ps aux | grep python
+# > : ps aux | grep python [CURSOR_IS_HERE]
+# Press Enter to confirm, edit, or Ctrl+C to cancel.</code></pre>
+            </li>
+            <li>
+                <strong>File Manager:</strong>
+                <pre><code>ai "Create a directory named 'docs'"
+# AI activates File Manager, proposes action
+# SYSTEM: AI wants to perform an action 'create_file_or_dir', edit or confirm: {'path': 'docs', 'is_directory': True} # Simplified prompt
+# > : docs [CURSOR_IS_HERE]
+# Confirm the path 'docs'.
+
+ai "Read the requirements.txt file"
+# AI uses 'read_file_content' (no confirmation needed for read)</code></pre>
+            </li>
+            <li>
+                <strong>File Editor (Aider):</strong>
+                <pre><code>ai -c "fix-bug-123"
+ai "Add the file src/utils.py to the code editor"
+# AI uses 'add_file_to_copilot_context'
+ai "In src/utils.py, find the function calculate_total and add error handling for zero division. Explain the changes."
+# AI uses 'request_copilot_edit'
+# Aider runs, potentially asking for clarification via HITL prompts using 'respond_to_code_copilot_input_request'
+ai "Show me the diff of the changes"
+# AI uses 'view_code_copilot_edit_diffs'
+ai "Close the code editor"</code></pre>
+            </li>
+        </ul>
+
+        <h3 id="configuration-management">4. Configuration & Management</h3>
+        <ul>
+            <li>
+                <strong>Change Main AI Model:</strong>
+                <pre><code>ai --select-model</code></pre>
+            </li>
+            <li>
+                <strong>Change Translation Model:</strong>
+                <pre><code>ai --select-translation-model</code></pre>
+            </li>
+            <li>
+                <strong>Update API Key:</strong> (For the <em>currently set</em> main agent model)
+                <pre><code>ai -k</code></pre>
+            </li>
+            <li>
+                <strong>Manage Toolsets for Current Chat:</strong>
+                <pre><code>ai --select-tools # Enable/disable for this chat
+ai --configure-toolset "Aider Code Editor **EXPERIMENTAL**" # Configure Aider models</code></pre>
+            </li>
+            <li>
+                <strong>Execute Directly:</strong>
+                <pre><code>ai -x "npm install" # Runs the command and adds output to the conversation, so AI can see it too</code></pre>
+            </li>
+        </ul>
+
+        <hr>
+
+        <h2 id="installation">Installation</h2>
+        <p>Requires <strong>Python 3.11+</strong>.</p>
+        <pre><code>pip install ai-shell-agent</code></pre>
+        <p>This project is licensed under the MIT License. See the <a href="../LICENSE">LICENSE</a> file for details.</p>
+    </main>
+</body>
+</html>

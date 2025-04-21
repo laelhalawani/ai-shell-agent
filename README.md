@@ -162,7 +162,7 @@ Run `ai` for the first time to configure essentials:
     ```
 *   **Execute Directly:**
     ```bash
-    ai -x "npm install" # Skips AI/HITL
+    ai -x "npm install" # Runs the command and adds output to the conversation, so AI can see it too
     ```
 
 ---
