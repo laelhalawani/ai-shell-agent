@@ -1,0 +1,187 @@
+{
+  "toolset": {
+    "name": "File Manager",
+    "description": "Provides tools for direct file and directory manipulation (create, read, edit, delete, copy, move, find, history)."
+  },
+  "config": {
+    "header": "\n--- Configure File Manager Settings ---",
+    "prompt_limit": "Enter max number of history items to show",
+    "warn_invalid": "Invalid number entered. Using previous/default limit.",
+    "warn_cancel": "\nConfiguration cancelled. Using previous/default values.",
+    "error_generic": "\nConfiguration error: {error}",
+    "info_saved": "\nFile Manager configuration saved.",
+    "error_save_failed": "\nFailed to save File Manager configuration."
+  },
+  "schemas": {
+    "path": {
+      "path_desc": "The absolute or relative path to the file or directory."
+    },
+    "create": {
+      "path_desc": "The absolute or relative path for the new file or directory.",
+      "content_desc": "Optional text content to write if creating a file.",
+      "is_directory_desc": "Set to true if creating a directory, false (default) for a file."
+    },
+    "edit_simple": {
+      "path_desc": "The path to the file to edit.",
+      "find_text_desc": "The exact text content to find within the file.",
+      "replace_text_desc": "The text content to replace the 'find_text' with.",
+      "summary_desc": "A brief summary of the edit being performed."
+    },
+    "from_to": {
+      "from_path_desc": "The source path of the file or directory.",
+      "to_path_desc": "The destination path."
+    },
+    "rename": {
+      "path_desc": "The current path of the file or directory to rename.",
+      "new_name_desc": "The desired new name for the file or directory (just the final component, not the full path)."
+    },
+    "find": {
+      "query_desc": "The filename or directory name pattern to search for.",
+      "directory_desc": "Optional directory to start the search from (defaults to current working directory). Search includes subdirectories."
+    }
+  },
+  "tools": {
+    "usage_guide": {
+      "name": "file_manager_usage_guide",
+      "description": "Displays usage instructions and context for the File Manager toolset."
+    },
+    "create": {
+      "name": "create_file_or_dir",
+      "description": "Creates a new file or directory at the specified path. Optionally writes content if creating a file.",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "exists": "Error: Path already exists: {path}",
+        "content_for_dir": "Error: Cannot provide content when creating a directory: {path}",
+        "generic": "Error creating path {path}: {error}"
+      },
+      "success": "Successfully created {type}: {path}"
+    },
+    "read": {
+      "name": "read_file_content",
+      "description": "Reads the content of a specified file as text.",
+      "error": {
+        "not_file": "Error: Path is not a file or does not exist: {path}",
+        "not_found": "Error: File not found: {path}",
+        "generic": "Error reading file {path}: {error}"
+      },
+      "success": "Content of {path}:\n---\n{content}\n---",
+      "truncated_suffix": "\n... (truncated)"
+    },
+    "delete": {
+      "name": "delete_file_or_dir",
+      "description": "Deletes a specified file or directory. Requires user confirmation.",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "not_exists": "Error: Path does not exist: {path}",
+        "generic": "Error deleting path {path}: {error}"
+      },
+      "success": "Successfully deleted {type}: {path}"
+    },
+    "edit": {
+      "name": "edit_file",
+      "description": "Edits a file by replacing occurrences of 'find_text' with 'replace_text'. Creates a backup first. Requires user confirmation of the edit summary and target file.",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "not_file": "Error: Path is not a file or does not exist: {path}",
+        "generic": "Error editing file {path}: {error}"
+      },
+      "info_no_change": "Edit completed on {path}. No changes made (find_text not found?). Original file untouched. No backup created.",
+      "success": "Successfully edited {path}.\nSummary: {summary}\nBackup created at: {backup_path}"
+    },
+    "copy": {
+      "name": "copy_file_or_dir",
+      "description": "Copies a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path.",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "source_not_exists": "Error: Source path does not exist: {path}",
+        "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
+        "generic": "Error copying {from_path} to {to_path}: {error}"
+      },
+      "success": "Successfully copied {type} from {from_path} to {to_path}"
+    },
+    "move": {
+      "name": "move_file_or_dir",
+      "description": "Moves (renames) a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path.",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "source_not_exists": "Error: Source path does not exist: {path}",
+        "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
+        "generic": "Error moving {from_path} to {to_path}: {error}"
+      },
+      "success": "Successfully moved {from_path} to {to_path}"
+    },
+    "rename": {
+      "name": "rename_file_or_dir",
+      "description": "Renames a file or directory within the same parent directory. Requires user confirmation of the new name.",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "invalid_new_name": "Error: 'new_name' ({new_name}) cannot contain path separators. Use 'move_file_or_dir' to move between directories.",
+        "empty_new_name": "Error: Confirmed new name cannot be empty.",
+        "path_not_exists": "Error: Original path does not exist: {path}",
+        "target_exists": "Error: Target path already exists: {path}",
+        "generic": "Error renaming {path} to {new_path}: {error}"
+      },
+      "success": "Successfully renamed {path} to {new_path}"
+    },
+    "find": {
+      "name": "find_files",
+      "description": "Searches for files or directories matching the query within a specified directory (or current directory) and its subdirectories.",
+      "error": {
+        "dir_not_found": "Error: Search directory does not exist or is not a directory: {directory}",
+        "generic": "Error finding files: {error}"
+      },
+      "info_no_matches": "No files or directories found matching '{query}' in {directory}.",
+      "success": "Found {count} match(es) for '{query}' in {directory}:\n{matches}",
+      "info_limit_reached": "\n... (result limit reached)",
+      "warn_permission": "Found {count} match(es) before encountering permission error in {directory}:\n{matches}\n(Search incomplete due to permissions)",
+      "error_permission": "Error: Permission denied while searching in {directory}."
+    },
+    "check_exist": {
+      "name": "check_path_exists",
+      "description": "Checks if a given file or directory path exists in the file system.",
+      "error": {
+        "generic": "Error checking existence of path '{path}': {error}"
+      },
+      "success_exists": "Path exists: '{path}' (Type: {type})",
+      "success_not_exists": "Path does not exist: '{path}'"
+    },
+    "history": {
+      "name": "show_file_change_history",
+      "description": "Displays the recent history of file operations performed by this toolset in the current chat.",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "generic": "Error retrieving file history: {error}"
+      },
+      "info_empty": "No file operations recorded in history for this chat.",
+      "header": "Recent File Operations (Last {count} of {total} total):\n",
+      "line_format": "- [{ts}] {op}"
+    },
+    "restore": {
+      "name": "restore_file_from_backup",
+      "description": "Restores a file to the state saved in its most recent backup created by the 'edit_file' tool. Requires user confirmation.",
+      "prompt_suffix": "(Confirm restore from backup: {backup_name}) > ",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "no_backup_history": "Error: No backup found in history for file: {path}",
+        "backup_missing": "Error: Backup file recorded in history does not exist: {backup_path}",
+        "target_not_file": "Error: Target path exists but is not a file: {path}",
+        "generic": "Error restoring file {path}: {error}"
+      },
+      "success": "Successfully restored {path} from backup {backup_name}"
+    },
+    "finalize": {
+      "name": "finalize_file_changes",
+      "description": "Deletes all backup files created by this toolset in the current chat session.",
+      "prompt_confirm": "Delete {count} backup files?",
+      "prompt_suffix": "(Type 'yes' to confirm) > ",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "generic": "Error finalizing file changes: {error}"
+      },
+      "info_no_backups": "No backup files found to delete.",
+      "info_cancel": "Finalization cancelled by user.",
+      "success": "Finalized file changes. Deleted {deleted_count} of {total_count} backup files.",
+      "warn_errors": "\nErrors occurred deleting: {errors}"
+    }
+  }
+}

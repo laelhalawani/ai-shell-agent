@@ -1,0 +1,9 @@
+
+{
+  "history_retrieval_limit": 20,
+  "find_pattern_default": "**/*",
+  "find_fuzzy_default": true,
+  "find_threshold_default": 70,
+  "find_limit_default": 50,
+  "find_workers_default": 4
+}

@@ -1,0 +1,10 @@
+{
+    "main_model": null,
+    "editor_model": "gpt-4o-mini",
+    "weak_model": "gpt-4o-mini",
+    "edit_format": null,
+    "auto_commits": true,
+    "dirty_commits": true
+  }
+  
+  

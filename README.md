@@ -1,408 +1,178 @@
 # AI Shell Agent
 
-**AI Shell Agent** is a command-line LLM-powered tool that can help you perform tasks by writing and executing terminal commands (with human confirmation or edit) and responding to questions, directly from the console.  
-It features a very simple CLI and adjusts the LLM prompts based on your detected system.  
-Works on Windows, Linux with Bash, and Mac. (Tested on Windows, please contribute!)
+**AI Shell Agent** is a command-line LLM-powered assistant designed to streamline your development and system tasks. It interacts with your system through modular **Toolsets**, understanding your requests, planning actions, and leveraging capabilities like **Terminal execution** (with confirmation), **AI-powered file editing** (via `aider-chat`), and **file system management**. It operates directly within your console, learns from chat history, and adapts its available actions based on the toolsets you enable.
 
-### Installation
+## Core Strengths & USP
 
-```bash
-pip install ai-shell-agent
-```
-This will automatically install the CLI tool in your current Python environment.  
-Requires `python=3.11.x`.  
-You can also clone and install from the repository.
+*   **Safety First (HITL):** Critical operations like running terminal commands or editing files require your explicit confirmation (Human-in-the-Loop), preventing accidental execution. You can review and even *edit* proposed actions before they run.
+*   **Modular & Extensible:** Easily enable/disable capabilities (Toolsets) like Terminal, File Management, or Code Editing (Aider) per chat session or globally. New toolsets can be added.
+*   **Seamless File Editing:** Deep integration with `aider-chat` allows for sophisticated, AI-driven code and text file manipulation directly from the command line, maintaining context within a chat session.
+*   **Multi-LLM & Configurable:** Supports various OpenAI and Google models for both the main agent and translation tasks. Configure models, API keys, default toolsets, and language preferences easily.
+*   **Cross-Platform:** Designed to work on Windows, Linux, and macOS, with OS-specific guidance provided to the AI for terminal commands.
+*   **Persistent Context:** Organizes interactions into distinct chat sessions, each with its own history and enabled toolsets, allowing you to pick up where you left off.
+*   **Internationalization:** Supports multiple languages for the user interface and includes a feature to automatically generate translations using an LLM.
 
-Please make sure your python scripts are added to path correctly. 
+---
 
-### Quick Examples
-
-#### Send a message to AI
-```bash
-ai "your message here"
-```
-The AI will respond and may suggest commands that can help with your request.
-
-#### Execute command yourself and add to context
-```bash
-ai -x "dir"
-ai "tell me about these files"
-```
-This will execute the command and add the output to the AI logs, then you can ask about it.
-
-#### Create a new chat for a different task
-```bash
-ai -c "Project Deployment"
-ai "help me deploy my Flask app to Heroku"
-```
-This creates a dedicated chat for your task, keeping the conversation focused.
-
-#### Start a temporary chat
-```bash
-ai -tc "how do I check disk space in Windows?"
-```
-Creates a quick chat session for one-off questions.
-
-#### Edit your last message
-```bash
-ai -e "updated question with more details"
-```
-Lets you refine your last message if you forgot important details.
-
-https://github.com/user-attachments/assets/6df08410-37e5-4e21-b99c-4133c15192cc
-
-### First-Time Setup
-
-When you first use AI Shell Agent, you'll be prompted to:
-
-1. **Select an AI Model**:
-   ```
-   Available models:
-   OpenAI:
-   - gpt-4o-mini (aliases: 4o-mini) <- Current Model
-   - gpt-4o (aliases: 4o)
-   - o3-mini
-   Google:
-   - gemini-1.5-pro
-   - gemini-2.5-pro
-   
-   Please input the model you want to use, or leave empty to keep using the current model gpt-4o-mini.
-   > 
-   ```
-
-2. **Enter the appropriate API key**:
-   After selecting a model, you'll be prompted for the corresponding API key (OpenAI or Google).
-   The key will be saved to a local `.env` file for future sessions.
-
-You can later change your model or API key using:
-```bash
-ai --select-model  # Interactive model selection
-ai --model "gpt-4o"  # Directly set model
-ai -k  # Update your API key
-```
-
-### Main Features
-
-- **AI Writes and Executes Commands**: The AI will suggest commands to accomplish your tasks, which you can review, edit, or approve.
-  
-- **Multiple AI Model Support**: Choose between OpenAI models (gpt-4o, gpt-4o-mini, o3-mini) and Google AI models (gemini-1.5-pro, gemini-2.5-pro).
-  
-- **System Detection**: Automatically detects your OS and tailors commands to work with Windows CMD, Linux bash, or macOS Terminal.
-  
-- **Chat Management System**: Create, rename, list, and delete chat sessions to organize different tasks or projects.
-  
-- **Python Code Execution**: Run and evaluate Python code snippets (experimental feature).
-
-https://github.com/user-attachments/assets/049e6e37-5a5d-4125-b891-e1bb1f2ecdbf
-
-## Warning
-
-**Please use at your own risk. AI can still generate wrong and possibly destructive commands. You always can view the command before sending—please be mindful. If you see any dangerous commands, please post a screenshot.**
-
-## Table of Contents
-
-- [Features](#features)
-- [Quickstart Guide](#quickstart-guide)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Development & Contributing](#development--contributing)
-- [License](#license)
+*   [Features](#features)
+*   [Quickstart Guide](#quickstart-guide)
+*   [Installation](#installation)
+*   [Usage (Command Reference)](#usage-command-reference)
+*   [Toolsets](#toolsets)
+*   [Localization](#localization)
+*   [Development & Contributing](#development--contributing)
+*   [Warning](#warning)
+*   [License](#license)
 
 ---
 
 ## Features
 
-- **AI Command Generation and Execution**:  
-  The LLM suggests and executes terminal commands to accomplish your tasks, with your review and approval.
-
-- **Multiple AI Model Support**:
-  Choose between OpenAI and Google AI models with simple model selection commands.
-
-- **System-Aware Prompting**:
-  Automatically detects your operating system and optimizes commands for Windows, Linux, or macOS.
-
-- **Chat Session Management**:  
-  Create new chats or load existing ones using a title, have one active chat session set to receive messages by default.
-
-- **API Key Management**:  
-  Set and update your API keys (OpenAI or Google) via a dedicated command. You will be prompted to input the key if you have not provided it yet.
-
-- **Message Handling**:  
-  Send new messages or edit previous ones within an active session with the simple `ai "your message"` command.
-
-- **Temporary Sessions**:  
-  Start temporary sessions for quick, ephemeral chats (currently saved as temp chats under UUID names for easier debugging and tracing).
-
-- **Python Code Execution**:  
-  The agent also has the ability to run Python REPL, though this feature hasn't undergone extensive development or testing.
+*   **Modular Toolsets**: Extensible architecture (Terminal, File Manager, Aider Code Editor).
+*   **Safe Terminal Interaction (HITL)**: Execute shell commands/Python after user review and confirmation.
+*   **AI-Powered File Editing (Aider)**: Integrates `aider-chat` for complex file creation and editing.
+*   **Direct File Management (HITL)**: Create, read, edit (simple replace), delete, copy, move, find files/directories with user confirmation for destructive actions. Includes history and backup/restore for edits.
+*   **Multi-LLM Support**: Choose OpenAI (`gpt-4o`, `gpt-4o-mini`, etc.) or Google AI (`gemini-1.5-pro`, etc.) models.
+*   **Separate Translation Model**: Configure a specific LLM for UI localization tasks.
+*   **System-Aware Prompting**: Detects OS (Windows, Linux, macOS) for relevant Terminal context.
+*   **Persistent Chat Management**: Create, load, rename, list, delete chat sessions.
+*   **Per-Chat Toolset Selection**: Activate specific toolsets for different tasks or projects.
+*   **Global & Per-Chat Configuration**: Set defaults for toolsets and manage toolset-specific settings (e.g., Aider models).
+*   **Secure API Key Management**: Stores keys in `.env`; prompts when needed.
+*   **Multi-Language UI**: Select application language.
+*   **Automated Localization**: Generate UI translations for new languages using `--localize`.
+*   **Message Editing**: Correct your last message and resend.
+*   **Temporary Chats**: Quick, disposable chat sessions.
+*   **Direct Command Execution**: Option to bypass AI/HITL for immediate command execution (`-x`).
 
 ---
 
 ## Quickstart Guide
 
-### Selecting a Model
+### 1. First-Time Setup
 
-On first run, AI Shell Agent will prompt you to select your preferred model:
+Run `ai` for the first time to configure essentials:
 
-```
-Available models:
-OpenAI:
-- gpt-4o-mini (aliases: 4o-mini) <- Current Model
-- gpt-4o (aliases: 4o)
-- o3-mini
-Google:
-- gemini-1.5-pro
-- gemini-2.5-pro
+1.  **Select Language**: Choose the UI language.
+    ```
+    SYSTEM: Please select the application language:
+    SYSTEM:   1: en <- Current
+      2: pl
+    Enter number (1-2) or leave empty to keep 'en': : [CURSOR]
+    ```
+    *(If you change the language, you'll be asked to restart)*
+2.  **Select Default AI Model**: Choose the main LLM (e.g., `gpt-4o-mini`).
+    ```
+    SYSTEM: Available models:
+    SYSTEM: OpenAI:
+    - gpt-4o (...)
+    - gpt-4o-mini (...) <- Current Model
+    SYSTEM: Google:
+    - gemini-1.5-pro
+    Please input the MAIN AGENT model, or leave empty to keep 'gpt-4o-mini':
+    > : [CURSOR]
+    ```
+3.  **Provide API Key**: Enter the key for the chosen model's provider (saved to `.env`).
+    ```
+    SYSTEM: Configuration required: Missing environment variable 'OPENAI_API_KEY'.
+    INFO: Description: OpenAI API Key (https://platform.openai.com/api-keys)
+    Please enter the value for OPENAI_API_KEY: ****[INPUT HIDDEN]****
+    ```
+4.  **Select Default Enabled Toolsets**: Pick toolsets active by default in new chats (e.g., Terminal, File Manager).
+    ```
+    SYSTEM: --- Select Default Enabled Toolsets ---
+    (...)
+    SYSTEM: Available Toolsets:
+      1: Aider Code Editor **EXPERIMENTAL** (...)
+      2: File Manager (...)
+      3: Terminal (...)
+    Enter comma-separated numbers TO ENABLE by default (e.g., 1,3):
+    > : [CURSOR]
+    ```
 
-Please input the model you want to use, or leave empty to keep using the current model gpt-4o-mini.
-> 
-```
+### 2. Basic Interaction
 
-You can also change the model at any time:
+*   **Ask a question or give an instruction:**
+    ```bash
+    ai "What are the top 5 largest files in my Downloads folder?"
+    ```
+    The AI will analyze, possibly enable the Terminal or File Manager toolset, propose actions (requiring your confirmation if needed), and provide the answer.
 
-```bash
-ai --model "gpt-4o"  # or any supported model name/alias
-```
+*   **Work within a project context:**
+    ```bash
+    ai -c "my-web-project" # Creates/loads the chat
+    ai "Refactor the main api route in routes.py to use async await"
+    # AI will likely activate File Editor, add routes.py, request the edit.
+    ```
 
-### Setting Up the API Key
+### 3. Using Toolsets (Examples)
 
-After selecting a model, the application will prompt you for the appropriate API key:
+*   **Terminal:**
+    ```bash
+    ai "Show running python processes"
+    # AI activates Terminal, proposes command (e.g., ps aux | grep python)
+    # SYSTEM: AI wants to perform an action 'run_terminal_command', edit or confirm: ps aux | grep python
+    # > : ps aux | grep python [CURSOR_IS_HERE]
+    # Press Enter to confirm, edit, or Ctrl+C to cancel.
+    ```
 
-```bash
-$ ai "Hi"
-No OpenAI API key found. Please enter your API key.
-You can get it from: https://platform.openai.com/api-keys
-Enter OpenAI API key:
-```
+*   **File Manager:**
+    ```bash
+    ai "Create a directory named 'docs'"
+    # AI activates File Manager, proposes action
+    # SYSTEM: AI wants to perform an action 'create_file_or_dir', edit or confirm: {'path': 'docs', 'is_directory': True} # Simplified prompt
+    # > : docs [CURSOR_IS_HERE]
+    # Confirm the path 'docs'.
 
-After entering the key, it will be saved in a `.env` file located in the project's installation directory. This ensures that your API key is securely stored and automatically loaded in future sessions.
+    ai "Read the requirements.txt file"
+    # AI uses 'read_file_content' (no confirmation needed for read)
+    ```
 
-### Managing the API Key
+*   **File Editor (Aider):**
+    ```bash
+    ai -c "fix-bug-123"
+    ai "Add the file src/utils.py to the code editor"
+    # AI uses 'add_file_to_copilot_context'
+    ai "In src/utils.py, find the function calculate_total and add error handling for zero division. Explain the changes."
+    # AI uses 'request_copilot_edit'
+    # Aider runs, potentially asking for clarification via HITL prompts using 'respond_to_code_copilot_input_request'
+    ai "Show me the diff of the changes"
+    # AI uses 'view_code_copilot_edit_diffs'
+    ai "Close the code editor"
+    ```
 
-If you need to update or set a new API key at any time, use the following command:
+### 4. Configuration & Management
 
-```bash
-ai -k
-```
-
-Shorthand:  
-```bash
-ai -k
-```
-
-### Starting a Chat Session
-
-Create a new chat session with a title:
-
-```bash
-ai -c "My Chat Session"
-```
-
-Shorthand:  
-```bash
-ai -c "My Chat Session"
-```
-
-### Sending a Message
-
-To send a message to the active chat session:
-
-```bash
-ai "what is the time right now?"
-```
-
-### Executing Shell Commands
-
-Run a shell command directly:
-
-```bash
-ai -x "dir"
-```
-
-Shorthand:  
-```bash
-ai -x "dir"
-```
-
-By automatically detecting your operating system (via Python’s `platform` library), AI Shell Agent customizes its console suggestions for Windows CMD, Linux bash, or macOS Terminal.
-
-### Temporary Chat Sessions
-
-Start a temporary session (untitled, currently saved to file but untitled):
-
-```bash
-ai -tc "Initial temporary message"
-```
-
-Shorthand:  
-```bash
-ai -tc "Initial temporary message"
-```
-
-### Listing and Managing Sessions
-
-- **List Sessions:**
-  ```bash
-  ai -lsc
-  ```
-  Shorthand:  
-  ```bash
-  ai -lsc
-  ```
-
-- **Load an Existing Session:**
-  ```bash
-  ai -lc "My Chat Session"
-  ```
-  Shorthand:  
-  ```bash
-  ai -lc "My Chat Session"
-  ```
-
-- **Rename a Session:**
-  ```bash
-  ai -rnc "Old Title" "New Title"
-  ```
-  Shorthand:  
-  ```bash
-  ai -rnc "Old Title" "New Title"
-  ```
-
-- **Delete a Session:**
-  ```bash
-  ai -delc "Chat Title"
-  ```
-  Shorthand:  
-  ```bash
-  ai -delc "Chat Title"
-  ```
-
-- **List messages:**
-  ```bash
-  ai -lsm
-  ```
-  Shorthand:  
-  ```bash
-  ai -lsm
-  ```
-
-- **Show the current chat title:**
-  ```bash
-  ai -ct
-  ```
-  Shorthand:  
-  ```bash
-  ai -ct
-  ```
+*   **Change Main AI Model:**
+    ```bash
+    ai --select-model
+    ```
+*   **Change Translation Model:**
+    ```bash
+    ai --select-translation-model
+    ```
+*   **Update API Key:** (For the *currently set* main agent model)
+    ```bash
+    ai -k
+    ```
+*   **Manage Toolsets for Current Chat:**
+    ```bash
+    ai --select-tools # Enable/disable for this chat
+    ai --configure-toolset "Aider Code Editor **EXPERIMENTAL**" # Configure Aider models
+    ```
+*   **Execute Directly:**
+    ```bash
+    ai -x "npm install" # Skips AI/HITL
+    ```
 
 ---
 
 ## Installation
 
-### Installing from PyPI
+Requires **Python 3.11+**.
 
 ```bash
 pip install ai-shell-agent
 ```
 
-### Installing from Source
-
-1. **Clone the repository:**
-    ```bash
-    git clone https://github.com/laelhalawani/ai-shell-agent.git
-    ```
-2. **Navigate to the project directory:**
-    ```bash
-    cd ai-shell-agent
-    ```
-3. **Install the package:**
-    ```bash
-    pip install .
-    ```
-
----
-
-## Usage
-
-### Model Selection
-- **Set Model:**
-  ```bash
-  ai --model "gpt-4o"
-  ```
-  Shorthand:  
-  ```bash
-  ai -llm "gpt-4o"
-  ```
-
-- **Interactive Model Selection:**
-  ```bash
-  ai --select-model
-  ```
-
-### API Key Management
-- **Set or Update API Key:**
-  ```bash
-  ai -k
-  ```
-  Shorthand:  
-  ```bash
-  ai -k
-  ```
-  This will prompt for the appropriate API key based on your selected model.
-
-### Chat Session Management
-- **Create or Load a Chat Session:**
-  ```bash
-  ai -c "Session Title"
-  ```
-  Shorthand:  
-  ```bash
-  ai -c "Session Title"
-  ```
-
-### Messaging
-- **Send a Message:**
-  ```bash
-  ai -m "Your message"
-  ```
-  Shorthand:  
-  ```bash
-  ai -m "Your message"
-  ```
-
-- **Edit a Message at a Given Index:**
-  ```bash
-  ai -e 1 "Updated message"
-  ```
-  Shorthand:  
-  ```bash
-  ai -e 1 "Updated message"
-  ```
-
-### System Prompt Management
-- **Set Default System Prompt:**
-  ```bash
-  ai --default-system-prompt "Your default system prompt"
-  ```
-
-### Shell Command Execution
-- **Direct Execution (without confirmation):**
-  ```bash
-  ai -x "your shell command"
-  ```
-  Shorthand:  
-  ```bash
-  ai -x "your shell command"
-  ```
-
----
-
-## Development & Contributing
-
-Follow the same steps as described earlier.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](../LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

@@ -1,0 +1,10 @@
+.env
+.env.example
+.gitignore
+LICENSE
+MANIFEST.in
+pyproject.toml
+README.md
+requirements.txt
+setup.cfg
+setup.py

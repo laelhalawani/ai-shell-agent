@@ -3,4 +3,8 @@ langchain_openai==0.3.2
 langchain_google_genai==2.1.2
 langchain_experimental==0.3.4
 prompt_toolkit==3.0.50
+aider-chat>=0.38.0
+gitpython>=3.1.40
+watchfiles>=0.20.0
+rich>=13.0.0
 pytest

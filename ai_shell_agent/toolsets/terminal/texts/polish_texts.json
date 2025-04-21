@@ -1,0 +1,66 @@
+{
+    "toolset": {
+        "name": "Terminal",
+        "description": "Zapewnia narz\u0119dzia do wykonywania polece\u0144 pow\u0142oki i kodu Pythona."
+    },
+    "config": {
+        "info_no_settings": "Zestaw narz\u0119dzi Terminal w tej chwili nie wymaga \u017cadnej szczeg\u00f3lnej konfiguracji.",
+        "warn_write_failed": "Nie uda\u0142o si\u0119 zapisa\u0107 jednego lub wi\u0119cej plik\u00f3w konfiguracyjnych dla zestawu narz\u0119dzi Terminal. Sprawd\u017a dzienniki."
+    },
+    "schemas": {
+        "terminal": {
+            "cmd_desc": "Polecenie do wykonania w terminalu."
+        },
+        "python": {
+            "query_desc": "Fragment kodu Pythona do wykonania."
+        },
+        "direct_terminal": {
+            "cmd_desc": "Polecenie do wykonania bezpo\u015brednio."
+        }
+    },
+    "tools": {
+        "usage_guide": {
+            "name": "terminal_usage_guide",
+            "description": "Displays usage instructions and context for the Terminal toolset."
+        },
+        "terminal_hitl": {
+            "name": "run_terminal_command",
+            "description": "Use to run any command in the terminal and return the output.",
+            "error_empty_cmd": "Error: Empty command proposed.",
+            "error_empty_confirmed": "Error: Confirmed command is empty.",
+            "result_format": "Executed: `{command}`\n{details}",
+            "details": {
+                "exit_code": "Exit Code: {code}",
+                "stdout": "Output:\n---\n{output}\n---",
+                "stderr": "Errors/Warnings:\n---\n{output}\n---",
+                "no_output_success": "Status: Command completed successfully with no output.",
+                "no_output_fail": "Status: Command failed with no output."
+            },
+            "error_timeout": "Error: Command timed out after 300 seconds.\n(Attempted: `{command}`)",
+            "error_not_found": "Error: Command not found: '{command_name}'. Ensure it's installed/in PATH.\n(Attempted: `{command}`)",
+            "error_generic": "Error executing command: {error}\n(Attempted: `{command}`)"
+        },
+        "python_repl_hitl": {
+            "name": "python_repl",
+            "description": "Evaluates Python code snippets in a REPL environment, use only when requested to run a script or automation.",
+            "prompt_suffix": "(edit or confirm python code) > ",
+            "error_no_code": "Error: No Python code provided to execute.",
+            "error_empty_confirmed": "Error: Confirmed Python code is empty.",
+            "result_format": "Executed: `python_repl(query='''{query}''')`\nResult:\n---\n{result}\n---",
+            "error_generic": "Error executing Python code:\n---\n{error}\n---\n(Attempted Code:\n'''\n{query}\n'''\n)"
+        },
+        "direct_terminal": {
+            "name": "_internal_direct_terminal",
+            "description": "Internal tool for direct command execution without HITL.",
+            "result_details": {
+                "stdout": "Output:\n{output}\n",
+                "stderr": "Errors/Warnings:\n{output}\n",
+                "exit_code": "Exit Code: {code}\n",
+                "no_output_success": "Command executed successfully with no output.",
+                "no_output_fail": "Command failed with no output. Exit Code: {code}"
+            },
+            "error_timeout": "Error: Command timed out after 300 seconds.\n(Attempted: `{command}`)",
+            "error_generic": "Error executing command: {error}"
+        }
+    }
+}

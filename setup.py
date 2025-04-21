@@ -10,7 +10,7 @@ class CustomInstallCommand(install):
 
 setup(
     name='ai-shell-agent',
-    version='0.1.8',
+    version='0.2.0',
     description='AI agent in your Terminal / CMD / Console - an AI application that helps perform tasks by writing and executing terminal commands with user supervision and by answering questions.',
     author='Lael Al-Halawani',
     author_email='laelhalawani@gmail.com',
@@ -26,6 +26,10 @@ setup(
         'langchain_google_genai==2.1.2',
         'langchain_experimental==0.3.4',
         'prompt_toolkit==3.0.50',
+        'aider-chat>=0.38.0',
+        'gitpython>=3.1.40',
+        'watchfiles>=0.20.0',
+        'rich>=13.0.0',
     ],
     cmdclass={
         'install': CustomInstallCommand,
