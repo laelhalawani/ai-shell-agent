@@ -2,7 +2,7 @@
 
 **AI Shell Agent** is a command-line LLM-powered assistant designed to streamline your development and system tasks. It interacts with your system through modular **Toolsets**, understanding your requests, planning actions, and leveraging capabilities like **Terminal execution** (with confirmation), **AI-powered file editing** (via `aider-chat`), and **file system management**. It operates directly within your console, learns from chat history, and adapts its available actions based on the toolsets you enable.
 
-## Core Strengths & USP
+## Philosophy
 
 *   **Safety First (HITL):** Critical operations like running terminal commands or editing files require your explicit confirmation (Human-in-the-Loop), preventing accidental execution. You can review and even *edit* proposed actions before they run.
 *   **Modular & Extensible:** Easily enable/disable capabilities (Toolsets) like Terminal, File Management, or Code Editing (Aider) per chat session or globally. New toolsets can be added.
