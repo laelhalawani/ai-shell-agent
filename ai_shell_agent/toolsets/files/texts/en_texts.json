@@ -4,12 +4,12 @@
     "description": "Provides tools for direct file and directory manipulation (create, read, edit, delete, copy, move, find, history)."
   },
   "config": {
-    "header": "\n--- Configure File Manager Settings ---",
+    "header": "\nConfigure File Manager Settings",
     "prompt_limit": "Enter max number of history items to show",
     "warn_invalid": "Invalid number entered. Using previous/default limit.",
     "warn_cancel": "\nConfiguration cancelled. Using previous/default values.",
     "error_generic": "\nConfiguration error: {error}",
-    "info_saved": "\nFile Manager configuration saved.",
+    "info_saved": "File Manager configuration saved.",
     "error_save_failed": "\nFailed to save File Manager configuration."
   },
   "schemas": {

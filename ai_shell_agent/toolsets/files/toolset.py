@@ -90,21 +90,30 @@ def configure_toolset(
     Configuration function for the File Manager toolset.
     Prompts user for history retrieval limit, using defaults from settings.
     """
-    if local_config_path is None: # Should not happen for toolsets with config like this one
-         logger.error("File Manager configure_toolset called without local_config_path.")
-         return current_chat_config or {}
+    # --- Determine context and print header ---
+    is_global_only = local_config_path is None
+    context_name = "Global Defaults" if is_global_only else "Current Chat" # Or fetch actual chat title if needed
 
-    logger.info(f"Configuring File Manager toolset. Global: {global_config_path}, Local: {local_config_path}")
+    # Print the main configuration header using console manager
+    console.display_message(
+        get_text("common.labels.system"),
+        get_text("config.header"), 
+        console.STYLE_SYSTEM_LABEL,
+        console.STYLE_SYSTEM_CONTENT
+    )
+
+    # Use the config provided by configure_toolset_cli which could be global or local
     config_to_prompt = current_chat_config if current_chat_config is not None else {}
     final_config = {}
 
-    console.display_message("SYSTEM:", get_text("config.header"), console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT) # MODIFIED
-
     try:
+        # Determine the default value based on the current config or the setting default
         default_limit = config_to_prompt.get("history_retrieval_limit", FILES_HISTORY_LIMIT)
+
+        # Prompt using console manager - text key already updated to remove colon
         limit_str = console.prompt_for_input(
-            get_text("config.prompt_limit"), # MODIFIED
-            default=str(default_limit)
+            get_text("config.prompt_limit"),
+            default=str(default_limit) # Pass default to prompt_for_input
         ).strip()
 
         try:
@@ -112,25 +121,74 @@ def configure_toolset(
             if limit < 0: limit = 0
             final_config["history_retrieval_limit"] = limit
         except ValueError:
-            console.display_message("WARNING:", get_text("config.warn_invalid"), console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT) # MODIFIED
+            # Use console manager for warning
+            console.display_message(
+                get_text("common.labels.warning"),
+                get_text("config.warn_invalid"),
+                console.STYLE_WARNING_LABEL,
+                console.STYLE_WARNING_CONTENT
+            )
             final_config["history_retrieval_limit"] = default_limit
 
     except (KeyboardInterrupt, EOFError):
-        console.display_message("WARNING:", get_text("config.warn_cancel"), console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT) # MODIFIED
+        # Message handled by prompt_for_input
+        # Just return the existing config without changes
+        console.display_message(
+            get_text("common.labels.warning"),
+            get_text("config.warn_cancel"),
+            console.STYLE_WARNING_LABEL,
+            console.STYLE_WARNING_CONTENT
+        )
         return current_chat_config if current_chat_config is not None else {"history_retrieval_limit": FILES_HISTORY_LIMIT}
     except Exception as e:
         logger.error(f"Error during File Manager configuration: {e}", exc_info=True)
-        console.display_message("ERROR:", get_text("config.error_generic", error=e), console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+        # Use console manager for error
+        console.display_message(
+            get_text("common.labels.error"),
+            get_text("config.error_generic", error=e),
+            console.STYLE_ERROR_LABEL,
+            console.STYLE_ERROR_CONTENT
+        )
+        # Return original config on error
         return current_chat_config if current_chat_config is not None else {"history_retrieval_limit": FILES_HISTORY_LIMIT}
 
-    save_success = True
-    try: write_json(local_config_path, final_config)
-    except Exception as e: save_success = False; logger.error(f"Failed to save config to {local_config_path}: {e}")
-    try: write_json(global_config_path, final_config)
-    except Exception as e: save_success = False; logger.error(f"Failed to save config to {global_config_path}: {e}")
+    save_success_global = True
+    save_success_local = True
 
-    if save_success: console.display_message("INFO:", get_text("config.info_saved"), console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT) # MODIFIED
-    else: console.display_message("ERROR:", get_text("config.error_save_failed"), console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+    # Save to global path
+    try:
+        global_config_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(global_config_path, final_config)
+        logger.info(f"File Manager configuration saved to global path: {global_config_path}")
+    except Exception as e:
+         save_success_global = False
+         logger.error(f"Failed to save File Manager config to global path {global_config_path}: {e}")
+
+    # Save to local path if it exists (i.e., not global-only context)
+    if local_config_path:
+        try:
+            local_config_path.parent.mkdir(parents=True, exist_ok=True)
+            write_json(local_config_path, final_config)
+            logger.info(f"File Manager configuration saved to local path: {local_config_path}")
+        except Exception as e:
+             save_success_local = False
+             logger.error(f"Failed to save File Manager config to local path {local_config_path}: {e}")
+
+    # Display final status message using console manager
+    if save_success_global and save_success_local:
+        console.display_message(
+            get_text("common.labels.info"),
+            get_text("config.info_saved"),
+            console.STYLE_INFO_LABEL,
+            console.STYLE_INFO_CONTENT
+        )
+    else:
+        console.display_message(
+            get_text("common.labels.error"),
+            get_text("config.error_save_failed"),
+            console.STYLE_ERROR_LABEL,
+            console.STYLE_ERROR_CONTENT
+        )
 
     return final_config
 

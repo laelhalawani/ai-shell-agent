@@ -56,8 +56,8 @@
     "info_available": "Available toolsets: {toolset_list}",
     "info_not_configurable": "Toolset '{toolset_name}' does not require specific configuration.",
     "error_chat_title_missing": "Could not determine title for active chat {chat_id}.",
-    "context_header_global": "\n--- Configuring Global Defaults for '{toolset_name}' ---\n(Applying settings to global default: {global_config_path})\n(Checking/Storing secrets in: {dotenv_path})\n",
-    "context_header_chat": "\n--- Configuring '{toolset_name}' for Chat '{chat_title}' ---\n(Applying settings to chat config: {local_config_path})\n(Applying settings to global default: {global_config_path})\n(Checking/Storing secrets in: {dotenv_path})\n",
+    "context_header_global": "\nConfiguring Global Defaults for '{toolset_name}'\n(Applying settings to global default: {global_config_path})\n(Checking/Storing secrets in: {dotenv_path})\n",
+    "context_header_chat": "\nConfiguring '{toolset_name}' for Chat '{chat_title}'\n(Applying settings to chat config: {local_config_path})\n(Applying settings to global default: {global_config_path})\n(Checking/Storing secrets in: {dotenv_path})\n",
     "warn_cancel": "\nConfiguration cancelled.",
     "error_generic": "\nAn error occurred during configuration: {error}"
   },

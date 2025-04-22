@@ -18,6 +18,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.runnables.config import run_in_executor
 from prompt_toolkit import prompt as prompt_toolkit_prompt
 from pydantic import BaseModel, Field
+from rich.text import Text # Import Text for rich formatting
 
 # Local imports
 from ... import logger
@@ -81,93 +82,131 @@ def _prompt_for_single_model_config(role_name: str, current_value: Optional[str]
     """Helper to prompt for one of the coder models within configure_toolset."""
     console.display_message("SYSTEM:", get_text("config.model_header", role=role_name), 
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-    console.display_message("SYSTEM:", get_text("config.model_available_title"), 
-                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-    
-    all_model_names = sorted(list(set(ALL_MODELS.values())))
-    effective_current = current_value if current_value is not None else default_value
-    current_marker = get_text("config.model_current_marker")
-    
-    for model in all_model_names:
-        marker = current_marker if model == effective_current else ""
-        console.display_message("SYSTEM:", f"- {model}{marker}", 
-                              console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-        aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
-        if aliases: 
-            alias_str = ', '.join(aliases)
-            console.display_message("SYSTEM:", get_text("config.model_aliases_suffix", alias_str=alias_str), 
-                                  console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
-    default_display_name = default_value or 'Agent Default' if role_name == 'Main/Architect' else 'Aider Default'
-    prompt_msg = get_text("config.model_prompt", role=role_name, current_setting=(effective_current or 'Default'))
+    all_model_names = sorted(list(set(ALL_MODELS.values())))
+    # Determine effective current model, considering agent default for Main model
+    if role_name == 'Main/Architect':
+        agent_default_model = get_agent_model() # Get the agent's model
+        effective_current = current_value if current_value is not None else agent_default_model
+    else:
+        effective_current = current_value if current_value is not None else default_value
+
+    current_marker_text = get_text("config.model_current_marker")
+
+    # Build model list as a Text object
+    model_list_text = Text()
+    option_lines = []
+    for model in all_model_names:
+        marker = current_marker_text if model == effective_current else ""
+        # Assemble the main line with potential marker
+        line = Text.assemble(f"- {model}", marker)
+        option_lines.append(line)
+        # Add aliases on a new indented line if they exist
+        aliases = [alias for alias, full_name in ALL_MODELS.items() if full_name == model and alias != model]
+        if aliases:
+            alias_str = ', '.join(aliases)
+            alias_line_text = get_text("config.model_aliases_suffix", alias_str=alias_str)
+            # Indent alias line
+            option_lines.append(Text("  ") + Text(alias_line_text, style=console.STYLE_SYSTEM_CONTENT))
+
+    model_list_text = Text("\n").join(option_lines)
+
+    # Print header and model list together
+    console.display_message("SYSTEM:", get_text("config.model_available_title"),
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    console.console.print(model_list_text)
+
+    # Determine display name for the prompt if keeping current
+    current_display_name = effective_current or "Agent Default" if role_name == 'Main/Architect' else effective_current or "Aider Default"
+    prompt_msg = get_text("config.model_prompt", role=role_name, current_setting=current_display_name)
 
     while True:
         try:
             selected = console.prompt_for_input(prompt_msg).strip()
             if not selected:
-                console.display_message("INFO:", get_text("config.model_info_keep", setting=(effective_current or 'Default')), 
+                console.display_message("INFO:", get_text("config.model_info_keep", setting=current_display_name),
                                       console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                 return current_value
-            elif selected.lower() == 'none':
-                console.display_message("INFO:", get_text("config.model_info_reset", role=role_name, default_name=default_display_name), 
-                                      console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
-                return None
             else:
                 normalized_model = normalize_model_name(selected)
                 if normalized_model in all_model_names:
+                    # Return the selected normalized model name
+                    console.display_message("INFO:", f"Selected '{normalized_model}' for {role_name}.",
+                                          console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                     return normalized_model
                 else:
-                    console.display_message("ERROR:", get_text("config.model_error_unknown", selected=selected), 
+                    # Simplified error message from text file
+                    console.display_message("ERROR:", get_text("config.model_error_unknown", selected=selected),
                                           console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
         except KeyboardInterrupt:
-            console.display_message("WARNING:", get_text("config.model_warn_cancel"), 
-                                  console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-            return current_value
+             console.display_message("WARNING:", get_text("config.model_warn_cancel"),
+                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+             return current_value
 
 def _prompt_for_edit_format_config(current_value: Optional[str], default_value: Optional[str] = None) -> Optional[str]:
     """Prompts the user to select an Aider edit format using ConsoleManager."""
-    console.display_message("SYSTEM:", get_text("config.format_header"), 
+    console.display_message("SYSTEM:", get_text("config.format_header"),
                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
-    i = 0
     valid_choices = {}
     default_display_name = get_text("config.format_default_name")
-    current_marker = get_text("config.model_current_marker")
+    current_marker_text = get_text("config.model_current_marker")
 
-    console.display_message("SYSTEM:", get_text("config.format_option_default", default_display=default_display_name, marker=(current_marker if current_value is None else '')), 
-                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    # Build options list as Text object
+    options_list_text = Text()
+    option_lines = []
+
+    # Add Default option
+    default_marker = current_marker_text if current_value is None else ""
+    option_lines.append(Text.assemble(
+        "  ",
+        ("0", console.STYLE_INPUT_OPTION),
+        f": {default_display_name}",
+        default_marker
+    ))
     valid_choices['0'] = None
 
+    # Add specific formats
     format_list = sorted(AIDER_EDIT_FORMATS.keys())
     for idx, fmt in enumerate(format_list, 1):
         description = AIDER_EDIT_FORMATS[fmt]
-        marker = current_marker if fmt == current_value else ""
-        console.display_message("SYSTEM:", get_text("config.format_option", idx=idx, format=fmt, marker=marker, description=description), 
-                              console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+        marker = current_marker_text if fmt == current_value else ""
+        option_lines.append(Text.assemble(
+            "  ",
+            (str(idx), console.STYLE_INPUT_OPTION),
+            f": {fmt}",
+            marker,
+            f" - {description}"
+        ))
         valid_choices[str(idx)] = fmt
+
+    options_list_text = Text("\n").join(option_lines)
+    console.console.print(options_list_text) # Print the assembled options
 
     max_idx = len(format_list)
     while True:
         try:
-            choice = console.prompt_for_input(get_text("config.format_prompt", max_idx=max_idx)).strip()
-            
+            # Prompt message fetched from texts.json
+            prompt_msg = get_text("config.format_prompt", max_idx=max_idx)
+            choice = console.prompt_for_input(prompt_msg).strip()
+
             if not choice:
                 current_display = current_value if current_value is not None else default_display_name
-                console.display_message("INFO:", get_text("config.format_info_keep", setting=current_display), 
+                console.display_message("INFO:", get_text("config.format_info_keep", setting=current_display),
                                       console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                 return current_value
             elif choice in valid_choices:
                 selected_format = valid_choices[choice]
                 selected_display = selected_format if selected_format is not None else default_display_name
-                console.display_message("INFO:", get_text("config.format_info_selected", setting=selected_display), 
+                console.display_message("INFO:", get_text("config.format_info_selected", setting=selected_display),
                                       console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
                 return selected_format
             else:
-                console.display_message("ERROR:", get_text("config.format_error_invalid"), 
+                console.display_message("ERROR:", get_text("config.format_error_invalid"),
                                       console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
         except KeyboardInterrupt:
             current_display = current_value if current_value is not None else default_display_name
-            console.display_message("WARNING:", get_text("config.format_warn_cancel", setting=current_display), 
+            console.display_message("WARNING:", get_text("config.format_warn_cancel", setting=current_display),
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             return current_value
 
@@ -189,15 +228,17 @@ def configure_toolset(
     config_to_prompt = current_config_for_prompting or {}
     final_config = {}
 
-    print(get_text("config.header", context=context_name))
+    console.display_message("SYSTEM:", get_text("config.header", context=context_name),
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     save_location_info = get_text("config.save_location_global") if is_global_only else get_text("config.save_location_chat")
-    print(get_text("config.instructions", save_location_info=save_location_info))
+    console.display_message("SYSTEM:", get_text("config.instructions", save_location_info=save_location_info),
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     agent_model = get_agent_model()
 
     # --- Model Selection ---
     selected_main = _prompt_for_single_model_config("Main/Architect", config_to_prompt.get("main_model"), AIDER_DEFAULT_MAIN_MODEL)
-    final_config["main_model"] = selected_main
+    final_config["main_model"] = selected_main # Store None if user reset/cancelled/defaulted to None
     selected_editor = _prompt_for_single_model_config("Editor", config_to_prompt.get("editor_model"), AIDER_DEFAULT_EDITOR_MODEL)
     final_config["editor_model"] = selected_editor
     selected_weak = _prompt_for_single_model_config("Weak (Commits etc.)", config_to_prompt.get("weak_model"), AIDER_DEFAULT_WEAK_MODEL)
@@ -205,17 +246,19 @@ def configure_toolset(
 
     # --- Edit Format Selection ---
     selected_format = _prompt_for_edit_format_config(config_to_prompt.get("edit_format"), AIDER_DEFAULT_EDIT_FORMAT)
-    final_config["edit_format"] = selected_format
+    final_config["edit_format"] = selected_format # Store None if user chose default
 
+    # --- Non-interactive settings ---
     final_config["auto_commits"] = config_to_prompt.get("auto_commits", AIDER_DEFAULT_AUTO_COMMITS)
     final_config["dirty_commits"] = config_to_prompt.get("dirty_commits", AIDER_DEFAULT_DIRTY_COMMITS)
     final_config["enabled"] = True
 
     # --- Ensure API Keys using ensure_dotenv_key ---
-    print(get_text("config.api_key_check_header"))
+    console.display_message("SYSTEM:", get_text("config.api_key_check_header"),
+                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
     actual_main_model = final_config.get("main_model")
-    actual_editor_model = final_config.get("editor_model", AIDER_DEFAULT_EDITOR_MODEL)
-    actual_weak_model = final_config.get("weak_model", AIDER_DEFAULT_WEAK_MODEL)
+    actual_editor_model = final_config.get("editor_model", AIDER_DEFAULT_EDITOR_MODEL) # Use default if None
+    actual_weak_model = final_config.get("weak_model", AIDER_DEFAULT_WEAK_MODEL)       # Use default if None
     if actual_main_model is None:
         actual_main_model = agent_model
     models_to_check = {actual_main_model, actual_editor_model, actual_weak_model}
@@ -227,7 +270,7 @@ def configure_toolset(
         "GOOGLE_API_KEY": "Google AI API Key (https://aistudio.google.com/app/apikey)"
     }
 
-    for model_name in filter(None, models_to_check):
+    for model_name in filter(None, models_to_check): # Filter out None values
         try:
              provider = get_model_provider(model_name)
              env_var = "OPENAI_API_KEY" if provider == "openai" else "GOOGLE_API_KEY"
@@ -240,11 +283,12 @@ def configure_toolset(
                      api_key_descriptions.get(env_var)
                  )
                  if key_value is None:
-                     required_keys_ok = False
+                     required_keys_ok = False # Mark if user skips/cancels
                  checked_providers.add(env_var)
         except Exception as e:
             logger.error(f"Error checking API key for model '{model_name}': {e}", exc_info=True)
-            print(get_text("config.api_key_error_check", model_name=model_name))
+            console.display_message("ERROR:", get_text("config.api_key_error_check", model_name=model_name),
+                                  console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             required_keys_ok = False
 
     # --- Save Config Appropriately ---
@@ -252,14 +296,17 @@ def configure_toolset(
     save_success_local = True
 
     try:
+        # Ensure directories exist before writing
+        global_config_path.parent.mkdir(parents=True, exist_ok=True)
         write_json(global_config_path, final_config)
         logger.info(f"File Editor configuration saved to global path: {global_config_path}")
     except Exception as e:
          save_success_global = False
          logger.error(f"Failed to save File Editor config to global path {global_config_path}: {e}")
 
-    if not is_global_only:
+    if not is_global_only and local_config_path: # Check local_config_path exists
         try:
+            local_config_path.parent.mkdir(parents=True, exist_ok=True)
             write_json(local_config_path, final_config)
             logger.info(f"File Editor configuration saved to local path: {local_config_path}")
         except Exception as e:
@@ -269,11 +316,14 @@ def configure_toolset(
     # --- Confirmation Messages ---
     if save_success_global and (is_global_only or save_success_local):
         msg_key = "config.save_success_global" if is_global_only else "config.save_success_chat"
-        print(get_text(msg_key))
+        console.display_message("INFO:", get_text(msg_key),
+                              console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         if not required_keys_ok:
-             print(get_text("config.save_warn_missing_keys"))
+             console.display_message("WARNING:", get_text("config.save_warn_missing_keys"),
+                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
     else:
-        print(get_text("config.save_error_failed"))
+        console.display_message("ERROR:", get_text("config.save_error_failed"),
+                              console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
 
     return final_config
 

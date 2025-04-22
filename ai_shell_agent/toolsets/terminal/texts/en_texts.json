@@ -4,7 +4,7 @@
     "description": "Provides tools to execute shell commands and Python code."
   },
   "config": {
-    "info_no_settings": "The Terminal toolset currently requires no specific configuration.",
+    "info_no_settings": "Terminal tools do not have any configurable options.",
     "warn_write_failed": "Failed to write one or more configuration files for Terminal toolset. Check logs."
   },
   "schemas": {

@@ -101,20 +101,38 @@ def first_time_setup() -> bool:
         # --- Language Selection ---
         logger.debug("Attempting language selection prompt.")
         original_lang = get_language() # Get language before prompting
-        selected_lang = prompt_for_language_selection()
-        if selected_lang and selected_lang != original_lang:
-             # Language was successfully changed
-             language_changed = True
-             logger.info(f"Language changed during first-time setup: {original_lang} -> {selected_lang}")
-        elif not selected_lang:
-             # Handle case where user cancels language selection during first run
-             console.display_message(get_text("common.labels.warning"), get_text("config.lang_select.warn_cancel_default"),
+        selected_lang_code = prompt_for_language_selection()
+        
+        # --- BEGIN MODIFICATION ---
+        from .settings import APP_DEFAULT_LANGUAGE
+        effective_lang_code = APP_DEFAULT_LANGUAGE # Default to app setting ('en')
+
+        if selected_lang_code:
+            # User made a selection (didn't cancel)
+            effective_lang_code = selected_lang_code
+            if selected_lang_code != original_lang:
+                language_changed = True
+                logger.info(f"Language changed during first-time setup: {original_lang} -> {selected_lang_code}")
+            else:
+                logger.debug(f"User selected the current language: {selected_lang_code}")
+        else:
+            # User cancelled (prompt returned None)
+            console.display_message(get_text("common.labels.warning"), get_text("config.lang_select.warn_cancel_default"),
                                     console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
-             # Ensure 'en' is set if selection failed
-             from .config_manager import set_language
-             set_language("en")
-        logger.debug(f"prompt_for_language_selection finished (selected: {selected_lang or 'None'}). Language changed flag: {language_changed}")
-        # --- End Language Selection ---
+            # Keep effective_lang_code as APP_DEFAULT_LANGUAGE
+            logger.warning(f"Language selection cancelled during first run. Defaulting to {APP_DEFAULT_LANGUAGE}.")
+
+        # Explicitly set the language in the config *before* proceeding
+        from .config_manager import set_language # Import set_language here
+        if not set_language(effective_lang_code):
+             logger.error(f"Failed to set language '{effective_lang_code}' during first time setup!")
+             # Decide how to handle this - maybe warn the user or exit?
+             # For now, log the error and continue, hoping the default is usable.
+        else:
+             logger.debug(f"Ensured language '{effective_lang_code}' is set in config during first time setup.")
+
+        logger.debug(f"Language selection block finished. Effective language: {effective_lang_code}. Language changed flag: {language_changed}")
+        # --- END MODIFICATION ---
 
         logger.debug("Attempting to call prompt_for_model_selection.")
         selected_model = prompt_for_model_selection() # This now uses console_manager internally
@@ -393,64 +411,53 @@ def configure_toolset_cli(toolset_name: str):
             break
 
     if not target_metadata or not target_toolset_id:
-        console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_not_found", toolset_name=toolset_name), # MODIFIED LABEL
+        console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_not_found", toolset_name=toolset_name),
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
-        console.display_message(get_text("common.labels.system"), get_text("configure_toolset.info_available", toolset_list=", ".join(get_toolset_names())), # MODIFIED LABEL
+        console.display_message(get_text("common.labels.system"), get_text("configure_toolset.info_available", toolset_list=", ".join(get_toolset_names())),
                               console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
         return
 
     if not target_metadata.configure_func:
-        console.display_message(get_text("common.labels.info"), get_text("configure_toolset.info_not_configurable", toolset_name=target_metadata.name), # MODIFIED LABEL
+        console.display_message(get_text("common.labels.info"), get_text("configure_toolset.info_not_configurable", toolset_name=target_metadata.name),
                               console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
         return
 
-    # --- Get Paths and Config ---
+    # --- Get Paths ---
     dotenv_path = ROOT_DIR / '.env'
     global_config_path = get_toolset_global_config_path(target_toolset_id)
 
+    # --- Determine context and load current config ---
+    local_config_path = None
+    current_config_for_prompting = None
+
     if is_global_context:
-        chat_title = "Global Defaults"
-        local_config_path = None
         current_config_for_prompting = read_json(global_config_path, default_value=None)
-        context_info = get_text("configure_toolset.context_header_global",
-                                toolset_name=target_metadata.name,
-                                global_config_path=global_config_path,
-                                dotenv_path=dotenv_path)
     else: # Chat context
         chat_title_from_state = get_current_chat_title()
         if not chat_title_from_state:
-            console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_chat_title_missing", chat_id=chat_id), # MODIFIED LABEL
+            console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_chat_title_missing", chat_id=chat_id),
                                   console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
             return
-        chat_title = chat_title_from_state
         local_config_path = get_toolset_data_path(chat_id, target_toolset_id)
         current_config_for_prompting = read_json(local_config_path, default_value=None)
-        context_info = get_text("configure_toolset.context_header_chat",
-                                toolset_name=target_metadata.name,
-                                chat_title=chat_title,
-                                local_config_path=local_config_path,
-                                global_config_path=global_config_path,
-                                dotenv_path=dotenv_path)
-
-    # --- Display Context ---
-    console.display_message(get_text("common.labels.system"), context_info.strip(), # MODIFIED LABEL
-                          console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
 
     # --- Execute Configuration ---
     try:
+        # Pass all required paths and config to the toolset's function
         final_config = target_metadata.configure_func(
             global_config_path,
             local_config_path,
             dotenv_path,
             current_config_for_prompting
         )
+        # The configure_func itself is now responsible for printing context headers
     except (EOFError, KeyboardInterrupt):
-         logger.warning(f"Configuration cancelled for {toolset_name} by user.")
-         console.display_message(get_text("common.labels.warning"), get_text("configure_toolset.warn_cancel"), # MODIFIED LABEL
-                               console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+        logger.warning(f"Configuration cancelled for {toolset_name} by user.")
+        console.display_message(get_text("common.labels.warning"), get_text("configure_toolset.warn_cancel"),
+                              console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
     except Exception as e:
         logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
-        console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_generic", error=e), # MODIFIED LABEL
+        console.display_message(get_text("common.labels.error"), get_text("configure_toolset.error_generic", error=e),
                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT)
 
 # --- Main CLI Execution Logic ---
