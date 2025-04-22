@@ -19,7 +19,7 @@
       "api_key_missing": "API Key not provided. Exiting."
     },
     "toolsets": {
-      "prompt_intro": "\n--- Select Default Enabled Toolsets ---\nThese toolsets will be enabled by default when you create new chats.\n",
+      "prompt_intro": "\nSelect Default Enabled Toolsets\nThese toolsets will be enabled by default when you create new chats.",
       "warn_none_found": "No toolsets found/registered.",
       "available_title": "\nAvailable Toolsets:",
       "prompt_instructions": "\nEnter comma-separated numbers TO ENABLE by default (e.g., 1,3).\nTo enable none by default, enter 'none'.\nLeave empty to use {default_toolsets_str} as defaults.\n",
@@ -300,10 +300,10 @@
     },
     "lang_select": {
       "error_discovery_failed": "Could not find any language files. Using default 'en'.",
-      "prompt_title": "\nPlease select the application language:",
+      "prompt_title": "Please select the application language:",
       "current_marker": " <- Current",
       "option_format": "  {idx}: {code}{marker}",
-      "prompt_input": "Enter number (1-{max_lang}) or leave empty to keep '{current_lang}': ",
+      "prompt_input": "Enter number (1-{max_lang}) or leave empty to keep '{current_lang}'",
       "info_kept_current": "Keeping current language: {lang_code}",
       "info_set_success": "Language set to: {lang_code}",
       "error_save_failed": "Failed to save language setting.",
@@ -314,30 +314,30 @@
     }
   },
   "console": {
-    "thinking_text": "⏳ Thinking...",
-    "tool_output": {
-      "format": "({tool_name}) {output}"
-    },
-    "tool_confirm": {
-      "used_tool": "Used tool '{tool_name}'",
-      "with_args": " with ",
-      "arg_separator": ": ",
-      "arg_list_separator": ", "
-    },
-    "hitl_prompt": {
-      "prefix_action": " AI wants to perform an action '",
-      "suffix_edit_confirm": "', edit or confirm: ",
-      "error_edit_key_missing": "Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.",
-      "error_generic": "Error during input prompt: {error}"
-    },
-    "prompt": {
-      "suffix": ": ",
-      "default_hint_format": " [{default}]",
-      "error_generic": "\nError getting input: {error}"
-    },
-    "common": {
-       "input_cancelled": "Input cancelled."
-    }
+      "thinking_text": "⏳ Thinking...",
+      "tool_output": {
+        "format": "({tool_name}) {output}"
+      },
+      "tool_confirm": {
+        "used_tool": "Used tool '{tool_name}'",
+        "with_args": " with ",
+        "arg_separator": ": ",
+        "arg_list_separator": ", "
+      },
+      "hitl_prompt": {
+        "prefix_action": " AI wants to perform an action '",
+        "suffix_edit_confirm": "', edit or confirm: ",
+        "error_edit_key_missing": "Internal error: edit_key '{edit_key}' not found in proposed arguments for tool '{tool_name}'.",
+        "error_generic": "Error during input prompt: {error}"
+      },
+      "prompt": {
+        "suffix": ": ",
+        "default_hint_format": " [{default}]",
+        "error_generic": "\nError getting input: {error}"
+      },
+      "common": {
+         "input_cancelled": "Input cancelled."
+      }
   },
   "localize": {
     "start": "Starting localization process for language: {target_language}",

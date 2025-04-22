@@ -479,7 +479,9 @@ def main():
     model_group.add_argument("--select-translation-model", action="store_true", 
                              help=get_text("cli.args.select_translation_model.help"))
     
-    util_group.add_argument("--localize", metavar="LANG_CODE", help=get_text("cli.args.localize.help"))
+    # --- MODIFICATION START ---
+    util_group.add_argument("--localize", metavar="LANGUAGE_NAME", help=get_text("cli.args.localize.help"))
+    # --- MODIFICATION END ---
 
     chat_group.add_argument("-c", "--chat", metavar="TITLE", help=get_text("cli.args.chat.help"))
     chat_group.add_argument("-lc", "--load-chat", metavar="TITLE", help=get_text("cli.args.load_chat.help"))

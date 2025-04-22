@@ -550,16 +550,27 @@ def prompt_for_language_selection() -> Optional[str]:
 
     current_lang = get_language()
 
-    console.display_message(get_text("common.labels.system"), get_text("config.lang_select.prompt_title"),
-                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
-
-    lang_options = []
+    # --- MODIFICATION START ---
+    # Build the options list first as a Text object
+    from rich.text import Text
+    lang_options_text = Text()
+    option_lines = []
     for idx, code in available_langs.items():
         marker = get_text("config.lang_select.current_marker") if code == current_lang else ""
-        lang_options.append(get_text("config.lang_select.option_format", idx=idx, code=code, marker=marker))
+        # Use Text.assemble for potential future styling if needed
+        option_lines.append(Text.assemble("  ", (idx, console.STYLE_INPUT_OPTION), f": {code}", marker)) # Use input option style for index
+    lang_options_text = Text("\n").join(option_lines)
 
-    console.display_message(get_text("common.labels.system"), "\n".join(lang_options),
-                           console.STYLE_SYSTEM_LABEL, console.STYLE_SYSTEM_CONTENT)
+    # Print title and options together
+    console.display_message(
+        get_text("common.labels.system"),
+        get_text("config.lang_select.prompt_title"),
+        console.STYLE_SYSTEM_LABEL,
+        console.STYLE_SYSTEM_CONTENT
+    )
+    # Print the assembled options directly
+    console.console.print(lang_options_text)
+    # --- MODIFICATION END ---
 
     while True:
         try:
