@@ -24,11 +24,11 @@ from .toolsets.toolsets import get_toolset_ids, get_toolset_names  # Added get_t
 # Import default enabled toolsets from settings
 from .settings import DEFAULT_ENABLED_TOOLSETS_NAMES
 # Import console manager and texts
-from .console_manager import get_console_manager # <--- ADDED IMPORT
-from .texts import get_text # <--- ADDED IMPORT
+from .console_manager import get_console_manager
+from .texts import get_text
 
 # Get console manager instance
-console = get_console_manager() # <--- ADDED INSTANCE
+console = get_console_manager()
 
 # --- Constants ---
 SESSION_FILE = Path(DATA_DIR) / "session.json"
@@ -323,8 +323,12 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
 
     # --- Run the configuration function ---
     # It handles prompting, secret checks (using ensure_dotenv_key), and saving to both paths.
-    console.display_message(get_text("common.labels.info"), get_text("state.tool_config.notice_needs_config", toolset_name=toolset_name), 
-                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT) # MODIFIED
+    console.display_message(
+        get_text("common.labels.info"), 
+        get_text("state.tool_config.notice_needs_config", toolset_name=toolset_name),
+        console.STYLE_INFO_LABEL, 
+        console.STYLE_INFO_CONTENT
+    )
     logger.info(f"Running configuration function for '{toolset_name}' (ID: {target_id}) for chat {chat_id}.")
     try:
         # Call configure_func, passing paths and the potentially invalid local_config (or None)
@@ -340,12 +344,20 @@ def check_and_configure_toolset(chat_id: str, toolset_name: str):
 
     except (EOFError, KeyboardInterrupt):
          logger.warning(f"Configuration cancelled by user for {toolset_name}. Toolset may not work correctly.")
-         console.display_message(get_text("common.labels.warning"), get_text("state.tool_config.warn_cancel", toolset_name=toolset_name),
-                                console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT) # MODIFIED
+         console.display_message(
+             get_text("common.labels.warning"), 
+             get_text("state.tool_config.warn_cancel", toolset_name=toolset_name),
+             console.STYLE_WARNING_LABEL, 
+             console.STYLE_WARNING_CONTENT
+         )
     except Exception as e:
          logger.error(f"Error running configuration for {toolset_name}: {e}", exc_info=True)
-         console.display_message(get_text("common.labels.error"), get_text("state.tool_config.error_failed", toolset_name=toolset_name, error=e),
-                                console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+         console.display_message(
+             get_text("common.labels.error"), 
+             get_text("state.tool_config.error_failed", toolset_name=toolset_name, error=e),
+             console.STYLE_ERROR_LABEL, 
+             console.STYLE_ERROR_CONTENT
+         )
 
 # --- Chat Creation/Management ---
 def create_or_load_chat(title: str) -> Optional[str]:
@@ -444,14 +456,22 @@ def rename_chat(old_title: str, new_title: str) -> bool:
     title_to_id = {v: k for k, v in chat_map.items()}
     if old_title not in title_to_id: 
         logger.error(f"Chat '{old_title}' not found.")
-        console.display_message(get_text("common.labels.error"), get_text("state.rename.error_old_not_found", old_title=old_title),
-                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+        console.display_message(
+            get_text("common.labels.error"), 
+            get_text("state.rename.error_old_not_found", old_title=old_title),
+            console.STYLE_ERROR_LABEL, 
+            console.STYLE_ERROR_CONTENT
+        )
         return False
     chat_id = title_to_id[old_title]
     if new_title in title_to_id and title_to_id[new_title] != chat_id: 
         logger.error(f"Chat '{new_title}' already exists.")
-        console.display_message(get_text("common.labels.error"), get_text("state.rename.error_new_exists", new_title=new_title),
-                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+        console.display_message(
+            get_text("common.labels.error"), 
+            get_text("state.rename.error_new_exists", new_title=new_title),
+            console.STYLE_ERROR_LABEL, 
+            console.STYLE_ERROR_CONTENT
+        )
         return False
     
     chat_map[chat_id] = new_title
@@ -466,8 +486,12 @@ def delete_chat(title: str) -> bool:
     title_to_id = {v: k for k, v in chat_map.items()}
     if title not in title_to_id: 
         logger.error(f"Chat '{title}' not found.")
-        console.display_message(get_text("common.labels.error"), get_text("state.delete.error_not_found", title=title),
-                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+        console.display_message(
+            get_text("common.labels.error"), 
+            get_text("state.delete.error_not_found", title=title),
+            console.STYLE_ERROR_LABEL, 
+            console.STYLE_ERROR_CONTENT
+        )
         return False
     
     chat_id = title_to_id[title]
@@ -490,8 +514,12 @@ def delete_chat(title: str) -> bool:
         return True
     except Exception as e: 
         logger.error(f"Could not delete chat directory {chat_dir_path}: {e}", exc_info=True)
-        console.display_message(get_text("common.labels.error"), get_text("state.delete.error_failed", title=title, error=e),
-                               console.STYLE_ERROR_LABEL, console.STYLE_ERROR_CONTENT) # MODIFIED
+        console.display_message(
+            get_text("common.labels.error"), 
+            get_text("state.delete.error_failed", title=title, error=e),
+            console.STYLE_ERROR_LABEL, 
+            console.STYLE_ERROR_CONTENT
+        )
         return False
 
 def get_chat_titles() -> Dict[str, str]: 

@@ -30,14 +30,15 @@ from ...chat_state_manager import (
 )
 from ...console_manager import get_console_manager # Import console manager
 from ...errors import PromptNeededError # Import the new custom exceptions
+from ...texts import get_text as get_main_text # Import main get_text function
 from .prompts import TERMINAL_TOOLSET_PROMPT # Import the prompt content
 from ...utils.file_io import write_json, read_json # Import utils for JSON I/O
-from .texts import get_text # <--- ADDED IMPORT
+from .texts import get_text # Import toolset-specific get_text
 
 # --- Toolset Metadata ---
-toolset_name = get_text("toolset.name") # MODIFIED
+toolset_name = get_text("toolset.name")
 toolset_id = "terminal"
-toolset_description = get_text("toolset.description") # MODIFIED
+toolset_description = get_text("toolset.description")
 toolset_required_secrets: Dict[str, str] = {}
 
 # --- Get console manager instance ---
@@ -58,9 +59,24 @@ def configure_toolset(
     is_global_only = local_config_path is None
     context_name = "Global Defaults" if is_global_only else "Current Chat"
 
+    # --- MODIFICATION START: Print context header ---
+    console.display_message(
+        get_main_text("common.labels.system"),
+        f"Configure Terminal settings ({context_name})",
+        console.STYLE_SYSTEM_LABEL,
+        console.STYLE_SYSTEM_CONTENT
+    )
+    # --- MODIFICATION END ---
+
     logger.info(f"Configuring Terminal toolset ({context_name}). No user-configurable settings currently.")
-    console.display_message("INFO:", get_text("config.info_no_settings"), # MODIFIED
-                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+    # --- MODIFICATION START: Use main get_text for label ---
+    console.display_message(
+        get_main_text("common.labels.info"),
+        get_text("config.info_no_settings"),
+        console.STYLE_INFO_LABEL,
+        console.STYLE_INFO_CONTENT
+    )
+    # --- MODIFICATION END ---
 
     save_success_global = True
     save_success_local = True
@@ -83,8 +99,14 @@ def configure_toolset(
              logger.error(f"Failed to write empty config for Terminal toolset to local path {local_config_path}: {e}")
 
     if not save_success_global or not save_success_local:
-        console.display_message("WARNING:", get_text("config.warn_write_failed"), # MODIFIED
-                               console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
+        # --- MODIFICATION START: Use main get_text for label ---
+        console.display_message(
+            get_main_text("common.labels.warning"),
+            get_text("config.warn_write_failed"),
+            console.STYLE_WARNING_LABEL,
+            console.STYLE_WARNING_CONTENT
+        )
+        # --- MODIFICATION END ---
 
     return final_config
 
@@ -93,8 +115,8 @@ def configure_toolset(
 class StartTerminalToolArgs(BaseModel): pass # Keep schema definition
 
 class TerminalUsageGuideTool(BaseTool):
-    name: str = get_text("tools.usage_guide.name") # MODIFIED
-    description: str = get_text("tools.usage_guide.description") # MODIFIED
+    name: str = get_text("tools.usage_guide.name")
+    description: str = get_text("tools.usage_guide.description")
     args_schema: Type[BaseModel] = StartTerminalToolArgs
 
     def _run(self) -> str:
@@ -105,14 +127,14 @@ class TerminalUsageGuideTool(BaseTool):
         return self._run()
 
 class TerminalToolArgs(BaseModel):
-    cmd: str = Field(..., description=get_text("schemas.terminal.cmd_desc")) # MODIFIED
+    cmd: str = Field(..., description=get_text("schemas.terminal.cmd_desc"))
 
 class TerminalTool_HITL(BaseTool):
     """
     Tool for interacting with the system's shell with human-in-the-loop confirmation.
     """
-    name: str = get_text("tools.terminal_hitl.name") # MODIFIED
-    description: str = get_text("tools.terminal_hitl.description") # MODIFIED
+    name: str = get_text("tools.terminal_hitl.name")
+    description: str = get_text("tools.terminal_hitl.description")
     args_schema: Type[BaseModel] = TerminalToolArgs
     requires_confirmation: bool = True
 
@@ -122,7 +144,7 @@ class TerminalTool_HITL(BaseTool):
         """
         cmd_to_execute = command.strip()
         if not cmd_to_execute:
-            return get_text("tools.terminal_hitl.error_empty_cmd") # MODIFIED
+            return get_text("tools.terminal_hitl.error_empty_cmd")
 
         if confirmed_input is None:
             logger.debug(f"TerminalTool: Raising PromptNeededError for cmd: '{cmd_to_execute}'")
@@ -137,7 +159,7 @@ class TerminalTool_HITL(BaseTool):
             final_command = confirmed_input.strip()
             if not final_command:
                 logger.warning("TerminalTool: Received empty confirmed input.")
-                return get_text("tools.terminal_hitl.error_empty_confirmed") # MODIFIED
+                return get_text("tools.terminal_hitl.error_empty_confirmed")
 
             logger.info(f"Executing confirmed terminal command: {final_command}")
             formatted_result = ""
@@ -169,35 +191,35 @@ class TerminalTool_HITL(BaseTool):
                 )
 
                 if result.returncode != 0:
-                     details_parts.append(get_text("tools.terminal_hitl.details.exit_code", code=result.returncode)) # MODIFIED
+                     details_parts.append(get_text("tools.terminal_hitl.details.exit_code", code=result.returncode))
                 stdout = result.stdout.strip(); stderr = result.stderr.strip()
                 if stdout:
                     max_out_len = 2000
                     trunc_marker = "\n... (truncated)" # Default truncation marker
                     display_stdout = (stdout[:max_out_len] + trunc_marker) if len(stdout) > max_out_len else stdout
-                    details_parts.append(get_text("tools.terminal_hitl.details.stdout", output=display_stdout)) # MODIFIED
+                    details_parts.append(get_text("tools.terminal_hitl.details.stdout", output=display_stdout))
                 if stderr:
                     max_err_len = 1000
                     trunc_marker = "\n... (truncated)" # Default truncation marker  
                     display_stderr = (stderr[:max_err_len] + trunc_marker) if len(stderr) > max_err_len else stderr
-                    details_parts.append(get_text("tools.terminal_hitl.details.stderr", output=display_stderr)) # MODIFIED
+                    details_parts.append(get_text("tools.terminal_hitl.details.stderr", output=display_stderr))
                 if not stdout and not stderr:
-                    status_msg = get_text("tools.terminal_hitl.details.no_output_success") if result.returncode == 0 else get_text("tools.terminal_hitl.details.no_output_fail") # MODIFIED
+                    status_msg = get_text("tools.terminal_hitl.details.no_output_success") if result.returncode == 0 else get_text("tools.terminal_hitl.details.no_output_fail")
                     details_parts.append(status_msg)
 
-                formatted_result = get_text("tools.terminal_hitl.result_format", command=final_command, details="\n".join(details_parts)) # MODIFIED
+                formatted_result = get_text("tools.terminal_hitl.result_format", command=final_command, details="\n".join(details_parts))
 
             except subprocess.TimeoutExpired:
                  logger.error(f"Command '{final_command}' timed out.")
-                 formatted_result = get_text("tools.terminal_hitl.error_timeout", command=final_command) # MODIFIED
+                 formatted_result = get_text("tools.terminal_hitl.error_timeout", command=final_command)
             except FileNotFoundError:
                  logger.error(f"Error executing command '{final_command}': Command not found.")
                  # Try to get just the command name
                  command_name = final_command.split()[0] if final_command else final_command
-                 formatted_result = get_text("tools.terminal_hitl.error_not_found", command_name=command_name, command=final_command) # MODIFIED
+                 formatted_result = get_text("tools.terminal_hitl.error_not_found", command_name=command_name, command=final_command)
             except Exception as e:
                 logger.error(f"Error executing command '{final_command}': {e}", exc_info=True)
-                formatted_result = get_text("tools.terminal_hitl.error_generic", error=str(e), command=final_command) # MODIFIED
+                formatted_result = get_text("tools.terminal_hitl.error_generic", error=str(e), command=final_command)
 
             return formatted_result
 
@@ -205,14 +227,14 @@ class TerminalTool_HITL(BaseTool):
         return await run_in_executor(None, self._run, cmd, confirmed_input)
 
 class PythonREPLToolArgs(BaseModel):
-    query: str = Field(..., description=get_text("schemas.python.query_desc")) # MODIFIED
+    query: str = Field(..., description=get_text("schemas.python.query_desc"))
 
 class PythonREPLTool_HITL(BaseTool):
     """
     Human-in-the-loop wrapper for Python REPL execution.
     """
-    name: str = get_text("tools.python_repl_hitl.name") # MODIFIED
-    description: str = get_text("tools.python_repl_hitl.description") # MODIFIED
+    name: str = get_text("tools.python_repl_hitl.name")
+    description: str = get_text("tools.python_repl_hitl.description")
     args_schema: Type[BaseModel] = PythonREPLToolArgs
     python_repl: PythonREPL = Field(default_factory=_get_default_python_repl)
     sanitize_input: bool = True
@@ -228,7 +250,7 @@ class PythonREPLTool_HITL(BaseTool):
         """
         code_to_execute = query
         if not code_to_execute:
-             return get_text("tools.python_repl_hitl.error_no_code") # MODIFIED
+             return get_text("tools.python_repl_hitl.error_no_code")
 
         if self.sanitize_input:
             original_code = code_to_execute
@@ -244,13 +266,13 @@ class PythonREPLTool_HITL(BaseTool):
                 tool_name=self.name,
                 proposed_args={"query": code_to_execute},
                 edit_key="query",
-                prompt_suffix=get_text("tools.python_repl_hitl.prompt_suffix") # MODIFIED
+                prompt_suffix=get_text("tools.python_repl_hitl.prompt_suffix")
             )
         else:
             final_query = confirmed_input
             if not final_query.strip():
                  logger.warning("PythonREPLTool: Received empty confirmed input.")
-                 return get_text("tools.python_repl_hitl.error_empty_confirmed") # MODIFIED
+                 return get_text("tools.python_repl_hitl.error_empty_confirmed")
 
             logger.info(f"Executing confirmed Python code: {final_query[:100]}...")
             formatted_result = ""
@@ -260,10 +282,10 @@ class PythonREPLTool_HITL(BaseTool):
                 result_str = str(result)
                 trunc_marker = "\n... (truncated)" # Default truncation marker
                 display_result = (result_str[:max_res_len] + trunc_marker) if len(result_str) > max_res_len else result_str
-                formatted_result = get_text("tools.python_repl_hitl.result_format", query=final_query, result=display_result) # MODIFIED
+                formatted_result = get_text("tools.python_repl_hitl.result_format", query=final_query, result=display_result)
             except Exception as e:
                 logger.error(f"Error executing Python code '{final_query}': {e}", exc_info=True)
-                formatted_result = get_text("tools.python_repl_hitl.error_generic", error=str(e), query=final_query) # MODIFIED
+                formatted_result = get_text("tools.python_repl_hitl.error_generic", error=str(e), query=final_query)
 
             return formatted_result
 
@@ -288,11 +310,11 @@ logger.debug(f"Terminal toolset tools registered: {[t.name for t in toolset_tool
 
 # --- Direct Execution Helper ---
 class TerminalTool_Direct(BaseTool):
-    name: str = get_text("tools.direct_terminal.name") # MODIFIED
-    description: str = get_text("tools.direct_terminal.description") # MODIFIED
+    name: str = get_text("tools.direct_terminal.name")
+    description: str = get_text("tools.direct_terminal.description")
 
     class DirectArgs(BaseModel):
-        command: str = Field(..., description=get_text("schemas.direct_terminal.cmd_desc")) # MODIFIED
+        command: str = Field(..., description=get_text("schemas.direct_terminal.cmd_desc"))
 
     args_schema: Type[BaseModel] = DirectArgs
 
@@ -321,26 +343,26 @@ class TerminalTool_Direct(BaseTool):
             stderr = result.stderr.strip()
 
             if stdout:
-                output_parts.append(get_text("tools.direct_terminal.result_details.stdout", output=stdout)) # MODIFIED
+                output_parts.append(get_text("tools.direct_terminal.result_details.stdout", output=stdout))
             if stderr:
-                output_parts.append(get_text("tools.direct_terminal.result_details.stderr", output=stderr)) # MODIFIED
+                output_parts.append(get_text("tools.direct_terminal.result_details.stderr", output=stderr))
             if result.returncode != 0:
-                 output_parts.append(get_text("tools.direct_terminal.result_details.exit_code", code=result.returncode)) # MODIFIED
+                 output_parts.append(get_text("tools.direct_terminal.result_details.exit_code", code=result.returncode))
 
             if not output_parts: # Check if list is empty
                  if result.returncode == 0:
-                      output_parts.append(get_text("tools.direct_terminal.result_details.no_output_success")) # MODIFIED
+                      output_parts.append(get_text("tools.direct_terminal.result_details.no_output_success"))
                  else:
-                      output_parts.append(get_text("tools.direct_terminal.result_details.no_output_fail", code=result.returncode)) # MODIFIED
+                      output_parts.append(get_text("tools.direct_terminal.result_details.no_output_fail", code=result.returncode))
 
             return "".join(output_parts).strip() # Join parts
 
         except subprocess.TimeoutExpired:
              logger.error(f"Direct execution timed out for '{command}'")
-             return get_text("tools.direct_terminal.error_timeout", command=command) # MODIFIED
+             return get_text("tools.direct_terminal.error_timeout", command=command)
         except Exception as e:
             logger.error(f"Direct execution failed for '{command}': {e}", exc_info=True)
-            return get_text("tools.direct_terminal.error_generic", error=str(e)) # MODIFIED
+            return get_text("tools.direct_terminal.error_generic", error=str(e))
 
     async def _arun(self, command: str) -> str:
          return await run_in_executor(None, self._run, command)

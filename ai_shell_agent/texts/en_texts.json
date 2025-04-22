@@ -166,7 +166,8 @@
     }
   },
   "temp_chat": {
-    "format": "new chat {chat_title}",
+    "title": "temp chat id: {chat_title}",
+    "format": "new chat id: {chat_title}",
     "info": {
       "started": "Started {chat_title}."
     },
@@ -262,7 +263,7 @@
       "error_failed": "Error: Failed to delete chat '{title}' directory: {error}"
     },
     "tool_config": {
-      "notice_needs_config": "\nNOTICE: Toolset '{toolset_name}' needs configuration for this chat (no valid local or global default was found).",
+      "notice_needs_config": "Toolset '{toolset_name}' needs configuration for this chat (no valid local or global default was found).",
       "warn_cancel": "\nConfiguration for '{toolset_name}' cancelled. It may not function correctly.",
       "error_failed": "\nError configuring '{toolset_name}': {error}. It may not function correctly."
     }
