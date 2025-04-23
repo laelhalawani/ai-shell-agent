@@ -46,7 +46,7 @@ def configure_toolset(
     # Display context header
     console.display_message(
         get_main_text("common.labels.system"),
-        f"Configure Cognitive settings ({context_name})", # Simple header
+        get_text("config.header").format(context_name=context_name),
         console.STYLE_SYSTEM_LABEL,
         console.STYLE_SYSTEM_CONTENT
     )

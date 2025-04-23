@@ -19,10 +19,10 @@
       "api_key_missing": "API Key not provided. Exiting."
     },
     "toolsets": {
-      "prompt_intro": "\nSelect Default Enabled Toolsets\nThese toolsets will be enabled by default when you create new chats.",
+      "prompt_intro": "\nPlease select the default enabled toolsets.\nThese toolsets will be enabled by default when you create new chats.",
       "warn_none_found": "No toolsets found/registered.",
-      "available_title": "\nAvailable Toolsets:",
-      "prompt_instructions": "\nEnter comma-separated numbers TO ENABLE by default (e.g., 1,3).\nTo enable none by default, enter 'none'.\nLeave empty to use {default_toolsets_str} as defaults.\n",
+      "available_title": "Available Toolsets:",
+      "prompt_instructions": "\nEnter comma-separated numbers TO ENABLE by default (e.g., 1,3).\nTo disable all - enter 'none'.\nLeave empty to use the current defaults: {default_toolsets_str}.\n",
       "info_using_defaults": "No selection made. Using default toolsets: {toolset_list}",
       "error_invalid_selection": "Invalid selection '{index}'. Please use numbers from 1 to {max_idx}.",
       "info_selection_saved": "Selected toolsets set to: {toolset_list}",
@@ -270,7 +270,7 @@
   },
   "config": {
     "model_select": {
-      "available_title": "Available models:",
+      "available_title": "Please select the ai-shell-agent llm model from the available:",
       "openai_header": "OpenAI:",
       "google_header": "Google:",
       "aliases_suffix": " (aliases: {alias_str})",

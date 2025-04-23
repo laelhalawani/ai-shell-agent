@@ -5,7 +5,8 @@
   },
   "config": {
     "info_no_settings": "Cognitive tools do not have any configurable options.",
-    "warn_write_failed": "Failed to write one or more configuration files for Cognitive toolset. Check logs."
+    "warn_write_failed": "Failed to write one or more configuration files for Cognitive toolset. Check logs.",
+    "header": "Configuring Cognitive toolset."
   },
   "schemas": {
     "analyse": {
