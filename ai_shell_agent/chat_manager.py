@@ -606,7 +606,7 @@ def send_message(message: str) -> None:
 def start_temp_chat(message: str) -> None:
     """Starts a temporary chat session."""
     safe_ts = str(time.time()).replace('.', '_')
-    chat_title = get_text("temp_chat.title").format(chat_title=safe_ts) # MODIFIED
+    chat_title = get_text("temp_chat.title", chat_title=safe_ts) # MODIFIED
 
     logger.info(f"Starting temporary chat: {chat_title}")
     chat_file = create_or_load_chat(chat_title)

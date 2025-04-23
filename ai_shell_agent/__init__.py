@@ -12,7 +12,7 @@ from pathlib import Path
 # Get the specific logger for this application
 logger = logging.getLogger('ai_shell_agent')
 # Set the logging level EARLY - handler level will respect this later
-logger.setLevel(logging.DEBUG) # Change to logging.INFO for less verbose output
+logger.setLevel(logging.CRITICAL) # Change to logging.INFO for less verbose output
 # Prevent propagation EARLY
 logger.propagate = False
 # --- END Define Logger Object FIRST ---
