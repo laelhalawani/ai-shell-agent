@@ -27,9 +27,13 @@ from ...chat_state_manager import (
     check_and_configure_toolset # Keep import if needed elsewhere
 )
 from ...texts import get_text as get_main_text
-from .settings import FILES_HISTORY_LIMIT # Import toolset specific settings
+from .settings import (
+    FILES_HISTORY_LIMIT, FIND_FUZZY_DEFAULT, FIND_THRESHOLD_DEFAULT,
+    FIND_LIMIT_DEFAULT, FIND_WORKERS_DEFAULT
+) # Import all settings variables
 from .prompts import FILES_TOOLSET_PROMPT
 from .texts import get_text # Keep toolset-specific get_text
+from .integration.find_logic import find_files_with_logic # Import the new find_files_with_logic function
 
 console = get_console_manager()
 
@@ -561,44 +565,63 @@ class Find(BaseTool):
     args_schema: Type[BaseModel] = FindSchema
 
     def _run(self, query: str, directory: Optional[str] = None) -> str:
-        start_dir = Path(directory).resolve() if directory else Path.cwd()
-        query_lower = query.lower()
-        matches = []
-        limit = 50
-        start_dir_str = str(start_dir) # For use in get_text
+        start_dir_path = Path(directory).resolve() if directory else Path.cwd()
+        start_dir_str = str(start_dir_path) # For use in get_text and logging
+
+        # Load settings for the find operation
+        fuzzy_enabled = FIND_FUZZY_DEFAULT
+        fuzzy_threshold = FIND_THRESHOLD_DEFAULT
+        result_limit = FIND_LIMIT_DEFAULT
 
         try:
-            if not start_dir.is_dir():
-                return get_text("tools.find.error.dir_not_found", directory=start_dir_str)
+            # Call the new find logic from the integration module
+            matches, permission_warning = find_files_with_logic(
+                pattern=query,
+                directory=start_dir_path,
+                glob_pattern="**/*", # Hardcoded glob pattern for now
+                fuzzy=fuzzy_enabled,
+                threshold=fuzzy_threshold,
+                limit=result_limit
+            )
 
-            logger.info(f"Searching for '{query}' in '{start_dir_str}'...")
-            for item in start_dir.rglob('*'):
-                if query_lower in item.name.lower():
-                    matches.append(str(item.relative_to(start_dir)))
-                    if len(matches) >= limit:
-                        break
+            # Handle potential errors from find_files_with_logic
+            if matches is None:
+                # Error occurred, permission_warning contains the error message
+                return permission_warning or get_text("tools.find.error.generic", error="Unknown error during search")
 
+            # Process results
             if not matches:
-                return get_text("tools.find.info_no_matches", query=query, directory=start_dir_str)
+                no_match_msg = get_text("tools.find.info_no_matches", query=query, directory=start_dir_str)
+                return f"{no_match_msg}{f' ({permission_warning})' if permission_warning else ''}"
             else:
-                matches_str = "\n".join(f"- {m}" for m in matches)
+                # Convert Path objects to relative strings for display
+                relative_matches = []
+                for p in matches:
+                     try:
+                          relative_matches.append(str(p.relative_to(start_dir_path)))
+                     except ValueError: # Handle cases like different drives on Windows
+                          relative_matches.append(str(p))
+
+                matches_str = "\n".join(f"- {m}" for m in relative_matches)
                 result_str = get_text("tools.find.success", count=len(matches), query=query, directory=start_dir_str, matches=matches_str)
-                if len(matches) >= limit:
+
+                # Check if the result was limited
+                if len(matches) >= result_limit:
                     result_str += get_text("tools.find.info_limit_reached")
+
+                # Append permission warning if it occurred
+                if permission_warning:
+                     result_str += f"\n\nWARNING: {permission_warning}"
+
                 return result_str
 
-        except PermissionError:
-             logger.warning(f"Permission denied during search in {start_dir_str}.")
-             if matches:
-                  matches_str = "\n".join(f"- {m}" for m in matches)
-                  return get_text("tools.find.warn_permission", count=len(matches), directory=start_dir_str, matches=matches_str)
-             else:
-                  return get_text("tools.find.error_permission", directory=start_dir_str)
         except Exception as e:
-            logger.error(f"Error finding files matching '{query}' in {start_dir_str}: {e}", exc_info=True)
+            # Catch any unexpected errors here
+            logger.error(f"Unexpected error in Find tool execution for query '{query}' in '{start_dir_str}': {e}", exc_info=True)
             return get_text("tools.find.error.generic", error=e)
 
     async def _arun(self, query: str, directory: Optional[str] = None) -> str:
+        # Run the synchronous _run method in an executor
         return await run_in_executor(None, self._run, query, directory)
 
 class CheckExist(BaseTool):
