@@ -132,15 +132,7 @@ def _handle_tool_calls(
     for tool_call in ai_message.tool_calls:
         tool_name = tool_call.get("name")
         tool_call_id = tool_call.get("id")
-        tool_args = tool_call.get("args", {})
-
-        # Handle potential non-dict args
-        if isinstance(tool_args, str):
-            try:
-                tool_args = json.loads(tool_args)
-            except json.JSONDecodeError:
-                # Keep as string if not JSON
-                pass
+        raw_tool_args = tool_call.get("args", {}) # Keep original name
 
         # --- Basic Validation ---
         if not tool_name or not tool_call_id:
@@ -148,10 +140,7 @@ def _handle_tool_calls(
             results.append(get_text("tool_handler.error.invalid_call_structure", tool_call=tool_call)) # MODIFIED
             continue
 
-        logger.debug(f"Processing Tool Call: {tool_name}(args={tool_args}) ID: {tool_call_id}")
-
-        # --- Check if confirmed input is provided for this specific tool call ---
-        current_confirmed_input = confirmed_inputs.get(tool_call_id)
+        logger.debug(f"Processing Tool Call: {tool_name}(args={raw_tool_args}) ID: {tool_call_id}")
 
         # --- Get Tool Instance ---
         if tool_name not in tool_registry_dict:
@@ -162,26 +151,33 @@ def _handle_tool_calls(
 
         tool_instance = tool_registry_dict[tool_name]
 
-        try:
-            # --- Extract primary argument value from tool_args ---
-            primary_arg_value = None
+        # --- Check if confirmed input is provided for this specific tool call ---
+        current_confirmed_input = confirmed_inputs.get(tool_call_id)
 
-            # If tool_args is a string, use it directly as the primary argument
-            if isinstance(tool_args, str):
-                primary_arg_value = tool_args
-            # If tool_args is a dict with exactly one key, use its value
-            elif isinstance(tool_args, dict) and len(tool_args) == 1:
-                primary_arg_value = list(tool_args.values())[0]
-            # If tool_args is a dict with more than one key, try to find a suitable primary argument
-            elif isinstance(tool_args, dict) and len(tool_args) > 0:
-                # Try to use a common primary argument name if present
-                for common_arg_name in ['query', 'command', 'cmd', 'text', 'input', 'message', 'prompt']:
-                    if common_arg_name in tool_args:
-                        primary_arg_value = tool_args[common_arg_name]
-                        break
-                # If no common name found, just use the first value
-                if primary_arg_value is None:
-                    primary_arg_value = list(tool_args.values())[0]
+        try:
+            # --- MODIFICATION START: Prepare args for _run ---
+            tool_args_for_run = {} # Initialize as dict
+            if isinstance(raw_tool_args, dict):
+                tool_args_for_run = raw_tool_args
+            elif isinstance(raw_tool_args, str):
+                # If args is a string, assume it's the primary argument.
+                # This requires the tool's _run method to accept a single positional arg
+                # OR have a corresponding named argument (e.g., 'query').
+                # We'll try to pass it positionally if possible, otherwise try common names.
+                # This part is heuristic and might need adjustment based on tool design.
+                # For now, let's assume single string args are handled differently or less common.
+                # If tools strictly use Pydantic schemas, args should always be dicts.
+                # We'll prioritize passing as **args if it's a dict.
+                # Let's handle the string case by trying to pass it as the first arg if the tool allows.
+                # Or better, pass it as **{'arg_name': raw_tool_args} if a schema exists.
+                # For simplicity now, we focus on the dict case which caused the error.
+                # If string args are needed, specific handling might be required here.
+                # Let's assume for now Langchain provides dict args for tools with schemas.
+                # Log a warning if it's a string and we can't easily map it.
+                logger.warning(f"Tool '{tool_name}' received string args: '{raw_tool_args}'. Attempting to proceed, but this might fail if the tool expects a dict.")
+                # We will attempt to pass the string positionally later if needed.
+                # If tool_args_for_run remains empty, the non-dict path below handles it.
+            # --- END MODIFICATION ---
 
             # --- Tool Execution ---
             # Choose execution based on whether this is a HITL scenario
@@ -189,28 +185,68 @@ def _handle_tool_calls(
                 # This is a HITL tool - handle the two-phase execution
                 if current_confirmed_input is None:
                     # Phase 1: First call, need user input - will raise PromptNeededError
-                    if primary_arg_value is not None:
-                        tool_result = tool_instance._run(primary_arg_value)
-                    else:
-                        tool_result = tool_instance._run()  # No args case
+                    # --- MODIFICATION START: Use **tool_args_for_run ---
+                    if isinstance(tool_args_for_run, dict):
+                        tool_result = tool_instance._run(**tool_args_for_run)
+                    elif isinstance(raw_tool_args, str):
+                        # Attempt passing the string as a single positional arg
+                        try:
+                             tool_result = tool_instance._run(raw_tool_args)
+                        except TypeError as te:
+                             logger.error(f"TypeError passing string arg '{raw_tool_args}' to tool '{tool_name}': {te}. Tool might require dict args.", exc_info=True)
+                             raise # Re-raise the error to be caught below
+                    else: # No args case (e.g., empty dict or None)
+                        tool_result = tool_instance._run()
+                    # --- END MODIFICATION ---
 
                     # If we get here without a PromptNeededError, the tool didn't request input
                     results.append(tool_result)
                 else:
                     # Phase 2: Re-execution with confirmed input
-                    if primary_arg_value is not None:
-                        tool_result = tool_instance._run(primary_arg_value, confirmed_input=current_confirmed_input)
-                    else:
-                        tool_result = tool_instance._run(confirmed_input=current_confirmed_input)
-
+                    # The confirmed input replaces the value for the specific 'edit_key'
+                    # which was stored in the PromptNeededError. This logic happens
+                    # *outside* this function, in the main send_message loop when handling
+                    # the PromptNeededError response.
+                    # The re-invocation in send_message correctly passes the
+                    # confirmed_inputs map back here.
+                    # So, when current_confirmed_input is NOT None, we execute the tool
+                    # passing the *original* args PLUS the confirmed input.
+                    args_for_re_run = tool_args_for_run.copy() # Start with original args
+                    # Find the edit_key associated with this tool_call_id (this is tricky here,
+                    # maybe better handled in send_message?)
+                    # For now, assume the tool's _run method handles the confirmed_input kwarg.
+                    # --- MODIFICATION START: Pass original args and confirmed_input kwarg ---
+                    if isinstance(tool_args_for_run, dict):
+                         tool_result = tool_instance._run(**tool_args_for_run, confirmed_input=current_confirmed_input)
+                    elif isinstance(raw_tool_args, str):
+                         # How to handle confirmed input with original string arg?
+                         # Assume confirmed_input applies to the string itself.
+                         # Tool needs to be designed to handle this.
+                         try:
+                              tool_result = tool_instance._run(raw_tool_args, confirmed_input=current_confirmed_input)
+                         except TypeError as te:
+                              logger.error(f"TypeError passing string arg and confirmed_input kwarg to tool '{tool_name}': {te}. Tool might require dict args.", exc_info=True)
+                              raise
+                    else: # No original args
+                         tool_result = tool_instance._run(confirmed_input=current_confirmed_input)
+                    # --- END MODIFICATION ---
                     results.append(tool_result)
             else:
                 # Regular non-HITL tool - simply invoke it
-                if primary_arg_value is not None:
-                    tool_result = tool_instance._run(primary_arg_value)
+                # --- MODIFICATION START: Use **tool_args_for_run ---
+                if isinstance(tool_args_for_run, dict) and tool_args_for_run:
+                    tool_result = tool_instance._run(**tool_args_for_run)
+                elif isinstance(raw_tool_args, str):
+                     # Attempt passing the string as a single positional arg
+                     try:
+                          tool_result = tool_instance._run(raw_tool_args)
+                     except TypeError as te:
+                          logger.error(f"TypeError passing string arg '{raw_tool_args}' to non-HITL tool '{tool_name}': {te}. Tool might require dict args.", exc_info=True)
+                          raise # Re-raise the error to be caught below
                 else:
                     # No args needed or couldn't determine primary arg
                     tool_result = tool_instance._run()
+                # --- END MODIFICATION ---
 
                 # Ensure result is string
                 if not isinstance(tool_result, str):
@@ -230,7 +266,7 @@ def _handle_tool_calls(
 
         except Exception as e:
             # Handle other execution errors
-            logger.error(f"Error invoking tool '{tool_name}' with args {tool_args}: {e}", exc_info=True)
+            logger.error(f"Error invoking tool '{tool_name}' with args {raw_tool_args}: {e}", exc_info=True)
             results.append(get_text("tool_handler.error.execution_failed", tool_name=tool_name, error_type=type(e).__name__, error_msg=e)) # MODIFIED
 
     return results

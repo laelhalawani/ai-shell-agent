@@ -21,9 +21,15 @@
       "content_desc": "Optional text content to write if creating a file.",
       "is_directory_desc": "Set to true if creating a directory, false (default) for a file."
     },
-    "edit_new": {
-      "path_desc": "The path to the file to edit.",
+    "overwrite_file": {
+      "path_desc": "The path to the file to overwrite.",
       "content_desc": "The complete new content to write to the file."
+    },
+    "find_replace": {
+        "path_desc": "The path to the file to edit.",
+        "find_text_desc": "The exact text content to find within the file.",
+        "replace_text_desc": "The text content to replace all occurrences of 'find_text' with.",
+        "summary_desc": "A brief summary of the find/replace operation being performed."
     },
     "from_to": {
       "from_path_desc": "The source path of the file or directory.",
@@ -37,13 +43,7 @@
       "query_desc": "The filename or directory name pattern to search for.",
       "directory_desc": "Optional directory to start the search from (defaults to current working directory). Search includes subdirectories."
     },
-    "confirm_edit": {
-      "confirmation_desc": "Confirm with 'yes' to apply the change, or cancel with 'no' or 'revert'."
-    },
-    "confirm_delete": {
-      "confirmation_desc": "Confirm with 'yes' to delete, or cancel with 'no' or 'cancel'."
-    },
-    "restore": {
+    "restore_file": {
       "paths_desc": "A single file path (string) or a list of file paths to restore.",
       "backup_id_desc": "Optional: A fragment of the backup filename (like a timestamp part) to select a specific backup if multiple exist. Restores the latest matching backup otherwise."
     }
@@ -51,7 +51,7 @@
   "tools": {
     "usage_guide": {
       "name": "file_manager_usage_guide",
-      "description": "Displays usage instructions and context for the File Manager toolset."
+      "description": "Displays usage instructions and context for the File Manager tools."
     },
     "create": {
       "name": "create_file_or_dir",
@@ -75,89 +75,83 @@
       "success": "Content of {path}:\n---\n{content}\n---",
       "truncated_suffix": "\n... (truncated)"
     },
-    "delete": {
-      "name": "propose_delete_file_or_dir",
-      "description": "Proposes deleting a specified file or directory. Requires confirmation using the 'confirm_delete_file_or_dir' tool.",
+    "delete_file_or_dir": {
+      "name": "delete_file_or_dir",
+      "description": "Deletes a specified file or directory. Requires user confirmation before execution.",
+      "confirm_prompt": "Delete {type}: {path}?",
+      "confirm_suffix": "(confirm path to delete) > ",
       "error": {
         "no_chat": "Error: No active chat session.",
         "not_exists": "Error: Path does not exist: {path}",
-        "pending_action": "Error: Another delete or edit action is pending confirmation. Please resolve it first.",
-        "state_write_failed": "Error: Failed to save pending delete state for {path}.",
-        "generic": "Error proposing deletion for path {path}: {error}"
+        "target_missing": "Error: The target path '{path}' seems to have been modified or deleted since confirmation was requested.",
+        "delete_failed": "Error deleting path {path}: {error}",
+        "path_mismatch": "Error: Confirmed path does not match proposed path. Aborting.",
+        "generic": "Error deleting path {path}: {error}"
       },
-      "msg_confirm_prompt": "Confirm deletion of {type}: {path}? Use the 'confirm_delete_file_or_dir' tool with 'yes' to proceed, or 'no'/'cancel' to abort."
+      "success_confirm": "Successfully deleted {type}: {path}"
     },
-    "confirm_delete": {
-      "name": "confirm_delete_file_or_dir",
-      "description": "Confirms ('yes') or cancels ('no'/'cancel') the pending deletion proposed by the 'propose_delete_file_or_dir' tool.",
-      "error": {
-          "no_chat": "Error: No active chat session.",
-          "no_pending": "Error: No deletion is currently pending confirmation.",
-          "state_read_failed": "Error: Failed to read pending delete state.",
-          "state_write_failed": "Error: Failed to clear pending delete state.",
-          "target_missing": "Error: The target path '{path}' seems to have been modified or deleted since the deletion was proposed.",
-          "delete_failed": "Error deleting path {path}: {error}",
-          "invalid_confirmation": "Error: Invalid confirmation '{confirmation}'. Please use 'yes', 'no', or 'cancel'.",
-          "generic": "Error confirming deletion for {path}: {error}"
-      },
-      "success_confirm": "Successfully deleted {type}: {path}",
-      "success_cancel": "Pending deletion for path '{path}' cancelled."
-    },
-    "edit": {
-      "name": "edit_file",
-      "description": "Proposes overwriting a file with new content. Reads the original content, stores the proposed change, and prompts for confirmation using the 'confirm_file_edit' tool.",
+     "overwrite_file": {
+      "name": "overwrite_file",
+      "description": "Overwrites the entire content of a specified file. Requires user confirmation before execution. Creates a backup.",
+      "confirm_prompt": "Proposed content for file: {original_file_path}\n\n--- Current Content Snippet ---\n{original_file_content}\n---\n\n--- New Content Snippet ---\n{new_content}\n---",
+      "confirm_suffix": "(confirm new content) > ",
       "error": {
         "no_chat": "Error: No active chat session.",
         "not_file": "Error: Path is not a file or does not exist: {path}",
         "read_failed": "Error reading original file {path}: {error}",
-        "pending_edit_exists": "Error: Another edit is already pending confirmation. Please confirm or revert the previous edit first using 'confirm_file_edit'.",
-        "state_write_failed": "Error: Failed to save pending edit state for {path}.",
-        "generic": "Error proposing edit for file {path}: {error}"
-      },
-      "msg_confirm_prompt": "Proposed edit for file: {original_file_path}\n\nOriginal Content:\n```\n{original_file_content}\n```\n\nNew Content:\n```\n{new_content}\n```\n\nUse the 'confirm_file_edit' tool with 'yes' to apply this change, or 'no'/'revert' to cancel."
-    },
-    "confirm_edit": {
-      "name": "confirm_file_edit",
-      "description": "Confirms ('yes') or cancels ('no'/'revert') the pending file edit proposed by the 'edit_file' tool.",
-      "error": {
-        "no_chat": "Error: No active chat session.",
-        "no_pending": "Error: No file edit is currently pending confirmation.",
-        "state_read_failed": "Error: Failed to read pending edit state.",
-        "state_write_failed": "Error: Failed to clear pending edit state.",
-        "target_missing": "Error: The target file '{path}' seems to have been modified or deleted since the edit was proposed.",
+        "target_missing": "Error: The target file '{path}' seems to have been modified or deleted since confirmation was requested.",
         "backup_failed": "Error: Failed to create backup for {path}: {error}",
         "write_failed": "Error: Failed to write updated content to {path}: {error}",
-        "invalid_confirmation": "Error: Invalid confirmation '{confirmation}'. Please use 'yes', 'no', or 'revert'.",
-        "generic": "Error confirming edit for {path}: {error}"
+        "generic": "Error overwriting file {path}: {error}"
       },
-      "success_confirm": "File '{path}' updated successfully. Backup created: {backup_path}",
-      "success_revert": "Pending edit for file '{path}' cancelled."
+      "success_confirm": "File '{path}' updated successfully. Backup created: {backup_path}"
+    },
+    "find_and_replace_in_file": {
+      "name": "find_and_replace_in_file",
+      "description": "Finds specific text in a file and replaces all occurrences. Requires user confirmation before execution. Creates a backup.",
+      "confirm_suffix": "(confirm action summary) > ",
+      "error": {
+        "no_chat": "Error: No active chat session.",
+        "not_file": "Error: Path is not a file or does not exist: {path}",
+        "target_missing": "Error: The target file '{path}' seems to have been modified or deleted since confirmation was requested.",
+        "backup_failed": "Error: Failed to create backup for {path}: {error}",
+        "write_failed": "Error: Failed to read or write file {path}: {error}",
+        "empty_summary": "Error: Confirmed summary cannot be empty.",
+        "generic": "Error performing find/replace for file {path}: {error}"
+      },
+      "info_no_change": "No changes made to file '{path}' as the 'find_text' was not found.",
+      "success_confirm": "File '{path}' updated successfully (find/replace). Backup created: {backup_path}"
     },
     "copy": {
       "name": "copy_file_or_dir",
-      "description": "Copies a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path.",
+      "description": "Copies a file or directory from 'from_path' to 'to_path'.",
+      "confirm_suffix": "(confirm source path) > ",
       "error": {
         "no_chat": "Error: No active chat session.",
         "source_not_exists": "Error: Source path does not exist: {path}",
         "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
+        "path_mismatch": "Error: Confirmed source path does not match proposed path. Aborting.",
         "generic": "Error copying {from_path} to {to_path}: {error}"
       },
       "success": "Successfully copied {type} from {from_path} to {to_path}"
     },
     "move": {
       "name": "move_file_or_dir",
-      "description": "Moves (renames) a file or directory from 'from_path' to 'to_path'. Requires user confirmation of the source path.",
+      "description": "Moves (renames) a file or directory from 'from_path' to 'to_path'.",
+      "confirm_suffix": "(confirm source path) > ",
       "error": {
         "no_chat": "Error: No active chat session.",
         "source_not_exists": "Error: Source path does not exist: {path}",
         "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
+        "path_mismatch": "Error: Confirmed source path does not match proposed path. Aborting.",
         "generic": "Error moving {from_path} to {to_path}: {error}"
       },
       "success": "Successfully moved {from_path} to {to_path}"
     },
     "rename": {
       "name": "rename_file_or_dir",
-      "description": "Renames a file or directory within the same parent directory. Requires user confirmation of the new name.",
+      "description": "Renames a file or directory within the same parent directory.",
+      "confirm_suffix": "(confirm new name) > ",
       "error": {
         "no_chat": "Error: No active chat session.",
         "invalid_new_name": "Error: 'new_name' ({new_name}) cannot contain path separators. Use 'move_file_or_dir' to move between directories.",
@@ -192,7 +186,7 @@
     },
     "history": {
       "name": "show_file_change_history",
-      "description": "Displays the recent history of file operations performed by this toolset in the current chat.",
+      "description": "Displays the recent history of file operations performed by the File Manager tools in the current chat.",
       "error": {
         "no_chat": "Error: No active chat session.",
         "generic": "Error retrieving file history: {error}"
@@ -201,12 +195,13 @@
       "header": "Recent File Operations (Last {count} of {total} total):\n",
       "line_format": "- [{ts}] {op}"
     },
-    "restore": {
-      "name": "restore_file_from_backup",
-      "description": "Restores one or more files from their backups created by 'confirm_file_edit'. Finds the latest matching backup (optionally filtered by backup_id) and requires confirmation before restoring.",
-      "prompt_suffix": "(Confirm Restore Summary)",
+    "restore_file": {
+      "name": "restore_file",
+      "description": "Restores one or more files from backups created during previous edits. Requires user confirmation.",
+      "confirm_suffix": "(confirm restore summary) > ",
       "error": {
         "no_chat": "Error: No active chat session.",
+        "no_paths": "Error: No paths provided for restoration.",
         "no_backup_found": "Error: No suitable backup found in history for file: {path}{filter}.",
         "no_valid_backups": "Error: Could not find any valid backups for the requested paths.",
         "backup_missing": "Error: Backup file does not exist: {backup_path}",
@@ -214,23 +209,27 @@
         "generic": "Error restoring file(s): {error}",
         "single_failed": "Failed to restore '{path}': {error}"
       },
+      "info_cancel": "Restore operation cancelled.",
       "success_single": "Successfully restored '{path}' from backup '{backup_name}'.",
       "success": "Restore attempt finished."
     },
-    "finalize": {
-      "name": "finalize_file_changes",
-      "description": "Deletes all backup files created by this toolset in the current chat session AND clears the file operation history for this chat.",
-      "prompt_confirm": "Delete {count} backup files and clear file history?",
-      "prompt_suffix": "(Type 'yes' to confirm) > ",
-      "error": {
+    "cleanup_file_backups": {
+      "name": "cleanup_file_backups",
+      "description": "Deletes all backup files created by the File Manager tools in the current chat. Requires user confirmation.",
+      "prompt_confirm": "Delete {count} backup file(s) and clear file history?",
+      "prompt_confirm_no_backups": "No backup files found. Clear file history for this chat?",
+      "confirm_suffix": "(Type 'yes' to confirm) > ",
+       "error": {
         "no_chat": "Error: No active chat session.",
-        "state_write_failed": "Error: Failed to write updated state after finalizing.",
-        "generic": "Error finalizing file changes: {error}"
+        "generic": "Error finalizing file changes: {error}",
+        "clear_history_failed": "Deleted {deleted_count} of {total_count} backup files, but failed to clear history: {error}"
       },
-      "info_no_backups": "No backup files found to delete. History remains.",
-      "info_cancel": "Finalization cancelled by user.",
-      "success": "Finalized file changes. Deleted {deleted_count} of {total_count} backup files. File history for this chat has been cleared.",
-      "warn_errors": "\nErrors occurred deleting backups: {errors}. History has NOT been cleared due to errors."
+      "info_no_work": "No backup files or history entries found to finalize.",
+      "info_cancel": "Cleanup cancelled by user.",
+      "success": "Cleanup finished. Deleted {deleted_count} of {total_count} backup files. File history for this chat has been cleared.",
+      "warn_errors_suffix": "\nErrors occurred deleting some backups: {errors}.",
+      "warn_delete_success_history_fail": "Deleted {deleted_count} of {total_count} backup files, but failed to clear history state. Please check logs.",
+      "warn_delete_failed_history_kept": "Cleanup finished. Deleted {deleted_count} of {total_count} backup files. History NOT cleared due to deletion errors."
     }
   }
 }
