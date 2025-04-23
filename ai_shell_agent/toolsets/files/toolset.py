@@ -35,6 +35,7 @@ from .texts import get_text # Toolset-specific texts
 from .integration.find_logic import find_files_with_logic
 
 # --- Import Tool Instances ---
+# Imports tools which now import state helpers from .state
 from .tools.tools import (
     file_manager_usage_guide_tool, create_tool, read_tool, delete_tool,
     overwrite_file_tool, find_replace_tool, copy_tool, move_tool,
@@ -51,44 +52,7 @@ toolset_name = get_text("toolset.name")
 toolset_description = get_text("toolset.description")
 toolset_required_secrets: Dict[str, str] = {}
 
-# --- State Management Helpers ---
-def _get_history_path(chat_id: str) -> Path:
-    # This needs to remain here as tools.py imports it
-    return get_toolset_data_path(chat_id, toolset_id)
-
-def _read_toolset_state(chat_id: str) -> Dict:
-    # This needs to remain here as tools.py imports it
-    state_path = _get_history_path(chat_id)
-    default = {"history": []}
-    state = read_json(state_path, default_value=default)
-    if "history" not in state: state["history"] = []
-    return state
-
-def _write_toolset_state(chat_id: str, state_data: Dict) -> bool:
-    # This needs to remain here as tools.py imports it
-    state_path = _get_history_path(chat_id)
-    state_data.setdefault("history", [])
-    return write_json(state_path, state_data)
-
-def _log_history_event(chat_id: str, event_data: Dict) -> None:
-    # This needs to remain here as tools.py imports it
-    if not chat_id: return
-    try:
-        state = _read_toolset_state(chat_id)
-        if "timestamp" not in event_data:
-            event_data["timestamp"] = datetime.now(timezone.utc).isoformat()
-        state["history"].append(event_data)
-        limit = FILES_HISTORY_LIMIT # Use loaded setting
-        if limit > 0 and len(state["history"]) > limit:
-             state["history"] = state["history"][-limit:]
-        if not _write_toolset_state(chat_id, state):
-            logger.error(f"Failed to write state after logging history event for chat {chat_id}")
-        else:
-            logger.debug(f"Logged file history event for chat {chat_id}: {event_data.get('operation')}")
-    except Exception as e:
-        logger.error(f"Failed to log file history event for chat {chat_id}: {e}", exc_info=True)
-
-# --- Configuration Function ---
+# --- Configuration Function (Remains Here) ---
 def configure_toolset(
     global_config_path: Path,
     local_config_path: Optional[Path],

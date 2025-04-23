@@ -26,10 +26,10 @@
       "content_desc": "The complete new content to write to the file."
     },
     "find_replace": {
-        "path_desc": "The path to the file to edit.",
-        "find_text_desc": "The exact text content to find within the file.",
-        "replace_text_desc": "The text content to replace all occurrences of 'find_text' with.",
-        "summary_desc": "A brief summary of the find/replace operation being performed."
+      "path_desc": "The path to the file to edit.",
+      "find_text_desc": "The exact text content to find within the file.",
+      "replace_text_desc": "The text content to replace all occurrences of 'find_text' with.",
+      "summary_desc": "A brief summary of the find/replace operation being performed (will be shown for confirmation)."
     },
     "from_to": {
       "from_path_desc": "The source path of the file or directory.",
@@ -49,6 +49,10 @@
     }
   },
   "tools": {
+    "common": {
+        "confirm_suffix_yes_no": "(confirm: yes/no) > ",
+        "info_rejected": "Action rejected by user."
+    },
     "usage_guide": {
       "name": "file_manager_usage_guide",
       "description": "Displays usage instructions and context for the File Manager tools."
@@ -78,14 +82,12 @@
     "delete_file_or_dir": {
       "name": "delete_file_or_dir",
       "description": "Deletes a specified file or directory. Requires user confirmation before execution.",
-      "confirm_prompt": "Delete {type}: {path}?",
-      "confirm_suffix": "(confirm path to delete) > ",
+      "confirm_prompt": "AI wants to perform action '{tool_name}'.\nDelete {type}: '{path}'?",
       "error": {
         "no_chat": "Error: No active chat session.",
         "not_exists": "Error: Path does not exist: {path}",
         "target_missing": "Error: The target path '{path}' seems to have been modified or deleted since confirmation was requested.",
         "delete_failed": "Error deleting path {path}: {error}",
-        "path_mismatch": "Error: Confirmed path does not match proposed path. Aborting.",
         "generic": "Error deleting path {path}: {error}"
       },
       "success_confirm": "Successfully deleted {type}: {path}"
@@ -93,12 +95,10 @@
      "overwrite_file": {
       "name": "overwrite_file",
       "description": "Overwrites the entire content of a specified file. Requires user confirmation before execution. Creates a backup.",
-      "confirm_prompt": "Proposed content for file: {original_file_path}\n\n--- Current Content Snippet ---\n{original_file_content}\n---\n\n--- New Content Snippet ---\n{new_content}\n---",
-      "confirm_suffix": "(confirm new content) > ",
+      "confirm_prompt": "AI wants to perform action '{tool_name}'.\nOverwrite file: '{file_path}'?\n---\n{new_content_snippet}\n---",
       "error": {
         "no_chat": "Error: No active chat session.",
         "not_file": "Error: Path is not a file or does not exist: {path}",
-        "read_failed": "Error reading original file {path}: {error}",
         "target_missing": "Error: The target file '{path}' seems to have been modified or deleted since confirmation was requested.",
         "backup_failed": "Error: Failed to create backup for {path}: {error}",
         "write_failed": "Error: Failed to write updated content to {path}: {error}",
@@ -109,7 +109,7 @@
     "find_and_replace_in_file": {
       "name": "find_and_replace_in_file",
       "description": "Finds specific text in a file and replaces all occurrences. Requires user confirmation before execution. Creates a backup.",
-      "confirm_suffix": "(confirm action summary) > ",
+      "confirm_prompt": "AI wants to perform action '{tool_name}'.\nSummary: {summary}\nPerform find/replace in file '{file_path}'?",
       "error": {
         "no_chat": "Error: No active chat session.",
         "not_file": "Error: Path is not a file or does not exist: {path}",
@@ -125,12 +125,11 @@
     "copy": {
       "name": "copy_file_or_dir",
       "description": "Copies a file or directory from 'from_path' to 'to_path'.",
-      "confirm_suffix": "(confirm source path) > ",
+      "confirm_prompt": "AI wants to perform action '{tool_name}'.\nCopy from '{from_path}' to '{to_path}'?",
       "error": {
         "no_chat": "Error: No active chat session.",
         "source_not_exists": "Error: Source path does not exist: {path}",
         "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
-        "path_mismatch": "Error: Confirmed source path does not match proposed path. Aborting.",
         "generic": "Error copying {from_path} to {to_path}: {error}"
       },
       "success": "Successfully copied {type} from {from_path} to {to_path}"
@@ -138,12 +137,11 @@
     "move": {
       "name": "move_file_or_dir",
       "description": "Moves (renames) a file or directory from 'from_path' to 'to_path'.",
-      "confirm_suffix": "(confirm source path) > ",
+      "confirm_prompt": "AI wants to perform action '{tool_name}'.\nMove from '{from_path}' to '{to_path}'?",
       "error": {
         "no_chat": "Error: No active chat session.",
         "source_not_exists": "Error: Source path does not exist: {path}",
         "dest_exists": "Error: Destination path already exists: {path}. Overwriting not supported.",
-        "path_mismatch": "Error: Confirmed source path does not match proposed path. Aborting.",
         "generic": "Error moving {from_path} to {to_path}: {error}"
       },
       "success": "Successfully moved {from_path} to {to_path}"
@@ -151,7 +149,7 @@
     "rename": {
       "name": "rename_file_or_dir",
       "description": "Renames a file or directory within the same parent directory.",
-      "confirm_suffix": "(confirm new name) > ",
+      "confirm_prompt": "AI wants to perform action '{tool_name}'.\nRename '{path}' to '{new_name}'?",
       "error": {
         "no_chat": "Error: No active chat session.",
         "invalid_new_name": "Error: 'new_name' ({new_name}) cannot contain path separators. Use 'move_file_or_dir' to move between directories.",
@@ -198,7 +196,7 @@
     "restore_file": {
       "name": "restore_file",
       "description": "Restores one or more files from backups created during previous edits. Requires user confirmation.",
-      "confirm_suffix": "(confirm restore summary) > ",
+      "confirm_prompt": "AI wants to perform action '{tool_name}'.\nRestore {count} file(s)?\nDetails:\n{details}",
       "error": {
         "no_chat": "Error: No active chat session.",
         "no_paths": "Error: No paths provided for restoration.",
@@ -209,23 +207,20 @@
         "generic": "Error restoring file(s): {error}",
         "single_failed": "Failed to restore '{path}': {error}"
       },
-      "info_cancel": "Restore operation cancelled.",
-      "success_single": "Successfully restored '{path}' from backup '{backup_name}'.",
-      "success": "Restore attempt finished."
+      "success": "Restore attempt finished ({success_count}/{count} succeeded).",
+      "success_single": "Successfully restored '{path}' from backup '{backup_name}'."
     },
     "cleanup_file_backups": {
       "name": "cleanup_file_backups",
       "description": "Deletes all backup files created by the File Manager tools in the current chat. Requires user confirmation.",
-      "prompt_confirm": "Delete {count} backup file(s) and clear file history?",
-      "prompt_confirm_no_backups": "No backup files found. Clear file history for this chat?",
-      "confirm_suffix": "(Type 'yes' to confirm) > ",
+      "prompt_confirm": "AI wants to perform action '{tool_name}'.\nDelete {count} backup file(s) and clear file history?",
+      "prompt_confirm_no_backups": "AI wants to perform action '{tool_name}'.\nNo backup files found. Clear file history for this chat?",
        "error": {
         "no_chat": "Error: No active chat session.",
         "generic": "Error finalizing file changes: {error}",
         "clear_history_failed": "Deleted {deleted_count} of {total_count} backup files, but failed to clear history: {error}"
       },
       "info_no_work": "No backup files or history entries found to finalize.",
-      "info_cancel": "Cleanup cancelled by user.",
       "success": "Cleanup finished. Deleted {deleted_count} of {total_count} backup files. File history for this chat has been cleared.",
       "warn_errors_suffix": "\nErrors occurred deleting some backups: {errors}.",
       "warn_delete_success_history_fail": "Deleted {deleted_count} of {total_count} backup files, but failed to clear history state. Please check logs.",

@@ -9,6 +9,7 @@ import io
 import threading
 from threading import Lock
 from typing import Dict, Optional, Any, List, Tuple
+import re # <--- ADDED IMPORT
 
 # Rich imports
 from rich.console import Console
@@ -156,7 +157,7 @@ class ConsoleManager:
 
             prefix = get_text("common.labels.tool")
             content = get_text("console.tool_output.format", tool_name=escape(tool_name), output=escape(formatted_output))
-            
+
             text = Text.assemble(
                 (prefix, self.STYLE_TOOL_NAME),
                 (content, self.STYLE_TOOL_OUTPUT_DIM)
@@ -188,29 +189,35 @@ class ConsoleManager:
 
             ai_prefix = get_text("common.labels.ai")
             used_tool_fmt = get_text("console.tool_confirm.used_tool", tool_name=escape(tool_name))
-            
+
             text = Text.assemble(
                 (ai_prefix, self.STYLE_AI_LABEL),
                 (used_tool_fmt, self.STYLE_AI_CONTENT)
             )
             if final_args:
-                with_args_str = get_text("console.tool_confirm.with_args")
-                arg_separator = get_text("console.tool_confirm.arg_separator")
-                arg_list_separator = get_text("console.tool_confirm.arg_list_separator")
-                trunc_marker = get_text("common.truncation_marker")
-                
-                text.append(with_args_str, style=self.STYLE_AI_CONTENT)
-                args_parts = []
-                for i, (arg_name, arg_val) in enumerate(final_args.items()):
-                    arg_text = Text()
-                    arg_text.append(escape(str(arg_name)), style=self.STYLE_ARG_NAME)
-                    arg_text.append(arg_separator, style=self.STYLE_ARG_NAME)
-                    val_str = escape(str(arg_val))
-                    max_len = CONSOLE_CONDENSED_OUTPUT_LENGTH
-                    display_val = (val_str[:max_len] + trunc_marker) if len(val_str) > max_len else val_str
-                    arg_text.append(display_val, style=self.STYLE_ARG_VALUE)
-                    args_parts.append(arg_text)
-                text.append(Text(arg_list_separator, style=self.STYLE_AI_CONTENT).join(args_parts))
+                # Filter out internal keys like confirmation_prompt, _path, etc.
+                display_args = {
+                    k: v for k, v in final_args.items()
+                    if not k.startswith('_') and k != 'confirmation_prompt'
+                }
+                if display_args:
+                    with_args_str = get_text("console.tool_confirm.with_args")
+                    arg_separator = get_text("console.tool_confirm.arg_separator")
+                    arg_list_separator = get_text("console.tool_confirm.arg_list_separator")
+                    trunc_marker = get_text("common.truncation_marker")
+
+                    text.append(with_args_str, style=self.STYLE_AI_CONTENT)
+                    args_parts = []
+                    for i, (arg_name, arg_val) in enumerate(display_args.items()):
+                        arg_text = Text()
+                        arg_text.append(escape(str(arg_name)), style=self.STYLE_ARG_NAME)
+                        arg_text.append(arg_separator, style=self.STYLE_ARG_NAME)
+                        val_str = escape(str(arg_val))
+                        max_len = CONSOLE_CONDENSED_OUTPUT_LENGTH
+                        display_val = (val_str[:max_len] + trunc_marker) if len(val_str) > max_len else val_str
+                        arg_text.append(display_val, style=self.STYLE_ARG_VALUE)
+                        args_parts.append(arg_text)
+                    text.append(Text(arg_list_separator, style=self.STYLE_AI_CONTENT).join(args_parts))
 
             try:
                 self.console.print(text) # Print the confirmation line (with newline)
@@ -222,7 +229,7 @@ class ConsoleManager:
     def display_tool_prompt(self, error: PromptNeededError) -> Optional[str]:
         """
         Displays the prompt for a HITL tool using prompt_toolkit for the full line.
-        Uses the format: SYSTEM: AI wants to perform an action 'tool_name', edit or confirm: value_to_edit
+        Handles different prompt styles based on the 'edit_key'.
         """
         with self._lock:
             self._clear_previous_line() # Clear spinner if needed
@@ -230,9 +237,10 @@ class ConsoleManager:
             tool_name = error.tool_name
             proposed_args = error.proposed_args
             edit_key = error.edit_key
+            prompt_suffix_text = error.prompt_suffix # Use the suffix from the error
 
-            if (edit_key not in proposed_args):
-                error_msg = get_text("console.hitl_prompt.error_edit_key_missing", 
+            if edit_key not in proposed_args:
+                error_msg = get_text("console.hitl_prompt.error_edit_key_missing",
                                    edit_key=edit_key, tool_name=tool_name)
                 self.display_message(
                     get_text("common.labels.error"),
@@ -243,30 +251,75 @@ class ConsoleManager:
                 return None
 
             value_to_edit = proposed_args[edit_key]
+            prompt_prefix_parts: List[Tuple[str, str]] = []
+            prompt_default = ""
 
-            # --- Build prompt_toolkit FormattedText prefix ---
-            system_label = get_text("common.labels.system")
-            prefix_action = get_text("console.hitl_prompt.prefix_action")
-            suffix_edit_confirm = get_text("console.hitl_prompt.suffix_edit_confirm")
+            # --- MODIFICATION START: Conditional Prompt Formatting ---
+            if edit_key == "confirmation_prompt":
+                # Yes/No confirmation style (e.g., Files toolset)
+                # The value_to_edit contains the full question text
+                # Parse the tool name from the prompt message to style it
+                question_text = f" {value_to_edit} " # Add spaces like before
 
-            prompt_prefix_parts: List[Tuple[str, str]] = [
-                ('class:style_system_label', system_label.strip()),
-                ('class:style_system_content', prefix_action),
-                ('class:style_tool_name', escape(tool_name)),
-                ('class:style_system_content', suffix_edit_confirm)
-            ]
-            # --- End building FormattedText ---
+                # Attempt to parse: "AI wants to perform action 'tool_name'." pattern
+                # This regex captures:
+                # Group 1: The prefix including the opening quote
+                # Group 2: The tool name itself
+                # Group 3: The rest of the line, including the closing quote and any following text
+                match = re.match(r"(AI wants to perform action ')([^']+)('.*)$", question_text.strip())
+
+                if match:
+                    intro_part = match.group(1) # "AI wants to perform action '"
+                    parsed_tool_name = match.group(2) # e.g., "delete_file_or_dir"
+                    rest_of_prompt = match.group(3) # e.g., "'.\nDelete directory: 'path'?"
+                    prompt_prefix_parts = [
+                        ('class:style_system_label', get_text("common.labels.system").strip()),
+                        ('class:style_system_content', f" {intro_part}"), # Add leading space back
+                        ('class:style_tool_name', parsed_tool_name), # Style the tool name
+                        ('class:style_system_content', f"{rest_of_prompt} ") # Style the rest + add trailing space
+                    ]
+                else:
+                    # Fallback if parsing fails - display unstyled
+                    logger.warning(f"Could not parse tool name from confirmation prompt: {question_text}")
+                    prompt_prefix_parts = [
+                        ('class:style_system_label', get_text("common.labels.system").strip()),
+                        ('class:style_system_content', question_text), # Use original text with spaces
+                    ]
+
+                # Add the suffix (e.g., "(confirm: yes/no) > ")
+                # No need to strip if text file entry is fixed
+                prompt_prefix_parts.append(('class:default', prompt_suffix_text))
+                prompt_default = "" # Default to empty for explicit yes/no
+
+            else:
+                # Edit/Confirm style (e.g., Terminal, Python, Aider)
+                system_label = get_text("common.labels.system")
+                prefix_action = get_text("console.hitl_prompt.prefix_action") # " AI wants to perform an action '"
+                suffix_edit_confirm = prompt_suffix_text # e.g. "(edit or confirm command) > "
+
+                prompt_prefix_parts = [
+                    ('class:style_system_label', system_label.strip()),
+                    ('class:style_system_content', prefix_action),      # " AI wants to perform an action '"
+                    ('class:style_tool_name', escape(tool_name)),       # "run_terminal_command" (styled)
+                    ('class:style_system_content', "' "),               # Closing quote and space (styled) <-- FIX
+                    ('class:style_system_content', suffix_edit_confirm) # "(edit or confirm command) > " (styled)
+                ]
+                # Set the default to the command/code being confirmed
+                prompt_default = str(value_to_edit)
+            # --- MODIFICATION END: Conditional Prompt Formatting ---
+
 
             # --- Prompt user using prompt_toolkit ---
             user_input: Optional[str] = None
             try:
-                logger.debug(f"ConsoleManager: Prompting user for tool '{tool_name}', key '{edit_key}'.")
+                logger.debug(f"ConsoleManager: Prompting user for tool '{tool_name}', key '{edit_key}'. Default: '{prompt_default[:50]}...'")
                 # Use the imported PTK_STYLE object
                 user_input = prompt_toolkit_prompt(
                     FormattedText(prompt_prefix_parts),
-                    default=str(value_to_edit),
+                    default=prompt_default, # Use the determined default
                     style=PTK_STYLE,
-                    multiline=(len(str(value_to_edit)) > 60 or '\n' in str(value_to_edit))
+                    multiline=False, # Always False for HITL confirmation/edit
+                    prompt_continuation="" # Avoid showing continuation marker
                 )
                 if user_input is None: raise EOFError("Prompt returned None.") # Use specific error
 
@@ -276,20 +329,20 @@ class ConsoleManager:
                 cancel_msg = get_text("console.common.input_cancelled")
                 self.console.print(cancel_msg, style=self.STYLE_WARNING_CONTENT)
                 logger.warning(f"ConsoleManager: User cancelled input for tool '{tool_name}'.")
-                return None
+                return None # Signal cancellation
             except Exception as e:
                 logger.error(f"ConsoleManager: Error during prompt_toolkit prompt: {e}", exc_info=True)
                 self.console.print() # Ensure on new line
                 error_msg = get_text("console.hitl_prompt.error_generic", error=e)
                 self.console.print(error_msg, style=self.STYLE_ERROR_CONTENT)
-                return None
+                return None # Signal error
 
             logger.debug(f"ConsoleManager: Received input: '{user_input[:50]}...'")
             return user_input
 
     def prompt_for_input(self, prompt_text: str, default: Optional[str] = None, is_password: bool = False) -> str:
         """
-        Prompts the user for input using prompt_toolkit, handling the prefix correctly.
+        Prompts the user for general input using prompt_toolkit.
         """
         with self._lock:
             self._clear_previous_line() # Clear spinner if needed
@@ -314,7 +367,9 @@ class ConsoleManager:
                     FormattedText(prompt_parts),
                     default=default or "",
                     is_password=is_password,
-                    style=PTK_STYLE
+                    style=PTK_STYLE,
+                    # Keep multiline potentially true for general input
+                    multiline=(default is not None and ('\n' in default or len(default) > 60))
                 )
 
                 if user_input is None: # Handle case where prompt might return None unexpectedly

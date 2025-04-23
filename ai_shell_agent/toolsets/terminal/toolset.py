@@ -138,11 +138,12 @@ class TerminalTool_HITL(BaseTool):
     args_schema: Type[BaseModel] = TerminalToolArgs
     requires_confirmation: bool = True
 
-    def _run(self, command: str, confirmed_input: Optional[str] = None) -> str:
+    # --- MODIFICATION: Change parameter name to 'cmd' to match schema ---
+    def _run(self, cmd: str, confirmed_input: Optional[str] = None) -> str:
         """
         Run a command in a shell. Raises PromptNeededError if confirmation needed.
         """
-        cmd_to_execute = command.strip()
+        cmd_to_execute = cmd.strip() # Use the 'cmd' parameter
         if not cmd_to_execute:
             return get_text("tools.terminal_hitl.error_empty_cmd")
 
@@ -152,8 +153,10 @@ class TerminalTool_HITL(BaseTool):
             # Display command for confirmation via logger/console handled by chat_manager now if needed
             raise PromptNeededError(
                 tool_name=self.name,
-                proposed_args={"command": cmd_to_execute},
-                edit_key="command"
+                proposed_args={"cmd": cmd_to_execute}, # Use 'cmd' key
+                edit_key="cmd", # Edit the 'cmd' key
+                # --- MODIFICATION: Add explicit suffix ---
+                prompt_suffix=get_text("tools.terminal_hitl.confirm_suffix")
             )
         else:
             final_command = confirmed_input.strip()
@@ -195,19 +198,19 @@ class TerminalTool_HITL(BaseTool):
                 stdout = result.stdout.strip(); stderr = result.stderr.strip()
                 if stdout:
                     max_out_len = 2000
-                    trunc_marker = "\n... (truncated)" # Default truncation marker
+                    trunc_marker = "\\n... (truncated)" # Default truncation marker
                     display_stdout = (stdout[:max_out_len] + trunc_marker) if len(stdout) > max_out_len else stdout
                     details_parts.append(get_text("tools.terminal_hitl.details.stdout", output=display_stdout))
                 if stderr:
                     max_err_len = 1000
-                    trunc_marker = "\n... (truncated)" # Default truncation marker  
+                    trunc_marker = "\\n... (truncated)" # Default truncation marker
                     display_stderr = (stderr[:max_err_len] + trunc_marker) if len(stderr) > max_err_len else stderr
                     details_parts.append(get_text("tools.terminal_hitl.details.stderr", output=display_stderr))
                 if not stdout and not stderr:
                     status_msg = get_text("tools.terminal_hitl.details.no_output_success") if result.returncode == 0 else get_text("tools.terminal_hitl.details.no_output_fail")
                     details_parts.append(status_msg)
 
-                formatted_result = get_text("tools.terminal_hitl.result_format", command=final_command, details="\n".join(details_parts))
+                formatted_result = get_text("tools.terminal_hitl.result_format", command=final_command, details="\\n".join(details_parts))
 
             except subprocess.TimeoutExpired:
                  logger.error(f"Command '{final_command}' timed out.")
@@ -266,7 +269,8 @@ class PythonREPLTool_HITL(BaseTool):
                 tool_name=self.name,
                 proposed_args={"query": code_to_execute},
                 edit_key="query",
-                prompt_suffix=get_text("tools.python_repl_hitl.prompt_suffix")
+                # --- MODIFICATION: Add explicit suffix ---
+                prompt_suffix=get_text("tools.python_repl_hitl.confirm_suffix")
             )
         else:
             final_query = confirmed_input
@@ -280,7 +284,7 @@ class PythonREPLTool_HITL(BaseTool):
                 result = self.python_repl.run(final_query)
                 max_res_len = 2000
                 result_str = str(result)
-                trunc_marker = "\n... (truncated)" # Default truncation marker
+                trunc_marker = "\\n... (truncated)" # Default truncation marker
                 display_result = (result_str[:max_res_len] + trunc_marker) if len(result_str) > max_res_len else result_str
                 formatted_result = get_text("tools.python_repl_hitl.result_format", query=final_query, result=display_result)
             except Exception as e:

@@ -8,4 +8,4 @@ gitpython==3.1.44
 watchfiles==1.0.4
 rich==13.9.4
 rapidfuzz==3.13.0
-pytest
+pytest==8.3.5
