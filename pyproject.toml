@@ -22,8 +22,7 @@ dependencies = [
     "gitpython==3.1.44",
     "watchfiles==1.0.4",
     "rich==13.9.4",
-    "rapidfuzz==3.13.0",
-    "pytest",
+    "rapidfuzz==3.13.0"
 ]
 dynamic = ["classifiers"]
 
