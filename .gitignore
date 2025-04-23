@@ -36,3 +36,4 @@ config.json
 x_docs/
 tests/
 
+*.bak.*
