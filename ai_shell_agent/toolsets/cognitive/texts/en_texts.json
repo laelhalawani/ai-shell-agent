@@ -1,0 +1,30 @@
+{
+  "toolset": {
+    "name": "Cognitive",
+    "description": "Provides internal tools for agent analysis and planning."
+  },
+  "config": {
+    "info_no_settings": "Cognitive tools do not have any configurable options.",
+    "warn_write_failed": "Failed to write one or more configuration files for Cognitive toolset. Check logs."
+  },
+  "schemas": {
+    "analyse": {
+      "analysis_desc": "Your detailed analysis of the task, including required information, potential challenges, and reasoning."
+    },
+    "plan": {
+      "plan_desc": "Your step-by-step plan to accomplish the task."
+    }
+  },
+  "tools": {
+    "analyse": {
+      "name": "analyse",
+      "description": "Internally analyse the current task, requirements, and potential challenges. Saves the analysis as an internal note.",
+      "success": "Internal message saved: \n {analysis}"
+    },
+    "plan": {
+      "name": "plan",
+      "description": "Internally create a step-by-step plan for executing a complex task. Saves the plan as an internal note.",
+      "success": "Internal message saved: \n {plan}"
+    }
+  }
+}

@@ -30,7 +30,14 @@ try:
     CHAT_MAX_ITERATIONS = _settings_data['chat']['max_react_iterations']
     # Ensure the default enabled toolsets is always a list after loading
     _raw_default_toolsets = _settings_data['chat']['default_enabled_toolsets']
-    DEFAULT_ENABLED_TOOLSETS_NAMES = _raw_default_toolsets if isinstance(_raw_default_toolsets, list) else [] # Basic type check
+    # --- MODIFICATION START ---
+    # Make sure the value from JSON is treated as a list and add "Cognitive"
+    base_defaults = _raw_default_toolsets if isinstance(_raw_default_toolsets, list) else []
+    # Add "Cognitive" if not already present (idempotent)
+    if "Cognitive" not in base_defaults:
+        base_defaults.append("Cognitive")
+    DEFAULT_ENABLED_TOOLSETS_NAMES = sorted(base_defaults) # Keep it sorted
+    # --- MODIFICATION END ---
     CONSOLE_CONDENSED_OUTPUT_LENGTH = _settings_data['console']['condensed_output_length']
     # Add any other top-level constants needed from default_settings.json here
 except KeyError as e:
@@ -46,5 +53,5 @@ if __name__ == '__main__':
     print(f"APP_DEFAULT_LANGUAGE: {APP_DEFAULT_LANGUAGE}")
     print(f"APP_DEFAULT_TRANSLATION_MODEL: {APP_DEFAULT_TRANSLATION_MODEL}")
     print(f"CHAT_MAX_ITERATIONS: {CHAT_MAX_ITERATIONS}")
-    print(f"DEFAULT_ENABLED_TOOLSETS_NAMES: {DEFAULT_ENABLED_TOOLSETS_NAMES}")
+    print(f"DEFAULT_ENABLED_TOOLSETS_NAMES: {DEFAULT_ENABLED_TOOLSETS_NAMES}") # Verify "Cognitive" is included
     print(f"CONSOLE_CONDENSED_OUTPUT_LENGTH: {CONSOLE_CONDENSED_OUTPUT_LENGTH}")

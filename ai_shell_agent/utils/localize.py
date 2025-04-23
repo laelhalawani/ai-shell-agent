@@ -24,7 +24,7 @@ console = get_console_manager()
 # Uses fnmatch pattern matching (e.g., *, ?, [seq], [!seq])
 # Add patterns for keys whose string values should NOT be translated.
 EXCLUDED_KEY_PATTERNS: List[str] = [
-    "tools.*" # Exclude all keys under 'tools' (e.g., tools.tool_name.*)
+    "tools.*", "schemas.*" # Exclude all keys under 'tools' (e.g., tools.tool_name.*)
     # Add more patterns here as needed
 ]
 logger.debug(f"Localization exclusion patterns: {EXCLUDED_KEY_PATTERNS}")
