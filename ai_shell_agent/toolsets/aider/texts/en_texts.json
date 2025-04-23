@@ -1,14 +1,14 @@
 {
   "toolset": {
-    "name": "Aider Code Editor **EXPERIMENTAL**",
-    "description": "Provides tools for interacting with the Aider code editor."
+    "name": "AI Code Copilot **EXPERIMENTAL**",
+    "description": "Provides tools for interacting with the AI Code Copilot for editing code and scripts."
   },
   "config": {
-    "header": "\nConfigure File Editor (Aider) Settings ({context})",
+    "header": "\nConfigure AI Code Copilot Settings ({context})",
     "instructions": "{save_location_info}\nLeave input empty at any step to keep the current setting.",
     "save_location_global": "This configuration will be saved as the global default for new chats.",
     "save_location_chat": "This configuration will be saved for the current chat AND as the global default for new chats.",
-    "model_header": "\nSelect File Editor '{role}' Model",
+    "model_header": "\nSelect AI Code Copilot '{role}' Model",
     "model_available_title": "Available models:",
     "model_current_marker": " <- Current Setting",
     "model_aliases_suffix": "  (aliases: {alias_str})",
@@ -17,7 +17,7 @@
     "model_info_reset": "Resetting {role} model to default ('{default_name}')",
     "model_error_unknown": "Unknown model '{selected}'. Please choose from the list.",
     "model_warn_cancel": "Selection cancelled. Keeping current setting.",
-    "format_header": "\nSelect File Editor Edit Format",
+    "format_header": "\nSelect AI Code Copilot Edit Format",
     "format_option_default": "  0: {default_display} {marker}",
     "format_option": "  {idx}: {format}{marker} - {description}",
     "format_default_name": "Aider Default (model-specific)",
@@ -26,35 +26,35 @@
     "format_info_selected": "Selected format: {setting}",
     "format_error_invalid": "Invalid choice. Please try again.",
     "format_warn_cancel": "Selection cancelled. Keeping current setting: {setting}",
-    "api_key_check_header": "\nChecking API keys for selected File Editor models...",
+    "api_key_check_header": "\nChecking API keys for selected AI Code Copilot models...",
     "api_key_error_check": "\nError checking API key for model '{model_name}'. Check logs.",
-    "save_success_global": "\nGlobal default File Editor configuration updated.",
-    "save_success_chat": "\nFile Editor configuration updated for this chat and globally.",
+    "save_success_global": "\nGlobal default AI Code Copilot configuration updated.",
+    "save_success_chat": "\nAI Code Copilot configuration updated for this chat and globally.",
     "save_warn_missing_keys": "Note: Some API keys might be missing/skipped. Ensure they are set in .env.",
-    "save_error_failed": "\nFile Editor configuration update failed. Check logs."
+    "save_error_failed": "\nAI Code Copilot configuration update failed. Check logs."
   },
   "schemas": {
     "file_path": {
-      "path_desc": "The absolute or relative path to the file."
+      "path_desc": "The absolute or relative path to the code/script file."
     },
     "instruction": {
-      "instruction_desc": "The natural language instruction for the edit request."
+      "instruction_desc": "The natural language instruction for the edit request (focus on code/script changes)."
     },
     "user_response": {
-      "response_desc": "Your response to the editor's prompt."
+      "response_desc": "Your response to the AI Code Copilot's prompt."
     }
   },
   "tools": {
     "usage_guide": {
       "name": "aider_usage_guide",
-      "description": "Displays usage instructions and context for the Aider Code Copilot toolset."
+      "description": "Displays usage instructions and context for the AI Code Copilot tools."
     },
     "add_file": {
       "name": "add_file_to_copilot_context",
-      "description": "Adds a file to the Code Copilot context, files in context can be used to understand the codebase and perform edits. Files to be added can be specified by absolute or relative paths. The file must exist in the filesystem.",
+      "description": "Adds a code or script file to the AI Code Copilot context for analysis and editing. Specify the file by absolute or relative path. The file must exist.",
       "error": {
         "no_chat": "Error: No active chat session found.",
-        "init_failed": "Error: File Editor not initialized or failed to restore state. Use start_file_editor first.",
+        "init_failed": "Error: AI Code Copilot not initialized or failed to restore state. Use start_file_editor first.",
         "not_exists": "Error: File '{path}' (resolved to '{abs_path}') does not exist.",
         "outside_root": "Error: Cannot add file '{path}' outside project root '{root}'.",
         "different_drive": "Error: Cannot add file '{path}' on a different drive than project root '{root}'.",
@@ -65,10 +65,10 @@
     },
     "remove_file": {
       "name": "remove_file_from_copilot_context",
-      "description": "Removes a file from the Code Copilot context. Files to be removed can be specified by absolute or relative paths. The file must have been added to the context previously.",
+      "description": "Removes a file from the AI Code Copilot context. Specify the file by absolute or relative path. The file must have been previously added.",
       "error": {
         "no_chat": "Error: No active chat session found.",
-        "init_failed": "Error: File Editor not initialized or failed to restore state. Use start_file_editor first.",
+        "init_failed": "Error: AI Code Copilot not initialized or failed to restore state. Use start_file_editor first.",
         "generic": "Error dropping file {path}: {error}. {output}"
       },
       "info_not_found": "File {path} not found in context. {output}",
@@ -76,56 +76,56 @@
     },
     "list_files": {
       "name": "list_files_in_copilot_context",
-      "description": "Lists all files in the Code Copilot context. This is useful to see what files are currently being edited or added for context.",
+      "description": "Lists all files currently included in the AI Code Copilot editing session.",
       "error": {
         "no_chat": "Error: No active chat session found.",
-        "init_failed": "Error: Editor not initialized. Use start_file_editor first.",
+        "init_failed": "Error: AI Code Copilot not initialized. Use start_file_editor first.",
         "generic": "Error listing files: {error}"
       },
       "info_empty": "No files are currently added to the editing session.",
-      "success": "Files in editor:\n{file_list}"
+      "success": "Files in AI Code Copilot session:\n{file_list}"
     },
     "request_edit": {
       "name": "request_copilot_edit",
-      "description": "Explain to the copilot what needs to be done. The editor will complete the request based on own knowledge and submitted files. Use clear instructions using natural language, you can include specific code snippets.",
+      "description": "Request the AI Code Copilot to perform edits on the files currently in context. Provide clear, natural language instructions, optionally including code snippets.",
       "error": {
         "no_chat": "Error: No active chat session found.",
-        "init_failed": "Error: File Editor not initialized or failed to restore state. Use start_file_editor first.",
-        "no_files": "Error: No files have been added to the editing session. Use include_file first.",
+        "init_failed": "Error: AI Code Copilot not initialized or failed to restore state. Use start_file_editor first.",
+        "no_files": "Error: No files have been added to the editing session. Use add_file_to_copilot_context first.",
         "in_progress": "Error: An edit is already in progress for this session.",
-        "timeout": "Error: Timed out waiting for Aider response.",
-        "queue_exception": "Error: Exception while waiting for Aider: {error}",
+        "timeout": "Error: Timed out waiting for AI Code Copilot response.",
+        "queue_exception": "Error: Exception while waiting for AI Code Copilot: {error}",
         "edit_failed": "Error during edit:\n{content}",
-        "unknown_response": "Error: Unknown response type '{type}' from Aider process."
+        "unknown_response": "Error: Unknown response type '{type}' from AI Code Copilot process."
       },
       "prompt_needed": "{signal} {guidance}",
-      "prompt_guidance": "Aider requires input. Please respond using 'submit_editor_input'. Prompt: '{prompt}'",
+      "prompt_guidance": "AI Code Copilot requires input. Please respond using 'respond_to_code_copilot_input_request'. Prompt: '{prompt}'",
       "prompt_subject": " (Regarding: {subject})",
       "prompt_default": " [Default: {default}]",
       "prompt_confirm_options": " Options: {options}",
-      "success": "Edit completed. {output}"
+      "success": "Edit completed by AI Code Copilot. {output}"
     },
     "view_diffs": {
       "name": "view_code_copilot_edit_diffs",
-      "description": "Shows the git diff of changes made by the Code Copilot based on 'request_edit' tool in the current session. This is useful to see what changes have been made to the files. Works only if there was a git repository initialized in the project root.",
+      "description": "Shows the git diff of changes made by the AI Code Copilot in the current session. Requires a git repository in the project root.",
       "error": {
         "no_chat": "Error: No active chat session found.",
-        "init_failed": "Error: File Editor not initialized or failed to restore state. Use start_file_editor first.",
+        "init_failed": "Error: AI Code Copilot not initialized or failed to restore state. Use start_file_editor first.",
         "no_repo": "Error: Git repository not available. Cannot show diff.",
         "git_error": "Error viewing diff: {error}. {output}",
         "generic": "Error viewing diff: {error}. {output}"
       },
       "info_no_changes": "No changes detected in tracked files.",
-      "success": "Diff:\n{diff}"
+      "success": "AI Code Copilot Diff:\n{diff}"
     },
     "undo_edit": {
       "name": "undo_last_code_copilot_edit",
-      "description": "Undoes the last edit commit made by the Code Copilot. This is useful to revert changes made to the files, might not work if the commit was made outside of the File Editor or if there is no git repository initialized.",
+      "description": "Undoes the last code commit made by the AI Code Copilot. Requires a git repository and that the last commit was made by the Copilot.",
       "error": {
         "no_chat": "Error: No active chat session found.",
-        "init_failed": "Error: File Editor not initialized or failed to restore state. Use start_file_editor first.",
+        "init_failed": "Error: AI Code Copilot not initialized or failed to restore state. Use start_file_editor first.",
         "no_repo": "Error: Cannot undo. Git repository not found or not configured.",
-        "cmd_module_missing": "Error: Commands module not available in Aider.",
+        "cmd_module_missing": "Error: Commands module not available in AI Code Copilot.",
         "git_error": "Error during undo: {error}. {output}",
         "generic": "Error during undo: {error}. {output}"
       },
@@ -133,36 +133,36 @@
     },
     "close_editor": {
       "name": "close_code_copilot",
-      "description": "Closes the file editing session with AI Code Copilot. Changes are saved automatically. Close it after you verified with the user they don't want to edit the files anymore.",
+      "description": "Closes the current AI Code Copilot editing session. Uncommitted changes might be lost if not using auto-commits.",
       "error": {
-        "no_chat": "Error: No active chat session found to close the editor for."
+        "no_chat": "Error: No active chat session found to close the AI Code Copilot for."
       },
-      "info_success": "File Editor session context cleared.",
-      "warn_error": "File Editor session context possibly cleared (encountered error)."
+      "info_success": "AI Code Copilot session context cleared.",
+      "warn_error": "AI Code Copilot session context possibly cleared (encountered error)."
     },
     "submit_input": {
       "name": "respond_to_code_copilot_input_request",
-      "description": "Use to provide respond to Code Copilot only when requested (marked by '[CODE_COPILOT_INPUT_REQUEST]').",
+      "description": "Provides a response to the AI Code Copilot when it explicitly requests input (marked by '[CODE_COPILOT_INPUT_REQUEST]').",
       "prompt_suffix": "(edit or confirm response) > ",
       "error": {
         "no_chat": "Error: No active chat session found.",
-        "init_failed": "Error: No active editor session found or state could not be restored.",
+        "init_failed": "Error: No active AI Code Copilot session found or state could not be restored.",
         "empty_response": "Error: Received empty response for submission.",
         "empty_confirmed": "Error: Confirmed response is empty.",
-        "not_waiting": "Error: The editing process is not waiting for input.",
-        "timeout": "Error: Timed out waiting for Aider response after submitting input.",
-        "queue_exception": "Error: Exception while waiting for Aider after submitting input: {error}",
+        "not_waiting": "Error: The AI Code Copilot is not waiting for input.",
+        "timeout": "Error: Timed out waiting for AI Code Copilot response after submitting input.",
+        "queue_exception": "Error: Exception while waiting for AI Code Copilot after submitting input: {error}",
         "edit_failed": "Error during edit:\n{content}",
         "unknown_response": "Error: Unknown response type '{type}'."
       },
       "prompt_needed": "{signal} {guidance}",
-      "prompt_guidance": "Aider requires further input. Respond using 'submit_editor_input'. Prompt: '{prompt}'",
+      "prompt_guidance": "AI Code Copilot requires further input. Respond using 'respond_to_code_copilot_input_request'. Prompt: '{prompt}'",
       "prompt_subject": " (Re: {subject})",
       "prompt_hitl_suffix": "({prompt}) > ",
-      "success": "Edit completed. {output}"
+      "success": "Edit completed by AI Code Copilot. {output}"
     }
   },
   "integration": {
-    "run_error": "Error during edit: {error}\nOutput before error:\n{output}"
+    "run_error": "Error during AI Code Copilot edit: {error}\nOutput before error:\n{output}"
   }
 }
