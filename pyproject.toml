@@ -4,7 +4,7 @@ requires = ["setuptools", "wheel"]
 
 [project]
 name = "ai-shell-agent"
-version = "0.2.1"
+version = "0.2.2"
 description = "AI agent in your Terminal / CMD / Console - an AI application that helps perform tasks by writing and executing terminal commands with user supervision and by answering questions."
 authors = [
     { name = "Lael Al-Halawani", email = "laelhalawani@gmail.com" }
