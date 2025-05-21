@@ -3,3 +3,8 @@ include README.md
 include pyproject.toml
 include setup.cfg
 include setup.py
+recursive-include ai_shell_agent/styles *.json
+recursive-include ai_shell_agent/default_settings *.json
+recursive-include ai_shell_agent/prompts *.py
+recursive-include ai_shell_agent/texts *.json
+recursive-include ai_shell_agent/toolsets *.py
