@@ -318,26 +318,18 @@ def ensure_api_key_for_translation_model() -> bool:
     """
     Ensure that the API key for the configured TRANSLATION model is set.
     If not, prompt the user to enter it.
+    Uses the centralized get_api_key function.
     
     Returns:
         bool: True if the API key is set, False otherwise
     """
     trans_model = get_translation_model()
-    api_key, env_var_name = get_api_key_for_model(trans_model)
+    provider = get_model_provider(trans_model)
     
-    if not api_key:
-        provider = get_model_provider(trans_model)
-        provider_name = "OpenAI" if provider == "openai" else "Google"
-        logger.warning(f"{provider_name} API key not found for translation model '{trans_model}'. Please enter the API key.")
-        # Call the setter specifically for the translation model
-        set_api_key_for_model(trans_model)
-        
-        # Check again if the API key is set
-        api_key, _ = get_api_key_for_model(trans_model)
-        if not api_key:
-            return False
+    # Use the centralized get_api_key function
+    api_key = get_api_key(provider)
     
-    return True
+    return api_key is not None
 
 # --- End Translation Model Functions ---
 
@@ -392,6 +384,7 @@ def get_api_key_for_model(model_name: str) -> Tuple[Optional[str], str]:
 def set_api_key_for_model(model_name: str, api_key: Optional[str] = None) -> None:
     """
     Prompt for and save the appropriate API key using ConsoleManager.
+    Uses DEFAULT_DOTENV_PATH for storing the API key.
     """
     provider = get_model_provider(model_name)
     provider_name = "OpenAI" if provider == "openai" else "Google"
@@ -421,11 +414,11 @@ def set_api_key_for_model(model_name: str, api_key: Optional[str] = None) -> Non
     
     os.environ[env_var_name] = api_key
     
-    env_path = ROOT_DIR / '.env'
+    # Use DEFAULT_DOTENV_PATH instead of ROOT_DIR / '.env'
     from .utils.env import read_dotenv, write_dotenv # Import locally
-    env_vars = read_dotenv(env_path)
+    env_vars = read_dotenv(DEFAULT_DOTENV_PATH)
     env_vars[env_var_name] = api_key
-    write_dotenv(env_path, env_vars)
+    write_dotenv(DEFAULT_DOTENV_PATH, env_vars)
     
     console.display_message(get_text("common.labels.info"), get_text("config.api_key.info_saved", provider_name=provider_name),
                           console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
@@ -435,25 +428,18 @@ def ensure_api_key_for_current_model() -> bool:
     """
     Ensure that the API key for the current model is set.
     If not, prompt the user to enter it.
+    Uses the centralized get_api_key function.
     
     Returns:
         bool: True if the API key is set, False otherwise
     """
     current_model = get_current_model()
-    api_key, env_var_name = get_api_key_for_model(current_model)
+    provider = get_model_provider(current_model)
     
-    if not api_key:
-        provider = get_model_provider(current_model)
-        provider_name = "OpenAI" if provider == "openai" else "Google"
-        logger.warning(f"{provider_name} API key not found. Please enter your API key.")
-        set_api_key_for_model(current_model)
-        
-        # Check again if the API key is set
-        api_key, _ = get_api_key_for_model(current_model)
-        if not api_key:
-            return False
+    # Use the centralized get_api_key function
+    api_key = get_api_key(provider)
     
-    return True
+    return api_key is not None
 
 # --- Language Configuration ---
 

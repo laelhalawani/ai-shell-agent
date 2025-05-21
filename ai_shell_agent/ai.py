@@ -10,13 +10,15 @@ def get_install_dir():
     # Assumes ai.py is in ai_shell_agent/
     return Path(__file__).parent.parent.resolve()
 
-# Load environment variables from .env in the installation directory
-env_path = get_install_dir() / '.env'
-load_dotenv(env_path)
-
-# Setup logger early
+# Setup logger early - do this before loading paths
 from . import logger
-from .paths import ROOT_DIR # Import ROOT_DIR from paths.py
+
+# Import paths for standard locations including DEFAULT_DOTENV_PATH
+from .paths import ROOT_DIR, DEFAULT_DOTENV_PATH
+
+# Load environment variables from .env in the package installation directory
+logger.debug(f"Loading environment from: {DEFAULT_DOTENV_PATH}")
+load_dotenv(DEFAULT_DOTENV_PATH)
 # Import console manager
 from .console_manager import get_console_manager
 # Import text getter
