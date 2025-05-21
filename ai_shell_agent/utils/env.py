@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .. import logger
+from ..paths import DEFAULT_DOTENV_PATH # Import the default .env path
 
 def read_dotenv(dotenv_path: Path) -> Dict[str, str]:
     """
@@ -67,12 +68,16 @@ def write_dotenv(dotenv_path: Path, env_vars: Dict[str, str]) -> None:
              try: tmp_path.unlink()
              except Exception: pass
 
-def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = None) -> Optional[str]:
+def ensure_dotenv_key(key: str, description: Optional[str] = None, dotenv_path: Optional[Path] = None) -> Optional[str]:
     """
     Ensures a key exists in the environment and .env file using ConsoleManager for prompts.
     Checks os.environ first. If not found, prompts the user.
-    If the user provides a value, it's saved to the .env file and os.environ.
+    If the user provides a value, it\'s saved to the .env file and os.environ.
+    Uses DEFAULT_DOTENV_PATH if no specific dotenv_path is provided.
     """
+    # Use default .env path if none is provided
+    effective_dotenv_path = dotenv_path or DEFAULT_DOTENV_PATH
+
     value = os.getenv(key)
     if value:
         logger.debug(f"Found key '{key}' in environment.")
@@ -97,15 +102,13 @@ def ensure_dotenv_key(dotenv_path: Path, key: str, description: Optional[str] = 
                                   console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT)
             return None
 
-        current_env_vars = read_dotenv(dotenv_path)
+        current_env_vars = read_dotenv(effective_dotenv_path)
         current_env_vars[key] = user_input
-        write_dotenv(dotenv_path, current_env_vars)
-
-        os.environ[key] = user_input
-
-        logger.info(f"Saved '{key}' to {dotenv_path} and updated environment.")
-        console.display_message("INFO:", f"Value for '{key}' saved.",
-                              console.STYLE_INFO_LABEL, console.STYLE_INFO_CONTENT)
+        write_dotenv(effective_dotenv_path, current_env_vars)
+        os.environ[key] = user_input # Update current session's environment
+        logger.info(f"Saved '{key}' to {effective_dotenv_path} and current environment.")
+        console.display_message("SUCCESS:", f"'{key}' has been configured and saved.",
+                               console.STYLE_SUCCESS_LABEL, console.STYLE_SUCCESS_CONTENT)
         return user_input
 
     except KeyboardInterrupt:

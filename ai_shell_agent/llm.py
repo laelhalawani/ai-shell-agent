@@ -13,7 +13,7 @@ from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain_core.tools import BaseTool
 
 from . import logger
-from .config_manager import get_current_model, get_model_provider, get_translation_model 
+from .config_manager import ConfigManager, get_api_key, get_current_model, get_model_provider, get_translation_model 
 # Import toolset registry and state manager functions
 from .toolsets.toolsets import get_registered_toolsets, ToolsetMetadata # Correct import
 from .chat_state_manager import get_current_chat, get_enabled_toolsets # get_active_toolsets should NOT be here

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
 from . import logger
-from .paths import ROOT_DIR # Removed console_io import
+from .paths import ROOT_DIR, DEFAULT_DOTENV_PATH # Added DEFAULT_DOTENV_PATH
 from .settings import APP_DEFAULT_MODEL, APP_DEFAULT_LANGUAGE, DEFAULT_ENABLED_TOOLSETS_NAMES, APP_DEFAULT_TRANSLATION_MODEL
 from .console_manager import get_console_manager # Import ConsoleManager
 from .texts import get_text # Added import for get_text
@@ -95,6 +95,7 @@ def set_model(model_name: str) -> None:
     """
     Set the model to use for AI interactions, saving to environment variable and config file.
     No longer saves to .env file - toolsets handle their own secrets.
+    API keys are now handled by ensure_dotenv_key in utils.env, which uses DEFAULT_DOTENV_PATH
     """
     normalized_name = normalize_model_name(model_name)
     
@@ -638,3 +639,62 @@ def set_default_enabled_toolsets(toolset_names: List[str]) -> None:
     config[DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY] = sorted(list(set(toolset_names))) # Store unique sorted names
     _write_config(config)
     logger.info(f"Global default enabled toolsets set to: {config[DEFAULT_ENABLED_TOOLSETS_CONFIG_KEY]}")
+
+# --- API Key Management (Moved from individual toolsets to be centralized) ---
+
+OPENAI_API_KEY_NAME = "OPENAI_API_KEY"
+GOOGLE_API_KEY_NAME = "GOOGLE_API_KEY"
+
+def get_api_key(provider: str) -> Optional[str]:
+    """Gets the API key for the given provider (openai or google)."""
+    from .utils.env import ensure_dotenv_key # Local import to avoid circularity if not already imported
+
+    key_name = ""
+    description = ""
+    if provider == "openai":
+        key_name = OPENAI_API_KEY_NAME
+        description = get_text("config.api_key.openai_description")
+    elif provider == "google":
+        key_name = GOOGLE_API_KEY_NAME
+        description = get_text("config.api_key.google_description")
+    else:
+        logger.error(f"Unknown API key provider: {provider}")
+        return None
+
+    # ensure_dotenv_key will use DEFAULT_DOTENV_PATH by default
+    api_key = ensure_dotenv_key(key=key_name, description=description) # Removed dotenv_path=DEFAULT_DOTENV_PATH
+    return api_key
+
+def ensure_api_keys_are_set() -> None:
+    """
+    Checks and prompts for API keys for the currently selected model's provider.
+    This should be called early in the application startup.
+    """
+    current_model = get_current_model()
+    provider = get_model_provider(current_model)
+
+    if provider == "openai":
+        if not get_api_key("openai"):
+            # The get_api_key function already handles prompting if the key is missing.
+            # If it returns None here, it means the user skipped or an error occurred.
+            console.display_message(
+                get_text("common.labels.warning"),
+                get_text("config.api_key.openai_missing_after_prompt"),
+                console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT
+            )
+            # Potentially raise an error or exit if the key is critical and not set.
+    elif provider == "google":
+        if not get_api_key("google"):
+            console.display_message(
+                get_text("common.labels.warning"),
+                get_text("config.api_key.google_missing_after_prompt"),
+                console.STYLE_WARNING_LABEL, console.STYLE_WARNING_CONTENT
+            )
+    else:
+        logger.warning(f"API key check not implemented for provider: {provider} of model {current_model}")
+
+# Call this function when the application starts or when the model changes.
+# For example, in your main application entry point:
+# ensure_api_keys_are_set()
+
+# --- Language and Translation Settings ---
