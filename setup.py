@@ -10,7 +10,7 @@ class CustomInstallCommand(install):
 
 setup(
     name='ai-shell-agent',
-    version='0.2.0',
+    version='0.2.1',
     description='AI agent in your Terminal / CMD / Console - an AI application that helps perform tasks by writing and executing terminal commands with user supervision and by answering questions.',
     author='Lael Al-Halawani',
     author_email='laelhalawani@gmail.com',
